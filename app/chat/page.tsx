@@ -8,7 +8,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Bot, User, ArrowLeft, MessageSquare, Plus, Menu, X, Home, History } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCurrentUser } from "@/lib/auth-context";
+import { useCurrentUser, useAuthActions } from "@/lib/auth-context";
+import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
 
 interface Message {
   id: string;
@@ -19,11 +20,11 @@ interface Message {
 
 export default function ChatPage() {
   const user = useCurrentUser();
+  const { signOut } = useAuthActions();
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
   const [isAiThinking, setIsAiThinking] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<Array<{id: string, title: string, timestamp: string}>>([]);
 
   // Load messages and chat history from localStorage on mount
@@ -107,6 +108,11 @@ export default function ChatPage() {
     localStorage.removeItem('chat-messages');
     setSidebarOpen(false);
   };
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.push('/auth/signin')
+  }
 
   const generateAiResponse = (userMessage: string): string => {
     const lowerMessage = userMessage.toLowerCase();
@@ -228,6 +234,28 @@ export default function ChatPage() {
           </div>
         </div>
         
+
+          {/* Chat History Header */}
+          {chatHistory.length > 0 && messages.length === 0 && (
+            <div className="p-4 border-b border-white/20">
+              <div className="flex items-center gap-2 mb-3">
+                <History className="h-4 w-4 text-slate-500" />
+                <span className="text-sm font-medium text-slate-600">Recent Conversations</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {chatHistory.slice(0, 6).map((chat) => (
+                  <button
+                    key={chat.id}
+                    className="text-left p-3 rounded-lg bg-white/60 hover:bg-white/80 border border-white/40 transition-all duration-200"
+                  >
+                    <div className="text-sm font-medium text-slate-700 truncate">{chat.title}</div>
+                    <div className="text-xs text-slate-500">{chat.timestamp}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-6">
           {messages.length === 0 ? (
@@ -237,30 +265,30 @@ export default function ChatPage() {
                 Welcome to Clixen AI!
               </h2>
               <p className="text-gray-600 max-w-md mx-auto mb-6">
-                I help you create automation workflows using natural language. 
+                I help you create automation workflows using natural language.
                 Just describe what you'd like to automate and I'll guide you through it.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-lg mx-auto text-sm">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setNewMessageText("Help me create an email automation workflow")}
                 >
                   Email Automation
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setNewMessageText("I want to automate file backups")}
                 >
                   File Backup
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setNewMessageText("Set up social media posting")}
                 >
                   Social Media
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setNewMessageText("Create a data processing pipeline")}
                 >
                   Data Processing
