@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery } from "convex/react"
-import { useCurrentUser } from "@convex-dev/auth/react"
+import { useCurrentUser } from "@/lib/auth-context"
 import { api } from "@/convex/_generated/api"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardStats } from "@/components/dashboard/dashboard-stats"
