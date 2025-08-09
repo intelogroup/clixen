@@ -41,13 +41,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             firstName: options.firstName || 'New',
             lastName: options.lastName || 'User'
           });
-        } else if (options?.email === 'demo@clixen.com') {
-          // Mock signin success
+        } else if (options?.email === 'demo@clixen.com' && options?.password === 'demo123') {
+          // Demo account signin
           setUser({
             id: '1',
             email: 'demo@clixen.com',
             firstName: 'Demo',
             lastName: 'User'
+          });
+        } else if (options?.email === 'jimkalinov@gmail.com' && options?.password === 'Jimkali90#') {
+          // Test user signin
+          setUser({
+            id: '3',
+            email: 'jimkalinov@gmail.com',
+            firstName: 'Jim',
+            lastName: 'Kalinov'
           });
         } else {
           throw new Error('Invalid credentials');
