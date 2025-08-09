@@ -107,13 +107,13 @@ export function DashboardSidebar({ className, onNavigate, onSignOut }: Dashboard
   const getStatusColor = (status: string) => {
     switch (status) {
       case "active":
-        return "text-green-500"
+        return "text-emerald-400"
       case "paused":
-        return "text-yellow-500"
+        return "text-amber-400"
       case "draft":
-        return "text-gray-400"
+        return "text-slate-500"
       default:
-        return "text-gray-400"
+        return "text-slate-500"
     }
   }
 

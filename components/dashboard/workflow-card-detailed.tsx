@@ -57,15 +57,15 @@ export function WorkflowCardDetailed({
   const getStatusColor = (status: string) => {
     switch (status) {
       case "active":
-        return "text-green-500"
+        return "text-emerald-600"
       case "paused":
-        return "text-yellow-500"
+        return "text-amber-600"
       case "draft":
-        return "text-gray-400"
+        return "text-slate-400"
       case "error":
-        return "text-red-500"
+        return "text-rose-600"
       default:
-        return "text-gray-400"
+        return "text-slate-400"
     }
   }
 
