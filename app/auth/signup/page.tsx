@@ -30,7 +30,7 @@ export default function SignUpPage() {
     e.preventDefault()
     setIsLoading(true)
     setError("")
-    
+
     try {
       await signIn("password", {
         email: formData.email,
@@ -39,8 +39,9 @@ export default function SignUpPage() {
         lastName: formData.lastName,
         flow: "signUp",
       })
-      
-      // The auth will redirect automatically on success
+
+      // Redirect to dashboard on successful signup
+      router.push('/dashboard')
     } catch (err: any) {
       setError(err.message || "Failed to create account. Please try again.")
       setIsLoading(false)
