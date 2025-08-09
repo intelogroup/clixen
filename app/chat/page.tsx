@@ -1,10 +1,13 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { ChatSidebar } from "@/components/chat/chat-sidebar"
 import { ChatMain } from "@/components/chat/chat-main"
+import { FloatingActions } from "@/components/chat/floating-actions"
 
 export default function ChatPage() {
+  const router = useRouter()
   const [currentChatId, setCurrentChatId] = useState<string>()
   const [messages, setMessages] = useState([
     {
@@ -86,8 +89,29 @@ export default function ChatPage() {
     // For now, just show the current conversation
   }
 
+  const handleFloatingAction = (action: string) => {
+    switch (action) {
+      case "new-workflow":
+        handleNewChat()
+        break
+      case "templates":
+        // Show templates in input
+        handleSendMessage("Show me workflow templates")
+        break
+      case "integrations":
+        handleSendMessage("What integrations are available?")
+        break
+      case "ai-suggestions":
+        handleSendMessage("Give me AI suggestions for workflow automation")
+        break
+      case "dashboard":
+        router.push("/dashboard")
+        break
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex relative">
       <ChatSidebar
         currentChatId={currentChatId}
         onNewChat={handleNewChat}
@@ -100,6 +124,8 @@ export default function ChatPage() {
         isCreatingWorkflow={isCreatingWorkflow}
         chatTitle="New Workflow Chat"
       />
+
+      <FloatingActions onAction={handleFloatingAction} />
     </div>
   )
 }
