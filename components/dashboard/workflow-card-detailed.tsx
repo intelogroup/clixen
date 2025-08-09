@@ -105,29 +105,29 @@ export function WorkflowCardDetailed({
   }
 
   return (
-    <Card className="group hover:shadow-lg hover:shadow-slate-200/50 transition-all duration-200 border-0 bg-white/70 backdrop-blur-sm hover:bg-white/90 rounded-xl overflow-hidden">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center space-x-2">
-            <span className={cn("text-sm font-bold", getStatusColor(status))}>
+    <Card className="group hover:shadow-lg hover:shadow-slate-200/50 transition-all duration-200 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg overflow-hidden h-fit">
+      <CardContent className="p-3">
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-start space-x-2 min-w-0 flex-1">
+            <span className={cn("text-xs font-bold mt-0.5", getStatusColor(status))}>
               {getStatusIcon(status)}
             </span>
-            <h3 className="text-sm font-semibold text-slate-900 truncate">{name}</h3>
+            <h3 className="text-xs font-semibold text-slate-900 line-clamp-2 leading-tight">{name}</h3>
           </div>
 
-          <div className="flex items-center space-x-1">
+          <div className="flex items-center space-x-1 ml-2">
             {status === "draft" && (
               <Button
                 size="sm"
                 onClick={() => handleAction('deploy')}
-                className="bg-blue-600 hover:bg-blue-700 text-white border-0 rounded-lg px-2 py-1 text-xs font-medium"
+                className="bg-blue-600 hover:bg-blue-700 text-white border-0 rounded px-1.5 py-0.5 text-xs font-medium h-5"
               >
                 Deploy
               </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0 rounded-md">
+                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 p-0 rounded">
                   <MoreVertical className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
@@ -163,33 +163,26 @@ export function WorkflowCardDetailed({
           </div>
         </div>
 
-        <p className="text-slate-600 mb-2 text-xs truncate">{description}</p>
+        <p className="text-slate-500 mb-2 text-xs line-clamp-1">{description}</p>
 
-        <div className="text-xs text-slate-500 mb-3 bg-slate-50 rounded-lg p-2 border border-slate-100">
-          {formatTriggerInfo()}
-          {status === "paused" && " • Status: Paused"}
+        <div className="text-xs text-slate-400 mb-2 bg-slate-50 rounded p-1.5 border border-slate-100">
+          <div className="truncate">{formatTriggerInfo()}</div>
         </div>
 
         {status === "draft" ? (
-          <div className="text-xs text-slate-500 bg-blue-50 rounded-lg p-2 border border-blue-100">
-            <span className="font-medium text-blue-700">Ready</span>
+          <div className="text-xs text-blue-600 bg-blue-50 rounded p-1.5 text-center">
+            Ready
           </div>
         ) : (
-          <div className="space-y-2">
-            {/* Progress Bar */}
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">{metrics.successRate}% success</span>
-              <span className="text-xs text-slate-500">{metrics.totalRuns} runs</span>
+              <span className="text-xs text-slate-600">{metrics.successRate}%</span>
+              <span className="text-xs text-slate-500">{metrics.totalRuns}</span>
             </div>
             <Progress
               value={metrics.successRate}
-              className="h-1.5 bg-slate-100 rounded-full overflow-hidden"
+              className="h-1 bg-slate-100 rounded-full overflow-hidden"
             />
-
-            {/* Compact Metrics */}
-            {metrics.failedRuns > 0 && (
-              <div className="text-xs text-red-600">{metrics.failedRuns} failures</div>
-            )}
           </div>
         )}
       </CardContent>
