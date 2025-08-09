@@ -69,9 +69,15 @@ export default function DashboardPage() {
   }
   
   const handleStatusChange = (id: string, status: "active" | "paused") => {
-    setWorkflows(prev => prev.map(w => 
-      w.id === id ? { ...w, status } : w
-    ))
+    setWorkflows(prev => prev.map(w => {
+      if (w.id === id) {
+        // Only update if the workflow can have this status
+        if (w.status === "active" || w.status === "paused") {
+          return { ...w, status }
+        }
+      }
+      return w
+    }))
   }
   
   const handleViewDetails = (id: string) => {
