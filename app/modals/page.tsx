@@ -11,7 +11,7 @@ export default function ModalsDemo() {
   const router = useRouter()
   const [currentModal, setCurrentModal] = useState<ModalType>(null)
   const [selectedService, setSelectedService] = useState("Google Drive")
-  const [results, setResults] = useState<Array<{ type: string, result: any }>>([])
+  const [results, setResults] = useState<Array<{ type: string, result: any, timestamp: string }>>([])
 
   const oauthServices = [
     { name: "Google Drive", icon: "🗂️", description: "File storage and backup automation" },
