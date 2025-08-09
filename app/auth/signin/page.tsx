@@ -13,7 +13,11 @@ import Link from "next/link"
 
 export default function SignInPage() {
   const router = useRouter()
-  const { signIn } = useAuthActions()
+  // const { signIn } = useAuthActions()
+  const signIn = async (provider: string, options?: any) => {
+    console.log("Sign in attempted with:", provider, options);
+    // Temporary placeholder for testing
+  }
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
