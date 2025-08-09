@@ -1,287 +1,290 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useQuery } from "convex/react"
+import { useCurrentUser } from "@convex-dev/auth/react"
+import { api } from "@/convex/_generated/api"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardStats } from "@/components/dashboard/dashboard-stats"
 import { WorkflowCard } from "@/components/dashboard/workflow-card"
 import { EmptyState } from "@/components/dashboard/empty-state"
-import { FloatingActions } from "@/components/chat/floating-actions"
-import { TransitionManager, TransitionType } from "@/components/transitions/transition-manager"
-import { ModalManager, ModalType } from "@/components/modals/modal-manager"
-import { DashboardCommandPalette } from "@/components/dashboard/command-palette"
-
-const mockWorkflows = [
-  {
-    id: "1",
-    name: "Daily Analytics Reminder Email",
-    description: "Send daily email reminders to check analytics dashboard",
-    status: "active" as const,
-    created: "Aug 9",
-    executions: 15,
-    lastRun: "Aug 8"
-  },
-  {
-    id: "2", 
-    name: "Weekly Backup Automation",
-    description: "Backup files to Google Drive every Sunday",
-    status: "paused" as const,
-    created: "Aug 7",
-    executions: 3,
-    lastRun: "Aug 6"
-  },
-  {
-    id: "3",
-    name: "Slack Integration Test", 
-    description: "Test workflow for Slack notifications",
-    status: "failed" as const,
-    created: "Aug 6",
-    executions: 0,
-    error: "Invalid webhook URL"
-  },
-  {
-    id: "4",
-    name: "Customer Survey Automation",
-    description: "Send follow-up surveys after purchases", 
-    status: "draft" as const,
-    created: "Aug 5",
-    executions: 0
-  },
-  {
-    id: "5",
-    name: "Website Monitor",
-    description: "Monitor website uptime and send alerts",
-    status: "active" as const,
-    created: "Aug 4", 
-    executions: 120,
-    lastRun: "5 min ago"
-  }
-]
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { 
+  Plus, 
+  Filter, 
+  Search, 
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  Play,
+  Pause,
+  Settings
+} from "lucide-react"
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [workflows, setWorkflows] = useState(mockWorkflows)
-  const [currentTransition, setCurrentTransition] = useState<TransitionType>(null)
-  const [currentModal, setCurrentModal] = useState<ModalType>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const user = useCurrentUser()
+  const userProfile = useQuery(api.users.getUserProfile)
+  const userStats = useQuery(api.users.getUserStats)
+  const workflows = useQuery(api.workflows.getUserWorkflows, {})
+  const recentRuns = useQuery(api.workflows.getWorkflowRuns, { limit: 10 })
+  
+  const [activeTab, setActiveTab] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
-  const [showCommandPalette, setShowCommandPalette] = useState(false)
 
-  const filteredWorkflows = workflows.filter(workflow =>
-    workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    workflow.description.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  // Global keyboard shortcut for command palette
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault()
-        setShowCommandPalette(true)
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [])
-
-  const handleCreateWorkflow = () => {
-    setCurrentTransition("workflow-generation")
+  // Loading states
+  if (user === undefined || userProfile === undefined || userStats === undefined) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="flex items-center justify-center h-64">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      </div>
+    )
   }
 
-  const handleQuickAction = (type: string) => {
-    switch (type) {
-      case "social-media":
-        setCurrentTransition("workflow-generation")
-        break
-      case "email-automation":
-        setCurrentTransition("workflow-generation")
-        break
-      case "data-backup":
-        setCurrentTransition("workflow-generation")
-        break
-      default:
-        router.push("/chat")
-    }
-  }
-  
-  const handleStatusChange = (id: string, status: "active" | "paused") => {
-    setWorkflows(prev => prev.map(w => {
-      if (w.id === id) {
-        // Only update if the workflow can have this status
-        if (w.status === "active" || w.status === "paused") {
-          return { ...w, status }
-        }
-      }
-      return w
-    }))
-  }
-  
-  const handleViewDetails = (id: string) => {
-    router.push(`/workflow/${id}`)
+  // Not authenticated (shouldn't happen due to middleware)
+  if (user === null) {
+    router.push('/auth/signin')
+    return null
   }
 
-  const handleFloatingAction = (action: string) => {
-    switch (action) {
-      case "new-workflow":
-        setCurrentTransition("workflow-generation")
-        break
-      case "templates":
-        router.push("/templates")
-        break
-      case "integrations":
-        setCurrentModal("api-setup")
-        break
-      case "ai-suggestions":
-        setCurrentModal("oauth-permission")
-        break
-      case "dashboard":
-        // Already on dashboard
-        break
-    }
-  }
+  const filteredWorkflows = workflows?.filter(workflow => {
+    const matchesSearch = workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         workflow.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesTab = activeTab === "all" || workflow.status === activeTab
+    return matchesSearch && matchesTab
+  }) || []
 
-  const handleTransitionComplete = (result?: any) => {
-    setCurrentTransition(null)
-    if (result?.workflowId) {
-      // Add new workflow to list
-      const newWorkflow = {
-        id: result.workflowId,
-        name: "New AI Generated Workflow",
-        description: "Automatically created workflow",
-        status: "active" as const,
-        created: "Just now",
-        executions: 0,
-        lastRun: "Never"
-      }
-      setWorkflows(prev => [newWorkflow, ...prev])
-    }
-    router.push("/chat")
-  }
-
-  const handleModalComplete = (result?: any) => {
-    setCurrentModal(null)
-    if (result?.services) {
-      console.log("API services configured:", result.services)
-    }
+  const stats = userStats || {
+    totalWorkflows: 0,
+    activeWorkflows: 0,
+    totalRuns: 0,
+    successfulRuns: 0,
+    failedRuns: 0,
+    plan: "free" as const
   }
 
   return (
-    <TransitionManager
-      type={currentTransition}
-      workflowType="AI-powered automation"
-      onComplete={handleTransitionComplete}
-      onCancel={() => setCurrentTransition(null)}
-    >
-      <ModalManager
-        type={currentModal}
-        onComplete={handleModalComplete}
-        onCancel={() => setCurrentModal(null)}
-      >
-        <div className="min-h-screen bg-background relative">
+    <div className="min-h-screen bg-background">
       <DashboardHeader 
-        workflowCount={workflows.length}
-        onCreateWorkflow={handleCreateWorkflow}
-        onSearch={setSearchQuery}
+        user={{
+          name: userProfile?.firstName ? `${userProfile.firstName} ${userProfile.lastName || ''}`.trim() : user.email || 'User',
+          email: user.email || '',
+          avatar: userProfile?.avatar || undefined,
+          plan: userProfile?.plan || 'free'
+        }}
       />
-      
-      <div className="container mx-auto px-4 py-6">
-        {workflows.length > 0 && (
-          <div className="mb-8">
-            <DashboardStats />
-          </div>
-        )}
 
-        {/* Quick Actions inspired by mockups */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <button
-            onClick={() => handleQuickAction("social-media")}
-            className="p-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:shadow-lg transition-all duration-200 hover:scale-105 group"
-          >
-            <div className="flex items-center space-x-3">
-              <div className="text-2xl group-hover:scale-110 transition-transform">📱</div>
-              <div className="text-left">
-                <div className="font-semibold">Social Media</div>
-                <div className="text-sm opacity-90">Automate posting</div>
-              </div>
-            </div>
-          </button>
-
-          <button
-            onClick={() => handleQuickAction("email-automation")}
-            className="p-4 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl hover:shadow-lg transition-all duration-200 hover:scale-105 group"
-          >
-            <div className="flex items-center space-x-3">
-              <div className="text-2xl group-hover:scale-110 transition-transform">📧</div>
-              <div className="text-left">
-                <div className="font-semibold">Email Automation</div>
-                <div className="text-sm opacity-90">Smart campaigns</div>
-              </div>
-            </div>
-          </button>
-
-          <button
-            onClick={() => handleQuickAction("data-backup")}
-            className="p-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:shadow-lg transition-all duration-200 hover:scale-105 group"
-          >
-            <div className="flex items-center space-x-3">
-              <div className="text-2xl group-hover:scale-110 transition-transform">💾</div>
-              <div className="text-left">
-                <div className="font-semibold">Data Backup</div>
-                <div className="text-sm opacity-90">Secure storage</div>
-              </div>
-            </div>
-          </button>
+      <main className="container mx-auto px-4 py-8">
+        {/* Stats Overview */}
+        <div className="mb-8">
+          <DashboardStats
+            totalWorkflows={stats.totalWorkflows}
+            activeWorkflows={stats.activeWorkflows}
+            totalRuns={stats.totalRuns}
+            successRate={stats.totalRuns > 0 ? Math.round((stats.successfulRuns / stats.totalRuns) * 100) : 0}
+          />
         </div>
-        
-        <div className="space-y-4">
-          {workflows.length === 0 ? (
-            <EmptyState onCreateWorkflow={handleCreateWorkflow} />
-          ) : filteredWorkflows.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground mb-4">No workflows match "{searchQuery}"</p>
-              <p className="text-sm text-muted-foreground">
-                Try a different search term or create a new workflow.
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {filteredWorkflows.map((workflow, index) => (
-                <div
-                  key={workflow.id}
-                  className="animate-in slide-in-from-bottom-2 duration-300"
-                  style={{ animationDelay: `${index * 100}ms` }}
-                >
-                  <WorkflowCard
-                    {...workflow}
-                    onStatusChange={handleStatusChange}
-                    onViewDetails={handleViewDetails}
-                  />
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Workflows Section */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xl font-semibold">Your Workflows</CardTitle>
+                  <Button 
+                    onClick={() => router.push('/chat')}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Workflow
+                  </Button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        {workflows.length > 0 && (
-          <div className="text-center mt-8 py-4 text-sm text-muted-foreground">
-            Powered by AI • Built for automation • {workflows.length} workflow{workflows.length === 1 ? '' : 's'}
+              </CardHeader>
+              <CardContent>
+                {/* Search and Filters */}
+                <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                  <div className="relative flex-1">
+                    <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search workflows..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <Button variant="outline" size="sm">
+                    <Filter className="h-4 w-4 mr-2" />
+                    Filter
+                  </Button>
+                </div>
+
+                {/* Status Tabs */}
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="all">All ({workflows?.length || 0})</TabsTrigger>
+                    <TabsTrigger value="active">
+                      Active ({workflows?.filter(w => w.status === "active").length || 0})
+                    </TabsTrigger>
+                    <TabsTrigger value="paused">
+                      Paused ({workflows?.filter(w => w.status === "paused").length || 0})
+                    </TabsTrigger>
+                    <TabsTrigger value="error">
+                      Error ({workflows?.filter(w => w.status === "error").length || 0})
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+
+                {/* Workflows List */}
+                {filteredWorkflows.length === 0 ? (
+                  searchQuery ? (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500">No workflows found matching "{searchQuery}"</p>
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="No workflows yet"
+                      description="Create your first automation workflow using natural language"
+                      actionLabel="Create Workflow"
+                      onAction={() => router.push('/chat')}
+                    />
+                  )
+                ) : (
+                  <div className="space-y-4">
+                    {filteredWorkflows.map((workflow) => (
+                      <WorkflowCard
+                        key={workflow._id}
+                        id={workflow._id}
+                        name={workflow.name}
+                        description={workflow.description || ""}
+                        status={workflow.status}
+                        type={workflow.type}
+                        lastRun={workflow.lastRun}
+                        nextRun={workflow.nextRun}
+                        runCount={workflow.runCount}
+                        errorCount={workflow.errorCount}
+                        trigger={workflow.trigger}
+                        actions={workflow.actions}
+                        createdAt={workflow.createdAt}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
-        )}
-      </div>
 
-      {/* Floating Actions inspired by your mockups */}
-      <FloatingActions onAction={handleFloatingAction} />
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Recent Activity */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!recentRuns || recentRuns.length === 0 ? (
+                  <p className="text-sm text-gray-500">No recent activity</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentRuns.slice(0, 5).map((run) => (
+                      <div key={run._id} className="flex items-center space-x-3">
+                        <div className={`w-2 h-2 rounded-full ${
+                          run.status === "completed" ? "bg-green-500" :
+                          run.status === "failed" ? "bg-red-500" :
+                          "bg-yellow-500"
+                        }`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            Workflow run {run.status}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(run.startedAt).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-      {/* Command Palette inspired by your mockups */}
-      <DashboardCommandPalette
-        isOpen={showCommandPalette}
-        onClose={() => setShowCommandPalette(false)}
-        onCreateWorkflow={handleCreateWorkflow}
-        onNavigate={(path) => router.push(path)}
-      />
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => router.push('/chat')}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create New Workflow
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => router.push('/chat')}
+                >
+                  <Search className="h-4 w-4 mr-2" />
+                  Browse Templates
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => router.push('/billing')}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Manage Billing
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Plan Status */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">Plan Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Current Plan</span>
+                    <Badge variant={stats.plan === "free" ? "secondary" : "default"}>
+                      {stats.plan.charAt(0).toUpperCase() + stats.plan.slice(1)}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Workflows</span>
+                    <span className="text-sm font-medium">{stats.totalWorkflows}/∞</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Total Runs</span>
+                    <span className="text-sm font-medium">{stats.totalRuns}</span>
+                  </div>
+                  {stats.plan === "free" && (
+                    <Button 
+                      size="sm" 
+                      className="w-full mt-3 bg-blue-600 hover:bg-blue-700"
+                      onClick={() => router.push('/billing')}
+                    >
+                      Upgrade Plan
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </main>
     </div>
-    </ModalManager>
-    </TransitionManager>
   )
 }
