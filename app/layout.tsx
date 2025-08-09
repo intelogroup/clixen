@@ -32,11 +32,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className} suppressHydrationWarning>
-        <ConvexClientProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <ConvexClientProvider>
             {children}
-          </AuthProvider>
-        </ConvexClientProvider>
+          </ConvexClientProvider>
+        </AuthProvider>
       </body>
     </html>
   );
