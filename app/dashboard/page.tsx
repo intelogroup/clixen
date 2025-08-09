@@ -187,12 +187,20 @@ export default function DashboardPage() {
         {/* Workflow Controls */}
         <div className="bg-white border-b px-6 py-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
-              <TabsList className="grid w-full grid-cols-4 max-w-md">
-                <TabsTrigger value="active">Active ({getTabCount("active")})</TabsTrigger>
-                <TabsTrigger value="draft">Draft ({getTabCount("draft")})</TabsTrigger>
-                <TabsTrigger value="all">All ({getTabCount("all")})</TabsTrigger>
-                <TabsTrigger value="paused">Paused ({getTabCount("paused")})</TabsTrigger>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:flex-1">
+              <TabsList className="grid w-full grid-cols-4 max-w-lg">
+                <TabsTrigger value="active" className="text-xs sm:text-sm">
+                  Active ({getTabCount("active")})
+                </TabsTrigger>
+                <TabsTrigger value="draft" className="text-xs sm:text-sm">
+                  Draft ({getTabCount("draft")})
+                </TabsTrigger>
+                <TabsTrigger value="all" className="text-xs sm:text-sm">
+                  All ({getTabCount("all")})
+                </TabsTrigger>
+                <TabsTrigger value="paused" className="text-xs sm:text-sm">
+                  Paused ({getTabCount("paused")})
+                </TabsTrigger>
               </TabsList>
             </Tabs>
             

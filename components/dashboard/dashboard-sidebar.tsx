@@ -129,9 +129,11 @@ export function DashboardSidebar({ className, onNavigate, onSignOut }: Dashboard
     <div className={cn("w-[300px] bg-white border-r flex flex-col h-full", className)}>
       {/* Header */}
       <div className="p-6 border-b">
-        <div className="flex items-center space-x-2 mb-4">
-          <Zap className="h-6 w-6 text-blue-600" />
-          <h1 className="text-xl font-bold">Clixen</h1>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <Zap className="h-6 w-6 text-blue-600" />
+            <h1 className="text-xl font-bold">Clixen</h1>
+          </div>
         </div>
         
         <Button
