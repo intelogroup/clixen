@@ -44,10 +44,16 @@ export default function SignInPage() {
   }
 
   const handleSocialAuth = async (provider: "github" | "google") => {
+    setIsLoading(true)
+    setError("")
+
     try {
       await signIn(provider)
+      // Redirect to dashboard on successful social auth
+      router.push('/dashboard')
     } catch (err: any) {
       setError(err.message || `Failed to sign in with ${provider}`)
+      setIsLoading(false)
     }
   }
 
