@@ -27,15 +27,16 @@ export default function SignInPage() {
     e.preventDefault()
     setIsLoading(true)
     setError("")
-    
+
     try {
       await signIn("password", {
         email: formData.email,
         password: formData.password,
         flow: "signIn",
       })
-      
-      // The auth will redirect automatically on success
+
+      // Redirect to dashboard on successful signin
+      router.push('/dashboard')
     } catch (err: any) {
       setError(err.message || "Invalid email or password. Please try again.")
       setIsLoading(false)
