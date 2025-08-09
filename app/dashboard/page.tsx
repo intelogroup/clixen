@@ -71,13 +71,20 @@ export default function DashboardPage() {
     workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     workflow.description.toLowerCase().includes(searchQuery.toLowerCase())
   )
-  const [searchQuery, setSearchQuery] = useState("")
-  
-  const filteredWorkflows = workflows.filter(workflow =>
-    workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    workflow.description.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-  
+
+  // Global keyboard shortcut for command palette
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault()
+        setShowCommandPalette(true)
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
   const handleCreateWorkflow = () => {
     setCurrentTransition("workflow-generation")
   }
