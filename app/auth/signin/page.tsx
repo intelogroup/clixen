@@ -8,10 +8,12 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAuthActions } from "@convex-dev/auth/react"
 import Link from "next/link"
 
 export default function SignInPage() {
   const router = useRouter()
+  const { signIn } = useAuthActions()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -26,23 +28,26 @@ export default function SignInPage() {
     setIsLoading(true)
     setError("")
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    // Simulate authentication
-    if (formData.email && formData.password) {
-      setIsLoading(false)
-      router.push('/dashboard')
-    } else {
-      setError("Invalid email or password. Please try again.")
+    try {
+      await signIn("password", {
+        email: formData.email,
+        password: formData.password,
+        flow: "signIn",
+      })
+      
+      // The auth will redirect automatically on success
+    } catch (err: any) {
+      setError(err.message || "Invalid email or password. Please try again.")
       setIsLoading(false)
     }
   }
 
-  const handleSocialAuth = (provider: string) => {
-    console.log(`Authenticating with ${provider}`)
-    // In a real app, this would trigger OAuth flow
-    router.push('/dashboard')
+  const handleSocialAuth = async (provider: "github" | "google") => {
+    try {
+      await signIn(provider)
+    } catch (err: any) {
+      setError(err.message || `Failed to sign in with ${provider}`)
+    }
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,6 +62,14 @@ export default function SignInPage() {
       ...prev,
       rememberMe: e.target.checked
     }))
+  }
+
+  const handleDemoAccount = () => {
+    setFormData({
+      email: "demo@clixen.com",
+      password: "demo123",
+      rememberMe: false
+    })
   }
 
   return (
@@ -91,6 +104,7 @@ export default function SignInPage() {
                 variant="outline"
                 className="w-full h-11 border-2"
                 onClick={() => handleSocialAuth('google')}
+                disabled={isLoading}
               >
                 <Chrome className="h-4 w-4 mr-2" />
                 Continue with Google
@@ -99,6 +113,7 @@ export default function SignInPage() {
                 variant="outline"
                 className="w-full h-11 border-2"
                 onClick={() => handleSocialAuth('github')}
+                disabled={isLoading}
               >
                 <Github className="h-4 w-4 mr-2" />
                 Continue with GitHub
@@ -137,6 +152,7 @@ export default function SignInPage() {
                   onChange={handleInputChange}
                   className="h-11"
                   placeholder="john@company.com"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -155,11 +171,13 @@ export default function SignInPage() {
                     onChange={handleInputChange}
                     className="h-11 pr-10"
                     placeholder="Enter your password"
+                    disabled={isLoading}
                   />
                   <button
                     type="button"
                     className="absolute inset-y-0 right-0 pr-3 flex items-center"
                     onClick={() => setShowPassword(!showPassword)}
+                    disabled={isLoading}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4 text-gray-400" />
@@ -180,6 +198,7 @@ export default function SignInPage() {
                     checked={formData.rememberMe}
                     onChange={handleCheckboxChange}
                     className="rounded border-gray-300"
+                    disabled={isLoading}
                   />
                   <label htmlFor="rememberMe" className="text-sm text-gray-600">
                     Remember me
@@ -231,9 +250,8 @@ export default function SignInPage() {
                   size="sm"
                   variant="outline"
                   className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                  onClick={() => {
-                    setFormData({ email: "demo@clixen.com", password: "demo123", rememberMe: false })
-                  }}
+                  onClick={handleDemoAccount}
+                  disabled={isLoading}
                 >
                   Use Demo Account
                 </Button>
