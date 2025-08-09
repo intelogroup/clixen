@@ -25,11 +25,11 @@ import type * as workflows from "../workflows.js";
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<
+export const api: FilterApi<
   ApiFromModules<{
     messages: typeof messages;
     users: typeof users;
     workflows: typeof workflows;
   }>,
   FunctionReference<any, "public">
->;
+> = {} as any;
