@@ -131,10 +131,10 @@ export default function DashboardPage() {
       {/* Main Content */}
       <div className="flex-1 min-w-0 flex flex-col max-w-[900px] mx-auto w-full">
         {/* Header */}
-        <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 px-8 py-6 shadow-sm">
+        <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 px-6 py-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
                 Workflows
               </h1>
             </div>
@@ -171,8 +171,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Workflow Controls */}
-        <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 px-8 py-6 shadow-sm">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-6">
+        <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 px-6 py-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:flex-1">
               <TabsList className="grid w-full grid-cols-4 max-w-lg bg-slate-100 p-1 rounded-xl">
                 <TabsTrigger value="active" className="text-xs sm:text-sm rounded-lg font-medium data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200">
@@ -212,19 +212,19 @@ export default function DashboardPage() {
         </div>
 
         {/* Workflow List */}
-        <div className="flex-1 p-8">
-          <div className="space-y-6">
+        <div className="flex-1 p-4">
+          <div className="space-y-3">
             {filteredWorkflows.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="text-slate-500 mb-6 text-lg">
+              <div className="text-center py-8">
+                <div className="text-slate-500 mb-4 text-sm">
                   {searchQuery ? `No workflows found matching "${searchQuery}"` : "No workflows found"}
                 </div>
                 <Button
                   onClick={() => router.push('/chat')}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-8 py-4 font-semibold shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all duration-200"
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-4 py-2 text-sm font-medium"
                 >
-                  <Plus className="h-5 w-5 mr-3" />
-                  Create Your First Workflow
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Workflow
                 </Button>
               </div>
             ) : (
