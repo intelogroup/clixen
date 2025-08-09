@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useAuthActions } from "@convex-dev/auth/react"
+import { useAuthActions } from "@/lib/auth-context"
 import { useRouter } from "next/navigation"
 
 interface User {
