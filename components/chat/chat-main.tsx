@@ -7,6 +7,7 @@ import { ChatMessage } from "./chat-message"
 import { ChatInput } from "./chat-input"
 import { QuickSuggestions } from "./quick-suggestions"
 import { TypingIndicator } from "./typing-indicator"
+import { WorkflowExamples } from "./workflow-examples"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface WorkflowSummary {
@@ -140,24 +141,20 @@ export function ChatMain({
         </div>
       </div>
 
-      {/* Welcome Message for Empty Chat */}
+      {/* Welcome Message and Examples for Empty Chat */}
       {messages.length === 0 && (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="text-center max-w-md">
-            <Bot className="h-12 w-12 text-blue-600 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Welcome to Clixen AI!</h3>
-            <p className="text-gray-600 mb-6">
-              I can help you create powerful automation workflows using natural language.
-              Just tell me what you'd like to automate, and I'll guide you through creating it step by step.
-            </p>
-            <div className="text-left space-y-2 text-sm text-gray-500">
-              <p><strong>Try something like:</strong></p>
-              <ul className="space-y-1 pl-4">
-                <li>• "Send me an email every morning with the weather forecast"</li>
-                <li>• "Backup my files to cloud storage weekly"</li>
-                <li>• "Post daily motivational quotes to my social media"</li>
-              </ul>
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-8">
+              <Bot className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Clixen AI!</h2>
+              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                I help you create powerful automation workflows using natural language.
+                Just tell me what you'd like to automate, and I'll guide you through creating it step by step.
+              </p>
             </div>
+
+            <WorkflowExamples onSelectExample={onSendMessage} />
           </div>
         </div>
       )}
@@ -181,7 +178,7 @@ export function ChatMain({
                 onAction={(action, value) => handleMessageAction(message.id, action, value)}
               />
               {message.showSuggestions && (
-                <div className="mt-4">
+                <div className="mt-6">
                   <QuickSuggestions onSuggestionClick={onSendMessage} />
                 </div>
               )}
