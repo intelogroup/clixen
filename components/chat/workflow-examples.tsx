@@ -160,11 +160,11 @@ export function WorkflowExamples({ onSelectExample }: WorkflowExamplesProps) {
               {category}
             </h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
               {categoryExamples.map((example, index) => (
-                <Card 
-                  key={index} 
-                  className="group hover:shadow-lg transition-all duration-200 cursor-pointer border-2 hover:border-blue-200"
+                <Card
+                  key={index}
+                  className="group hover:shadow-lg transition-all duration-200 cursor-pointer border-2 hover:border-blue-200 h-full"
                   onClick={() => onSelectExample(example.prompt)}
                 >
                   <CardHeader className="pb-3">
