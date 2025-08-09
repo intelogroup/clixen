@@ -5,6 +5,7 @@ import { Plus, FileText, Plug, Lightbulb, BarChart3, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { ModalManager, ModalType } from "@/components/modals/modal-manager"
 
 interface FloatingActionsProps {
   onAction?: (action: string) => void
@@ -12,6 +13,7 @@ interface FloatingActionsProps {
 
 export function FloatingActions({ onAction }: FloatingActionsProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [currentModal, setCurrentModal] = useState<ModalType>(null)
 
   const actions = [
     { 
@@ -52,8 +54,22 @@ export function FloatingActions({ onAction }: FloatingActionsProps) {
   ]
 
   const handleAction = (actionId: string) => {
-    onAction?.(actionId)
-    setIsOpen(false)
+    if (actionId === "integrations") {
+      setCurrentModal("oauth-permission")
+      setIsOpen(false)
+    } else {
+      onAction?.(actionId)
+      setIsOpen(false)
+    }
+  }
+
+  const handleModalComplete = (result?: any) => {
+    console.log("Integration completed:", result)
+    setCurrentModal(null)
+  }
+
+  const handleModalCancel = () => {
+    setCurrentModal(null)
   }
 
   return (
