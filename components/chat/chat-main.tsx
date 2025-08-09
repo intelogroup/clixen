@@ -1,11 +1,12 @@
 "use client"
 
-import { Settings, User, Bot, ArrowLeft, MoreHorizontal } from "lucide-react"
+import { Settings, User, Bot, ArrowLeft, MoreHorizontal, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ChatMessage } from "./chat-message"
 import { ChatInput } from "./chat-input"
 import { QuickSuggestions } from "./quick-suggestions"
+import { TypingIndicator } from "./typing-indicator"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface WorkflowSummary {
@@ -61,6 +62,8 @@ interface ChatMainProps {
   onMessageAction?: (messageId: number, action: string, value?: string) => void
   isCreatingWorkflow?: boolean
   userName?: string
+  onToggleSidebar?: () => void
+  isTyping?: boolean
 }
 
 export function ChatMain({
@@ -69,7 +72,9 @@ export function ChatMain({
   onSendMessage,
   onMessageAction,
   isCreatingWorkflow = false,
-  userName = "John D."
+  userName = "John D.",
+  onToggleSidebar,
+  isTyping = false
 }: ChatMainProps) {
   const handleMessageAction = (messageId: number, action: string, value?: string) => {
     onMessageAction?.(messageId, action, value)
@@ -78,15 +83,27 @@ export function ChatMain({
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Enhanced Header */}
-      <div className="border-b bg-white px-6 py-4">
+      <div className="border-b bg-white px-4 md:px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <Button variant="ghost" size="sm" className="p-2">
+            {/* Mobile hamburger menu */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="p-2 md:hidden"
+              onClick={onToggleSidebar}
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+
+            {/* Desktop back button */}
+            <Button variant="ghost" size="sm" className="p-2 hidden md:flex">
               <ArrowLeft className="h-4 w-4" />
             </Button>
+
             <div className="flex items-center space-x-2">
               <Bot className="h-5 w-5 text-blue-600" />
-              <span className="font-semibold text-gray-900">{chatTitle}</span>
+              <span className="font-semibold text-gray-900 truncate">{chatTitle}</span>
             </div>
           </div>
 
@@ -147,7 +164,7 @@ export function ChatMain({
 
       {/* Chat Messages */}
       {messages.length > 0 && (
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
           {messages.map((message) => (
             <div key={message.id}>
               <ChatMessage
@@ -171,17 +188,24 @@ export function ChatMain({
             </div>
           ))}
 
+          {/* Typing Indicator */}
+          {isTyping && (
+            <div className="mt-4">
+              <TypingIndicator />
+            </div>
+          )}
+
           {/* Auto-scroll anchor */}
           <div id="chat-bottom" />
         </div>
       )}
 
       {/* Enhanced Input Area */}
-      <div className="border-t bg-white p-6">
+      <div className="border-t bg-white p-4 md:p-6">
         <ChatInput
           onSendMessage={onSendMessage}
-          disabled={isCreatingWorkflow}
-          placeholder={isCreatingWorkflow ? "AI is creating your workflow..." : "Describe your workflow..."}
+          disabled={isCreatingWorkflow || isTyping}
+          placeholder={isCreatingWorkflow || isTyping ? "AI is working..." : "Describe your workflow..."}
         />
       </div>
     </div>
