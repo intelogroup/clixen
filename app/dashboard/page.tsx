@@ -64,6 +64,12 @@ export default function DashboardPage() {
   const [currentModal, setCurrentModal] = useState<ModalType>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+
+  const filteredWorkflows = workflows.filter(workflow =>
+    workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    workflow.description.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+  const [searchQuery, setSearchQuery] = useState("")
   
   const filteredWorkflows = workflows.filter(workflow =>
     workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
