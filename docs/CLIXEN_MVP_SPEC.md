@@ -23,7 +23,7 @@
 This MVP comprises three layers:
 
 1. **Chat Interface (Frontend)**
-   - Single-page React app with text prompt, persistent chat history per project/workflow, and a "New Chat" button to start fresh conversations.
+   - Single-page next js app with text prompt, persistent chat history per project/workflow, and a "New Chat" button to start fresh conversations.
    - Natural-language guidance: proactively ask clarifying questions to perform feasibility checks, refine requirements, and guide the user through workflow definition.
    - Minimalistic interactive feedback: loading spinners and concise status messages (no JSON or diagram display).
 2. **Workflow Engine (Backend)**
