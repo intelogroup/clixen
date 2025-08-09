@@ -1,16 +1,22 @@
 "use client"
 
 import { useState } from "react"
-import { ChatHeader } from "@/components/chat/chat-header"
-import { ChatMessage } from "@/components/chat/chat-message"
-import { ChatInput } from "@/components/chat/chat-input"
+import { ChatSidebar } from "@/components/chat/chat-sidebar"
+import { ChatMain } from "@/components/chat/chat-main"
 
 export default function ChatPage() {
+  const [currentChatId, setCurrentChatId] = useState<string>()
   const [messages, setMessages] = useState([
     {
       id: 1,
+      type: "user" as const,
+      content: "Create a workflow that sends me daily weather updates for my city",
+      timestamp: "Now"
+    },
+    {
+      id: 2,
       type: "ai" as const,
-      content: "Welcome to Clixen AI! I help you create powerful automation workflows using natural language. Just tell me what you'd like to automate, and I'll guide you through creating it step by step.\n\nTry something like: \"Send me an email every morning with the weather forecast\" or \"Backup my files to cloud storage weekly\"",
+      content: "I'll create a weather notification workflow for you! Here's what I'll set up:\n\n✅ Weather API Integration\n📱 Daily SMS/Email Notifications\n🕐 Customizable Schedule\n\nWould you like me to proceed with the setup?",
       timestamp: "Now"
     }
   ])
@@ -35,20 +41,19 @@ export default function ChatPage() {
         content: "Perfect! I can create that workflow for you. Here's what I understand:",
         timestamp: "Now",
         workflowSummary: {
-          name: "Daily Email Automation",
+          name: "Daily Weather Updates",
           trigger: "Daily at 8:00 AM",
           action: "Fetch weather data",
-          output: "Send formatted email"
+          output: "Send formatted notification"
         },
         progress: [
-          { step: "Weather API configured", status: "completed" as const },
-          { step: "Email template created", status: "completed" as const },
-          { step: "Daily schedule set", status: "completed" as const },
-          { step: "Deploying to n8n...", status: "in-progress" as const }
+          { step: "Weather API Integration", status: "completed" as const },
+          { step: "Daily SMS/Email Notifications", status: "completed" as const },
+          { step: "Customizable Schedule", status: "in-progress" as const }
         ]
       }
       setMessages(prev => [...prev, aiMessage])
-      
+
       // Complete workflow creation after 3 seconds
       setTimeout(() => {
         setIsCreatingWorkflow(false)
@@ -56,33 +61,38 @@ export default function ChatPage() {
     }, 1000)
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      <ChatHeader />
-      
-      <div className="max-w-4xl mx-auto p-4">
-        <div className="bg-card rounded-lg border h-[calc(100vh-120px)] flex flex-col">
-          {/* Chat Messages */}
-          <div className="flex-1 p-6 overflow-y-auto space-y-6">
-            {messages.map((message) => (
-              <ChatMessage
-                key={message.id}
-                type={message.type}
-                content={message.content}
-                timestamp={message.timestamp}
-                workflowSummary={message.workflowSummary}
-                progress={message.progress}
-              />
-            ))}
-          </div>
+  const handleNewChat = () => {
+    setCurrentChatId(undefined)
+    setMessages([
+      {
+        id: 1,
+        type: "ai" as const,
+        content: "Welcome to Clixen AI! I help you create powerful automation workflows using natural language. Just tell me what you'd like to automate, and I'll guide you through creating it step by step.\n\nTry something like: \"Send me an email every morning with the weather forecast\" or \"Backup my files to cloud storage weekly\"",
+        timestamp: "Now"
+      }
+    ])
+  }
 
-          {/* Input Area */}
-          <ChatInput 
-            onSendMessage={handleSendMessage}
-            disabled={isCreatingWorkflow}
-          />
-        </div>
-      </div>
+  const handleSelectChat = (chatId: string) => {
+    setCurrentChatId(chatId)
+    // Load chat messages for selected chat
+    // For now, just show the current conversation
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex">
+      <ChatSidebar
+        currentChatId={currentChatId}
+        onNewChat={handleNewChat}
+        onSelectChat={handleSelectChat}
+      />
+
+      <ChatMain
+        messages={messages}
+        onSendMessage={handleSendMessage}
+        isCreatingWorkflow={isCreatingWorkflow}
+        chatTitle="New Workflow Chat"
+      />
     </div>
   )
 }
