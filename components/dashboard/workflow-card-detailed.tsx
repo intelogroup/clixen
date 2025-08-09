@@ -105,51 +105,62 @@ export function WorkflowCardDetailed({
   }
 
   return (
-    <Card className="group hover:shadow-md transition-shadow">
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center space-x-2">
-            <span className={cn("text-lg", getStatusColor(status))}>
-              {getStatusIcon(status)}
-            </span>
-            <h3 className="text-lg font-semibold text-gray-900">{name}</h3>
+    <Card className="group hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 border-0 bg-white/70 backdrop-blur-sm hover:bg-white/90 rounded-2xl overflow-hidden">
+      <CardContent className="p-8">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center space-x-4">
+            <div className={cn("p-2 rounded-xl",
+              status === "active" ? "bg-green-100" :
+              status === "paused" ? "bg-yellow-100" :
+              status === "draft" ? "bg-slate-100" :
+              "bg-red-100"
+            )}>
+              <span className={cn("text-xl font-bold", getStatusColor(status))}>
+                {getStatusIcon(status)}
+              </span>
+            </div>
+            <h3 className="text-xl font-bold text-slate-900">{name}</h3>
           </div>
-          
-          <div className="flex items-center space-x-2">
+
+          <div className="flex items-center space-x-3">
             {status === "draft" && (
-              <Button size="sm" onClick={() => handleAction('deploy')}>
+              <Button
+                size="sm"
+                onClick={() => handleAction('deploy')}
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-4 py-2 font-semibold shadow-lg shadow-blue-500/25 transition-all duration-200"
+              >
                 Deploy Workflow
               </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-slate-100 rounded-xl">
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-48 rounded-xl border-slate-200 shadow-xl">
                 {status === "active" ? (
-                  <DropdownMenuItem onClick={() => handleAction('pause')}>
+                  <DropdownMenuItem onClick={() => handleAction('pause')} className="rounded-lg">
                     <Pause className="h-4 w-4 mr-2" />
                     Pause Workflow
                   </DropdownMenuItem>
                 ) : status === "paused" ? (
-                  <DropdownMenuItem onClick={() => handleAction('resume')}>
+                  <DropdownMenuItem onClick={() => handleAction('resume')} className="rounded-lg">
                     <Play className="h-4 w-4 mr-2" />
                     Resume Workflow
                   </DropdownMenuItem>
                 ) : null}
-                <DropdownMenuItem onClick={() => handleAction('edit')}>
+                <DropdownMenuItem onClick={() => handleAction('edit')} className="rounded-lg">
                   <Settings className="h-4 w-4 mr-2" />
                   Edit Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleAction('archive')}>
+                <DropdownMenuItem onClick={() => handleAction('archive')} className="rounded-lg">
                   <Archive className="h-4 w-4 mr-2" />
                   Archive
                 </DropdownMenuItem>
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={() => handleAction('delete')}
-                  className="text-red-600"
+                  className="text-red-600 rounded-lg"
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete
@@ -159,36 +170,45 @@ export function WorkflowCardDetailed({
           </div>
         </div>
 
-        <p className="text-gray-600 mb-3">{description}</p>
-        
-        <div className="text-sm text-gray-500 mb-4">
+        <p className="text-slate-600 mb-4 text-lg leading-relaxed">{description}</p>
+
+        <div className="text-sm text-slate-500 mb-6 bg-slate-50 rounded-xl p-4 border border-slate-100">
           {formatTriggerInfo()}
           {status === "paused" && " • Status: Paused"}
         </div>
 
         {status === "draft" ? (
-          <div className="text-sm text-gray-500">
-            Ready for deployment
+          <div className="text-sm text-slate-500 bg-blue-50 rounded-xl p-4 border border-blue-100">
+            <span className="font-medium text-blue-700">Ready for deployment</span>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-4">
             {/* Progress Bar */}
-            <div className="flex items-center space-x-3">
-              <Progress 
-                value={metrics.successRate} 
-                className="flex-1 h-2"
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-700">Success Rate</span>
+                <span className="text-sm font-bold text-slate-900">{metrics.successRate}%</span>
+              </div>
+              <Progress
+                value={metrics.successRate}
+                className="h-3 bg-slate-100 rounded-full overflow-hidden"
               />
-              <span className="text-sm text-gray-600 min-w-0">
-                {metrics.successfulRuns} successful runs
-              </span>
             </div>
-            
+
             {/* Metrics */}
-            <div className="flex items-center justify-between text-sm text-gray-500">
-              <span>{metrics.totalRuns} runs</span>
-              {metrics.failedRuns > 0 && (
-                <span className="text-red-600">• {metrics.failedRuns} failures</span>
-              )}
+            <div className="grid grid-cols-3 gap-4 pt-2">
+              <div className="text-center">
+                <div className="text-xl font-bold text-slate-900">{metrics.totalRuns}</div>
+                <div className="text-xs text-slate-500 font-medium">Total Runs</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-green-600">{metrics.successfulRuns}</div>
+                <div className="text-xs text-slate-500 font-medium">Successful</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-red-600">{metrics.failedRuns}</div>
+                <div className="text-xs text-slate-500 font-medium">Failures</div>
+              </div>
             </div>
           </div>
         )}
