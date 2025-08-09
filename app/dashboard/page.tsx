@@ -152,7 +152,18 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <TransitionManager
+      type={currentTransition}
+      workflowType="AI-powered automation"
+      onComplete={handleTransitionComplete}
+      onCancel={() => setCurrentTransition(null)}
+    >
+      <ModalManager
+        type={currentModal}
+        onComplete={handleModalComplete}
+        onCancel={() => setCurrentModal(null)}
+      >
+        <div className="min-h-screen bg-background relative">
       <DashboardHeader 
         workflowCount={workflows.length}
         onCreateWorkflow={handleCreateWorkflow}
@@ -196,6 +207,11 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Floating Actions inspired by your mockups */}
+      <FloatingActions onAction={handleFloatingAction} />
     </div>
+    </ModalManager>
+    </TransitionManager>
   )
 }
