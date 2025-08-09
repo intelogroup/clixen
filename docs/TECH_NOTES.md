@@ -83,7 +83,7 @@
 
 ## 15. Accessibility & Internationalization
 - **WCAG 2.1 AA**: Design and test UI components for color contrast, keyboard navigation, and ARIA roles.
-- **i18n readiness**: Use a translation framework (e.g. react-i18next) and externalize all user-facing strings for future localization.
+- **i18n readiness**: Use a translation framework and externalize all user-facing strings for future localization.
 
 ## 16. Performance Budgets
 - **Bundle size**: Limit initial JS bundle to ≤200 KB gzipped; implement code-splitting for heavy modules.
