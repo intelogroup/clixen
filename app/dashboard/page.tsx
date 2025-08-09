@@ -6,6 +6,9 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardStats } from "@/components/dashboard/dashboard-stats"
 import { WorkflowCard } from "@/components/dashboard/workflow-card"
 import { EmptyState } from "@/components/dashboard/empty-state"
+import { FloatingActions } from "@/components/chat/floating-actions"
+import { TransitionManager, TransitionType } from "@/components/transitions/transition-manager"
+import { ModalManager, ModalType } from "@/components/modals/modal-manager"
 
 const mockWorkflows = [
   {
@@ -57,6 +60,9 @@ const mockWorkflows = [
 export default function DashboardPage() {
   const router = useRouter()
   const [workflows, setWorkflows] = useState(mockWorkflows)
+  const [currentTransition, setCurrentTransition] = useState<TransitionType>(null)
+  const [currentModal, setCurrentModal] = useState<ModalType>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   
   const filteredWorkflows = workflows.filter(workflow =>
@@ -65,7 +71,23 @@ export default function DashboardPage() {
   )
   
   const handleCreateWorkflow = () => {
-    router.push("/chat")
+    setCurrentTransition("workflow-generation")
+  }
+
+  const handleQuickAction = (type: string) => {
+    switch (type) {
+      case "social-media":
+        setCurrentTransition("workflow-generation")
+        break
+      case "email-automation":
+        setCurrentTransition("workflow-generation")
+        break
+      case "data-backup":
+        setCurrentTransition("workflow-generation")
+        break
+      default:
+        router.push("/chat")
+    }
   }
   
   const handleStatusChange = (id: string, status: "active" | "paused") => {
@@ -82,6 +104,51 @@ export default function DashboardPage() {
   
   const handleViewDetails = (id: string) => {
     router.push(`/workflow/${id}`)
+  }
+
+  const handleFloatingAction = (action: string) => {
+    switch (action) {
+      case "new-workflow":
+        setCurrentTransition("workflow-generation")
+        break
+      case "templates":
+        router.push("/templates")
+        break
+      case "integrations":
+        setCurrentModal("api-setup")
+        break
+      case "ai-suggestions":
+        setCurrentModal("oauth-permission")
+        break
+      case "dashboard":
+        // Already on dashboard
+        break
+    }
+  }
+
+  const handleTransitionComplete = (result?: any) => {
+    setCurrentTransition(null)
+    if (result?.workflowId) {
+      // Add new workflow to list
+      const newWorkflow = {
+        id: result.workflowId,
+        name: "New AI Generated Workflow",
+        description: "Automatically created workflow",
+        status: "active" as const,
+        created: "Just now",
+        executions: 0,
+        lastRun: "Never"
+      }
+      setWorkflows(prev => [newWorkflow, ...prev])
+    }
+    router.push("/chat")
+  }
+
+  const handleModalComplete = (result?: any) => {
+    setCurrentModal(null)
+    if (result?.services) {
+      console.log("API services configured:", result.services)
+    }
   }
 
   return (
