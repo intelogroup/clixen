@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ConvexClientProvider } from "./ConvexClientProvider";
+import { AuthProvider } from "@/lib/auth-context";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Clixen - AI-Powered Workflow Automation", 
+    title: "Clixen - AI-Powered Workflow Automation",
     description: "Create powerful automation workflows using natural language",
   },
 };
@@ -32,7 +33,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className} suppressHydrationWarning>
         <ConvexClientProvider>
-          {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
         </ConvexClientProvider>
       </body>
     </html>
