@@ -49,8 +49,8 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
 
-  // Loading states
-  if (user === undefined || userProfile === undefined || userStats === undefined) {
+  // Loading states - simplified for now
+  if (!user) {
     return (
       <div className="min-h-screen bg-background">
         <div className="flex items-center justify-center h-64">
