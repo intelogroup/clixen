@@ -165,13 +165,13 @@ export default function TransitionsDemo() {
                   <div className="text-green-400">// Import the TransitionManager</div>
                   <div>import {"{ TransitionManager }"} from "@/components/transitions/transition-manager"</div>
                   <div className="mt-4 text-green-400">// Use in your component</div>
-                  <div>&lt;TransitionManager</div>
-                  <div>&nbsp;&nbsp;type="workflow-generation"</div>
-                  <div>&nbsp;&nbsp;workflowType="email automation"</div>
-                  <div>&nbsp;&nbsp;onComplete={(result) =&gt; console.log(result)}</div>
-                  <div>&gt;</div>
-                  <div>&nbsp;&nbsp;&lt;YourContent /&gt;</div>
-                  <div>&lt;/TransitionManager&gt;</div>
+                  <div>{"<TransitionManager"}</div>
+                  <div>{"  type=\"workflow-generation\""}</div>
+                  <div>{"  workflowType=\"email automation\""}</div>
+                  <div>{"  onComplete={(result) => console.log(result)}"}</div>
+                  <div>{">"}</div>
+                  <div>{"  <YourContent />"}</div>
+                  <div>{"</TransitionManager>"}</div>
                 </div>
               </div>
             </CardContent>
