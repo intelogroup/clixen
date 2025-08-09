@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardStats } from "@/components/dashboard/dashboard-stats"
@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/dashboard/empty-state"
 import { FloatingActions } from "@/components/chat/floating-actions"
 import { TransitionManager, TransitionType } from "@/components/transitions/transition-manager"
 import { ModalManager, ModalType } from "@/components/modals/modal-manager"
+import { DashboardCommandPalette } from "@/components/dashboard/command-palette"
 
 const mockWorkflows = [
   {
@@ -64,6 +65,7 @@ export default function DashboardPage() {
   const [currentModal, setCurrentModal] = useState<ModalType>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [showCommandPalette, setShowCommandPalette] = useState(false)
 
   const filteredWorkflows = workflows.filter(workflow =>
     workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -263,6 +265,14 @@ export default function DashboardPage() {
 
       {/* Floating Actions inspired by your mockups */}
       <FloatingActions onAction={handleFloatingAction} />
+
+      {/* Command Palette inspired by your mockups */}
+      <DashboardCommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        onCreateWorkflow={handleCreateWorkflow}
+        onNavigate={(path) => router.push(path)}
+      />
     </div>
     </ModalManager>
     </TransitionManager>
