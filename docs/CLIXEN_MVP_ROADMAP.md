@@ -1,8 +1,8 @@
 # Clixen MVP Roadmap
 
 ## Sprint 1: Authentication, Project Management & Core Chat UI (2 weeks)
-- Initialize project scaffolding: React frontend and backend service template.
-- Implement Supabase Auth (email/password): sign up, sign in, session management.
+- Initialize project scaffolding: Nextjs frontend and backend service template.
+- Implement Clerk Auth (email/password): sign up, sign in, session management.
 - Build project dashboard: create/select projects and list saved workflows with name, status, and creation date.
 - Develop interactive chat UI: text prompt input, persistent chat history per project/workflow, "New Chat" button, and loading spinners.
 - Reference existing UI screenshot assets (screenshots/ui-improvements and ui-test-results) for chat and dashboard design inspiration.
@@ -29,7 +29,7 @@
 - Refine UI for mobile-friendly layouts and responsive design.
 - Integrate telemetry: capture core events (sign ins, workflow creation, deployments, execution errors) and enforce per-user rate limits/quotas.
 - Write developer and user documentation: quickstart guide, API references.
-- Create Supabase migration scripts for workflows versioning and rollback schema.
+- Create Convex db migration scripts for workflows versioning and rollback schema.
 - Finalize end-to-end tests and prepare v0.1.0 release.
 
 ## Long-Term Vision (Post-MVP)
