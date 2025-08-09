@@ -1,10 +1,11 @@
 "use client"
 
-import { Settings, User } from "lucide-react"
+import { Settings, User, Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ChatMessage } from "./chat-message"
 import { ChatInput } from "./chat-input"
+import { QuickSuggestions } from "./quick-suggestions"
 
 interface ChatMainProps {
   chatTitle?: string
@@ -23,64 +24,58 @@ interface ChatMainProps {
       step: string
       status: "completed" | "in-progress" | "pending"
     }>
+    showSuggestions?: boolean
   }>
   onSendMessage: (message: string) => void
   isCreatingWorkflow?: boolean
 }
 
-export function ChatMain({ 
+export function ChatMain({
   chatTitle = "New Workflow Chat",
-  messages, 
-  onSendMessage, 
-  isCreatingWorkflow = false 
+  messages,
+  onSendMessage,
+  isCreatingWorkflow = false
 }: ChatMainProps) {
   return (
     <div className="flex-1 flex flex-col h-full">
-      {/* Header */}
-      <div className="border-b bg-white px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <h2 className="font-semibold">{chatTitle}</h2>
+      {/* Professional Header */}
+      <div className="border-b bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-6">
+        <div className="text-center space-y-2">
+          <div className="flex items-center justify-center space-x-2">
+            <Bot className="h-6 w-6 text-blue-600" />
+            <h1 className="text-2xl font-bold text-gray-900">CLIXEN AI WORKFLOW CREATOR</h1>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-muted-foreground">John D.</span>
-            <Avatar className="h-7 w-7">
-              <AvatarFallback>
-                <User className="h-4 w-4" />
-              </AvatarFallback>
-            </Avatar>
-            <Button variant="ghost" size="sm" className="p-2">
-              <Settings className="h-4 w-4" />
-            </Button>
-          </div>
+          <p className="text-gray-600">Create amazing workflows with natural language</p>
         </div>
       </div>
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {messages.map((message) => (
-          <ChatMessage
-            key={message.id}
-            type={message.type}
-            content={message.content}
-            timestamp={message.timestamp}
-            workflowSummary={message.workflowSummary}
-            progress={message.progress}
-          />
+          <div key={message.id}>
+            <ChatMessage
+              type={message.type}
+              content={message.content}
+              timestamp={message.timestamp}
+              workflowSummary={message.workflowSummary}
+              progress={message.progress}
+            />
+            {message.showSuggestions && (
+              <div className="mt-4">
+                <QuickSuggestions onSuggestionClick={onSendMessage} />
+              </div>
+            )}
+          </div>
         ))}
       </div>
 
-      {/* Input Area */}
+      {/* Enhanced Input Area */}
       <div className="border-t bg-white p-6">
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">Describe your workflow...</p>
-          <ChatInput 
-            onSendMessage={onSendMessage}
-            disabled={isCreatingWorkflow}
-            placeholder="Type your message..."
-          />
-        </div>
+        <ChatInput
+          onSendMessage={onSendMessage}
+          disabled={isCreatingWorkflow}
+          placeholder="Tell me about your workflow..."
+        />
       </div>
     </div>
   )

@@ -9,15 +9,22 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([
     {
       id: 1,
-      type: "user" as const,
-      content: "Create a workflow that sends me daily weather updates for my city",
-      timestamp: "Now"
+      type: "ai" as const,
+      content: "Hi John! What workflow would you like to create today?",
+      timestamp: "Just now"
     },
     {
       id: 2,
+      type: "user" as const,
+      content: "I want to automate my social media posting",
+      timestamp: "Just now"
+    },
+    {
+      id: 3,
       type: "ai" as const,
-      content: "I'll create a weather notification workflow for you! Here's what I'll set up:\n\n✅ Weather API Integration\n📱 Daily SMS/Email Notifications\n🕐 Customizable Schedule\n\nWould you like me to proceed with the setup?",
-      timestamp: "Now"
+      content: "Excellent! Let me help you create a social media automation. Which platforms would you like to post to?",
+      timestamp: "Just now",
+      showSuggestions: true
     }
   ])
   const [isCreatingWorkflow, setIsCreatingWorkflow] = useState(false)
