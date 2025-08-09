@@ -97,22 +97,50 @@ export default function ChatPage() {
     }
   }
 
+  const handleTransitionComplete = (workflowId?: string) => {
+    setCurrentTransition(null)
+    setIsCreatingWorkflow(false)
+
+    // Add AI response after workflow generation
+    const aiMessage = {
+      id: Date.now() + 1,
+      type: "ai" as const,
+      content: `Perfect! I've created your ${pendingWorkflowType} for you. The workflow is now ready and configured with all the necessary integrations.`,
+      timestamp: "Now",
+      workflowSummary: {
+        name: pendingWorkflowType || "New Workflow",
+        trigger: "Configurable trigger",
+        action: "Smart automation",
+        output: "Targeted results"
+      },
+      workflowId
+    }
+    setMessages(prev => [...prev, aiMessage])
+    setPendingWorkflowType(undefined)
+  }
+
   return (
-    <div className="min-h-screen bg-background flex relative">
-      <ChatSidebar
-        currentChatId={currentChatId}
-        onNewChat={handleNewChat}
-        onSelectChat={handleSelectChat}
-      />
+    <TransitionManager
+      type={currentTransition}
+      workflowType={pendingWorkflowType}
+      onComplete={handleTransitionComplete}
+    >
+      <div className="min-h-screen bg-background flex relative">
+        <ChatSidebar
+          currentChatId={currentChatId}
+          onNewChat={handleNewChat}
+          onSelectChat={handleSelectChat}
+        />
 
-      <ChatMain
-        messages={messages}
-        onSendMessage={handleSendMessage}
-        isCreatingWorkflow={isCreatingWorkflow}
-        chatTitle="New Workflow Chat"
-      />
+        <ChatMain
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          isCreatingWorkflow={isCreatingWorkflow}
+          chatTitle="New Workflow Chat"
+        />
 
-      <FloatingActions onAction={handleFloatingAction} />
-    </div>
+        <FloatingActions onAction={handleFloatingAction} />
+      </div>
+    </TransitionManager>
   )
 }
