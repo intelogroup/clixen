@@ -1,6 +1,6 @@
 "use client"
 
-import { Bot, User, Clock, CheckCircle, Loader2 } from "lucide-react"
+import { Bot, User, Clock, CheckCircle, Loader2, Zap, Smartphone, Settings } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
