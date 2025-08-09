@@ -240,13 +240,21 @@ export default function DashboardPage() {
                 <CardTitle className="text-lg font-semibold">Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push('/chat')}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Create New Workflow
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => router.push('/chat/simple')}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Simple Chat (Convex)
                 </Button>
                 <Button 
                   variant="outline" 
