@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
-import { Bot, User, ArrowLeft, MessageSquare, Plus, Menu, X, Home, History } from "lucide-react";
+import { Bot, User, History } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCurrentUser, useAuthActions } from "@/lib/auth-context";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
@@ -103,16 +102,15 @@ export default function ChatPage() {
       setChatHistory(updatedHistory);
       localStorage.setItem('chat-history', JSON.stringify(updatedHistory));
     }
-
+    
     setMessages([]);
     localStorage.removeItem('chat-messages');
-    setSidebarOpen(false);
   };
 
   const handleSignOut = async () => {
-    await signOut()
-    router.push('/auth/signin')
-  }
+    await signOut();
+    router.push('/auth/signin');
+  };
 
   const generateAiResponse = (userMessage: string): string => {
     const lowerMessage = userMessage.toLowerCase();
@@ -136,104 +134,28 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Minimal Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform md:relative md:translate-x-0 md:flex md:flex-col`}>
-        {/* Sidebar Header */}
-        <div className="p-4 border-b">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-blue-600" />
-              <span className="font-semibold">Clixen</span>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="md:hidden"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          <Button
-            onClick={handleNewChat}
-            className="w-full mt-3"
-            variant="outline"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Chat
-          </Button>
-        </div>
-
-        {/* Chat History */}
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <History className="h-4 w-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-500">Recent</span>
-          </div>
-          <div className="space-y-1">
-            {chatHistory.map((chat) => (
-              <button
-                key={chat.id}
-                className="w-full text-left p-2 rounded hover:bg-gray-100 transition-colors"
-              >
-                <div className="text-sm truncate">{chat.title}</div>
-                <div className="text-xs text-gray-500">{chat.timestamp}</div>
-              </button>
-            ))}
-            {chatHistory.length === 0 && (
-              <div className="text-sm text-gray-400 py-4">No recent chats</div>
-            )}
-          </div>
-        </div>
-
-        {/* Sidebar Footer */}
-        <div className="p-4 border-t">
-          <Button
-            variant="ghost"
-            className="w-full justify-start"
-            onClick={() => router.push("/dashboard")}
-          >
-            <Home className="h-4 w-4 mr-2" />
-            Dashboard
-          </Button>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex">
+      {/* Sidebar - Always Visible */}
+      <div className="relative">
+        <DashboardSidebar onSignOut={handleSignOut} />
       </div>
 
-      {/* Mobile Backdrop */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
-
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col h-screen max-w-4xl mx-auto w-full">
-        {/* Header */}
-        <div className="bg-white border-b p-4">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="md:hidden"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="hidden md:flex"
-              onClick={() => router.push("/dashboard")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <Bot className="h-6 w-6 text-blue-600" />
-            <h1 className="text-xl font-semibold">Clixen AI Chat</h1>
-            <div className="ml-auto text-sm text-gray-500">
-              {messages.length} messages
+      <div className="flex-1 flex h-screen">
+        {/* Chat Interface */}
+        <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
+          {/* Header */}
+          <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <Bot className="h-6 w-6 text-blue-600" />
+              <h1 className="text-xl font-semibold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                Clixen AI Chat
+              </h1>
+              <div className="ml-auto text-sm text-gray-500">
+                {messages.length} messages
+              </div>
             </div>
           </div>
-        </div>
-        
 
           {/* Chat History Header */}
           {chatHistory.length > 0 && messages.length === 0 && (
@@ -256,144 +178,145 @@ export default function ChatPage() {
             </div>
           )}
 
-        {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {messages.length === 0 ? (
-            <div className="text-center py-12">
-              <Bot className="h-16 w-16 text-blue-600 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Welcome to Clixen AI!
-              </h2>
-              <p className="text-gray-600 max-w-md mx-auto mb-6">
-                I help you create automation workflows using natural language.
-                Just describe what you'd like to automate and I'll guide you through it.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-lg mx-auto text-sm">
-                <Button
-                  variant="outline"
-                  onClick={() => setNewMessageText("Help me create an email automation workflow")}
-                >
-                  Email Automation
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setNewMessageText("I want to automate file backups")}
-                >
-                  File Backup
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setNewMessageText("Set up social media posting")}
-                >
-                  Social Media
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setNewMessageText("Create a data processing pipeline")}
-                >
-                  Data Processing
-                </Button>
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {messages.length === 0 ? (
+              <div className="text-center py-12">
+                <Bot className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  Welcome to Clixen AI!
+                </h2>
+                <p className="text-gray-600 max-w-md mx-auto mb-6">
+                  I help you create automation workflows using natural language. 
+                  Just describe what you'd like to automate and I'll guide you through it.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-lg mx-auto text-sm">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setNewMessageText("Help me create an email automation workflow")}
+                  >
+                    Email Automation
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setNewMessageText("I want to automate file backups")}
+                  >
+                    File Backup
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setNewMessageText("Set up social media posting")}
+                  >
+                    Social Media
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setNewMessageText("Create a data processing pipeline")}
+                  >
+                    Data Processing
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex items-start gap-3 ${
-                    message.author !== "Clixen AI" ? "flex-row-reverse" : ""
-                  }`}
-                >
-                  <Avatar className="w-8 h-8">
-                    <AvatarFallback>
-                      {message.author === "Clixen AI" ? (
+            ) : (
+              <div className="space-y-6">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex items-start gap-3 ${
+                      message.author !== "Clixen AI" ? "flex-row-reverse" : ""
+                    }`}
+                  >
+                    <Avatar className="w-8 h-8">
+                      <AvatarFallback>
+                        {message.author === "Clixen AI" ? (
+                          <Bot className="h-4 w-4 text-blue-600" />
+                        ) : (
+                          <User className="h-4 w-4" />
+                        )}
+                      </AvatarFallback>
+                    </Avatar>
+                    
+                    <Card className={`max-w-md ${
+                      message.author !== "Clixen AI"
+                        ? "bg-blue-50 border-blue-200" 
+                        : "bg-white border-gray-200"
+                    }`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-gray-600">
+                            {message.author}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {message.timestamp.toLocaleTimeString([], { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </div>
+                        </div>
+                        <div className="text-gray-800 whitespace-pre-wrap">
+                          {message.body}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                ))}
+                
+                {/* AI Thinking Indicator */}
+                {isAiThinking && (
+                  <div className="flex items-start gap-3">
+                    <Avatar className="w-8 h-8">
+                      <AvatarFallback>
                         <Bot className="h-4 w-4 text-blue-600" />
-                      ) : (
-                        <User className="h-4 w-4" />
-                      )}
-                    </AvatarFallback>
-                  </Avatar>
-                  
-                  <Card className={`max-w-md ${
-                    message.author !== "Clixen AI"
-                      ? "bg-blue-50 border-blue-200" 
-                      : "bg-white border-gray-200"
-                  }`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-sm font-medium text-gray-600">
-                          {message.author}
+                      </AvatarFallback>
+                    </Avatar>
+                    <Card className="bg-white border-gray-200">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2">
+                          <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                          </div>
+                          <span className="text-sm text-gray-600">AI is thinking...</span>
                         </div>
-                        <div className="text-xs text-gray-400">
-                          {message.timestamp.toLocaleTimeString([], { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
-                          })}
-                        </div>
-                      </div>
-                      <div className="text-gray-800 whitespace-pre-wrap">
-                        {message.body}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              ))}
-              
-              {/* AI Thinking Indicator */}
-              {isAiThinking && (
-                <div className="flex items-start gap-3">
-                  <Avatar className="w-8 h-8">
-                    <AvatarFallback>
-                      <Bot className="h-4 w-4 text-blue-600" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <Card className="bg-white border-gray-200">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2">
-                        <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
-                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                        </div>
-                        <span className="text-sm text-gray-600">AI is thinking...</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {/* Input Area */}
+          <div className="bg-white border-t p-4">
+            <form onSubmit={handleSubmit} className="flex gap-3">
+              <Input
+                value={newMessageText}
+                onChange={(e) => setNewMessageText(e.target.value)}
+                placeholder={isAiThinking ? "AI is thinking..." : "Describe the workflow you'd like to create..."}
+                className="flex-1"
+                disabled={isAiThinking}
+              />
+              <Button type="submit" disabled={isAiThinking || !newMessageText.trim()}>
+                Send
+              </Button>
+            </form>
+            <div className="flex gap-2 mt-2">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setNewMessageText("Clear chat history")}
+              >
+                Clear History
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setNewMessageText("What can you help me with?")}
+              >
+                Help
+              </Button>
             </div>
-          )}
-        </div>
-        
-        {/* Input Area */}
-        <div className="bg-white border-t p-4">
-          <form onSubmit={handleSubmit} className="flex gap-3">
-            <Input
-              value={newMessageText}
-              onChange={(e) => setNewMessageText(e.target.value)}
-              placeholder={isAiThinking ? "AI is thinking..." : "Describe the workflow you'd like to create..."}
-              className="flex-1"
-              disabled={isAiThinking}
-            />
-            <Button type="submit" disabled={isAiThinking || !newMessageText.trim()}>
-              Send
-            </Button>
-          </form>
-          <div className="flex gap-2 mt-2">
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => setNewMessageText("Clear chat history")}
-            >
-              Clear History
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => setNewMessageText("What can you help me with?")}
-            >
-              Help
-            </Button>
           </div>
         </div>
       </div>
