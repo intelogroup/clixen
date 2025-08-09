@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, FileTemplate, Plug, Lightbulb, BarChart3, X } from "lucide-react"
+import { Plus, FileText, Plug, Lightbulb, BarChart3, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -21,12 +21,12 @@ export function FloatingActions({ onAction }: FloatingActionsProps) {
       description: "Start a fresh automation",
       color: "text-blue-600" 
     },
-    { 
-      id: "templates", 
-      label: "Templates", 
-      icon: FileTemplate, 
+    {
+      id: "templates",
+      label: "Templates",
+      icon: FileText,
       description: "Pre-built workflows",
-      color: "text-green-600" 
+      color: "text-green-600"
     },
     { 
       id: "integrations", 
