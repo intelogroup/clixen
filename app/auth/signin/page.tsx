@@ -251,29 +251,54 @@ export default function SignInPage() {
           </CardContent>
         </Card>
 
-        {/* Demo Account */}
-        <Card className="mt-6 border border-blue-200 bg-blue-50">
-          <CardContent className="p-4">
-            <div className="flex items-start space-x-3">
-              <Mail className="h-5 w-5 text-blue-600 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-medium text-blue-900 mb-1">Try Demo Account</h3>
-                <p className="text-xs text-blue-700 mb-2">
-                  Use demo@clixen.com with password "demo123" to explore all features
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                  onClick={handleDemoAccount}
-                  disabled={isLoading}
-                >
-                  Use Demo Account
-                </Button>
+        {/* Test Accounts */}
+        <div className="mt-6 space-y-4">
+          <Card className="border border-blue-200 bg-blue-50">
+            <CardContent className="p-4">
+              <div className="flex items-start space-x-3">
+                <Mail className="h-5 w-5 text-blue-600 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-blue-900 mb-1">Demo Account</h3>
+                  <p className="text-xs text-blue-700 mb-2">
+                    Use demo@clixen.com with password "demo123" to explore all features
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                    onClick={handleDemoAccount}
+                    disabled={isLoading}
+                  >
+                    Use Demo Account
+                  </Button>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-green-200 bg-green-50">
+            <CardContent className="p-4">
+              <div className="flex items-start space-x-3">
+                <Mail className="h-5 w-5 text-green-600 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-green-900 mb-1">Test Account</h3>
+                  <p className="text-xs text-green-700 mb-2">
+                    Use jimkalinov@gmail.com with password "Jimkali90#" for testing
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-green-300 text-green-700 hover:bg-green-100"
+                    onClick={handleTestAccount}
+                    disabled={isLoading}
+                  >
+                    Use Test Account
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )
