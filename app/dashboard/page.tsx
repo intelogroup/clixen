@@ -28,8 +28,13 @@ import {
 export default function DashboardPage() {
   const router = useRouter()
   const user = useCurrentUser()
-  // Temporary mock data while we fix Convex setup
-  const userProfile = {
+  // Use actual user data from auth context, with fallback to mock data
+  const userProfile = user ? {
+    firstName: user.firstName || "User",
+    lastName: user.lastName || "",
+    plan: "free" as const,
+    avatar: undefined
+  } : {
     firstName: "Demo",
     lastName: "User",
     plan: "free" as const,
