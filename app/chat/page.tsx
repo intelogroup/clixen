@@ -294,9 +294,11 @@ export default function ChatPage() {
           messages={messages}
           onSendMessage={handleSendMessage}
           onMessageAction={handleMessageAction}
-          isCreatingWorkflow={isCreatingWorkflow || isTyping}
+          isCreatingWorkflow={isCreatingWorkflow}
+          isTyping={isTyping}
           chatTitle={currentChatId ? `Chat ${currentChatId}` : "New Workflow Chat"}
           userName="Kalinov jim rozensky Dameus"
+          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
 
         <FloatingActions onAction={handleFloatingAction} />
