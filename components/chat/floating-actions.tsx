@@ -73,7 +73,13 @@ export function FloatingActions({ onAction }: FloatingActionsProps) {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <ModalManager
+      type={currentModal}
+      service="Google Drive"
+      onComplete={handleModalComplete}
+      onCancel={handleModalCancel}
+    >
+      <div className="fixed bottom-6 right-6 z-50">
       {/* Action Menu */}
       {isOpen && (
         <Card className="mb-4 w-64 animate-in slide-in-from-bottom-2 duration-200">
@@ -113,6 +119,7 @@ export function FloatingActions({ onAction }: FloatingActionsProps) {
           <Plus className="h-6 w-6" />
         )}
       </Button>
-    </div>
+      </div>
+    </ModalManager>
   )
 }
