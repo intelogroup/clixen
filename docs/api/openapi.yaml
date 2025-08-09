@@ -1,0 +1,35 @@
+openapi: 3.0.1
+info:
+  title: Clixen Backend API
+  version: 0.1.0
+  description: OpenAPI specification for Clixen MVP backend endpoints.
+servers:
+  - url: https://api.example.com
+paths:
+  /auth/signup:
+    post:
+      summary: Sign up a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+      responses:
+        '200':
+          description: User created successfully
+components:
+  schemas:
+    SignUpRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+      required:
+        - email
+        - password
+    # TODO: Add other endpoint schemas (projects, workflows, deployments)
