@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { ChatSidebar } from "@/components/chat/chat-sidebar"
 import { ChatMain } from "@/components/chat/chat-main"
 import { FloatingActions } from "@/components/chat/floating-actions"
+import { TransitionManager, TransitionType } from "@/components/transitions/transition-manager"
 
 export default function ChatPage() {
   const router = useRouter()
@@ -31,6 +32,8 @@ export default function ChatPage() {
     }
   ])
   const [isCreatingWorkflow, setIsCreatingWorkflow] = useState(false)
+  const [currentTransition, setCurrentTransition] = useState<TransitionType>(null)
+  const [pendingWorkflowType, setPendingWorkflowType] = useState<string>()
 
   const handleSendMessage = (message: string) => {
     // Add user message
@@ -42,33 +45,17 @@ export default function ChatPage() {
     }
     setMessages(prev => [...prev, userMessage])
 
-    // Simulate AI response
-    setTimeout(() => {
-      setIsCreatingWorkflow(true)
-      const aiMessage = {
-        id: Date.now() + 1,
-        type: "ai" as const,
-        content: "Perfect! I can create that workflow for you. Here's what I understand:",
-        timestamp: "Now",
-        workflowSummary: {
-          name: "Daily Weather Updates",
-          trigger: "Daily at 8:00 AM",
-          action: "Fetch weather data",
-          output: "Send formatted notification"
-        },
-        progress: [
-          { step: "Weather API Integration", status: "completed" as const },
-          { step: "Daily SMS/Email Notifications", status: "completed" as const },
-          { step: "Customizable Schedule", status: "in-progress" as const }
-        ]
-      }
-      setMessages(prev => [...prev, aiMessage])
+    // Determine workflow type from message
+    let workflowType = "automation workflow"
+    if (message.toLowerCase().includes("social")) workflowType = "social media automation"
+    else if (message.toLowerCase().includes("email")) workflowType = "email automation"
+    else if (message.toLowerCase().includes("weather")) workflowType = "weather monitoring"
+    else if (message.toLowerCase().includes("backup")) workflowType = "data backup automation"
 
-      // Complete workflow creation after 3 seconds
-      setTimeout(() => {
-        setIsCreatingWorkflow(false)
-      }, 3000)
-    }, 1000)
+    // Show workflow generation transition
+    setPendingWorkflowType(workflowType)
+    setCurrentTransition("workflow-generation")
+    setIsCreatingWorkflow(true)
   }
 
   const handleNewChat = () => {
