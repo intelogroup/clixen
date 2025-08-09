@@ -15,20 +15,9 @@ if (!convexUrl) {
 const convex = new ConvexReactClient(convexUrl);
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
-  try {
-    return (
-      <ConvexAuthNextjsProvider client={convex}>
-        {children}
-      </ConvexAuthNextjsProvider>
-    );
-  } catch (error) {
-    console.error("ConvexAuth error:", error);
-    // Fallback to basic Convex provider if auth fails
-    const { ConvexProvider } = require("convex/react");
-    return (
-      <ConvexProvider client={convex}>
-        {children}
-      </ConvexProvider>
-    );
-  }
+  return (
+    <ConvexAuthNextjsProvider client={convex}>
+      {children}
+    </ConvexAuthNextjsProvider>
+  );
 }
