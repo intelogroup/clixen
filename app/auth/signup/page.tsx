@@ -35,6 +35,8 @@ export default function SignUpPage() {
       await signIn("password", {
         email: formData.email,
         password: formData.password,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
         flow: "signUp",
       })
       
