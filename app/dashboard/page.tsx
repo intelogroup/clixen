@@ -122,7 +122,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex">
       {/* Sidebar - Always Visible */}
       <div className="relative">
         <DashboardSidebar onSignOut={handleSignOut} />
@@ -131,35 +131,37 @@ export default function DashboardPage() {
       {/* Main Content */}
       <div className="flex-1 min-w-0 flex flex-col max-w-[900px] mx-auto w-full">
         {/* Header */}
-        <div className="bg-white border-b px-6 py-4">
+        <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 px-8 py-6 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold text-gray-900">Workflows</h1>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                Workflows
+              </h1>
             </div>
-            
-            <div className="flex items-center space-x-3">
-              <Button variant="outline" size="sm">
+
+            <div className="flex items-center space-x-4">
+              <Button variant="outline" size="sm" className="border-slate-200 hover:bg-slate-50 rounded-xl px-4 py-2 font-medium transition-all duration-200">
                 <BarChart3 className="h-4 w-4 mr-2" />
                 Analytics
               </Button>
-              
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <Avatar className="w-6 h-6">
-                      <AvatarFallback className="text-xs">
+                  <Button variant="ghost" size="sm" className="hover:bg-slate-100 rounded-xl transition-all duration-200">
+                    <Avatar className="w-8 h-8 ring-2 ring-slate-200">
+                      <AvatarFallback className="text-sm font-semibold bg-gradient-to-br from-blue-500 to-purple-600 text-white">
                         {user?.firstName?.[0]}{user?.lastName?.[0]}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="ml-2 hidden sm:inline">Profile</span>
+                    <span className="ml-3 hidden sm:inline font-medium text-slate-700">Profile</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => router.push('/profile')}>
+                <DropdownMenuContent align="end" className="w-48 rounded-xl border-slate-200 shadow-xl">
+                  <DropdownMenuItem onClick={() => router.push('/profile')} className="rounded-lg">
                     <User className="h-4 w-4 mr-2" />
                     View Profile
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleSignOut} className="text-red-600">
+                  <DropdownMenuItem onClick={handleSignOut} className="text-red-600 rounded-lg">
                     Sign Out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -169,59 +171,59 @@ export default function DashboardPage() {
         </div>
 
         {/* Workflow Controls */}
-        <div className="bg-white border-b px-6 py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+        <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 px-8 py-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-6">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:flex-1">
-              <TabsList className="grid w-full grid-cols-4 max-w-lg">
-                <TabsTrigger value="active" className="text-xs sm:text-sm">
+              <TabsList className="grid w-full grid-cols-4 max-w-lg bg-slate-100 p-1 rounded-xl">
+                <TabsTrigger value="active" className="text-xs sm:text-sm rounded-lg font-medium data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200">
                   Active ({getTabCount("active")})
                 </TabsTrigger>
-                <TabsTrigger value="draft" className="text-xs sm:text-sm">
+                <TabsTrigger value="draft" className="text-xs sm:text-sm rounded-lg font-medium data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200">
                   Draft ({getTabCount("draft")})
                 </TabsTrigger>
-                <TabsTrigger value="all" className="text-xs sm:text-sm">
+                <TabsTrigger value="all" className="text-xs sm:text-sm rounded-lg font-medium data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200">
                   All ({getTabCount("all")})
                 </TabsTrigger>
-                <TabsTrigger value="paused" className="text-xs sm:text-sm">
+                <TabsTrigger value="paused" className="text-xs sm:text-sm rounded-lg font-medium data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-200">
                   Paused ({getTabCount("paused")})
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            
-            <Button 
+
+            <Button
               onClick={() => router.push('/chat')}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-6 py-3 font-semibold shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all duration-200"
             >
               <Plus className="h-4 w-4 mr-2" />
               Create New
             </Button>
           </div>
-          
+
           <div className="relative">
-            <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <Search className="h-5 w-5 absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" />
             <Input
               type="text"
               placeholder="Search workflows..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-12 py-3 rounded-xl border-slate-200 bg-white/50 backdrop-blur-sm focus:bg-white transition-all duration-200 placeholder:text-slate-400"
             />
           </div>
         </div>
 
         {/* Workflow List */}
-        <div className="flex-1 p-6">
-          <div className="space-y-4">
+        <div className="flex-1 p-8">
+          <div className="space-y-6">
             {filteredWorkflows.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="text-gray-500 mb-4">
+              <div className="text-center py-16">
+                <div className="text-slate-500 mb-6 text-lg">
                   {searchQuery ? `No workflows found matching "${searchQuery}"` : "No workflows found"}
                 </div>
-                <Button 
+                <Button
                   onClick={() => router.push('/chat')}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-8 py-4 font-semibold shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all duration-200"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
+                  <Plus className="h-5 w-5 mr-3" />
                   Create Your First Workflow
                 </Button>
               </div>
