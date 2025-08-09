@@ -211,11 +211,11 @@ export default function ModalsDemo() {
                     <div className="space-y-1">
                       <div className="text-green-400">// Import and use OAuth modal</div>
                       <div>import {"{ ModalManager }"} from "@/components/modals/modal-manager"</div>
-                      <div className="mt-2">&lt;ModalManager</div>
-                      <div>&nbsp;&nbsp;type="oauth-permission"</div>
-                      <div>&nbsp;&nbsp;service="Google Drive"</div>
-                      <div>&nbsp;&nbsp;onComplete={(result) =&gt; console.log(result)}</div>
-                      <div>/&gt;</div>
+                      <div className="mt-2">{"<ModalManager"}</div>
+                      <div>{"  type=\"oauth-permission\""}</div>
+                      <div>{"  service=\"Google Drive\""}</div>
+                      <div>{"  onComplete={(result) => console.log(result)}"}</div>
+                      <div>{"/>"}</div>
                     </div>
                   </div>
                 </div>
@@ -226,10 +226,10 @@ export default function ModalsDemo() {
                     <div className="space-y-1">
                       <div className="text-green-400">// Import and use API setup</div>
                       <div>import {"{ ModalManager }"} from "@/components/modals/modal-manager"</div>
-                      <div className="mt-2">&lt;ModalManager</div>
-                      <div>&nbsp;&nbsp;type="api-setup"</div>
-                      <div>&nbsp;&nbsp;onComplete={(services) =&gt; save(services)}</div>
-                      <div>/&gt;</div>
+                      <div className="mt-2">{"<ModalManager"}</div>
+                      <div>{"  type=\"api-setup\""}</div>
+                      <div>{"  onComplete={(services) => save(services)}"}</div>
+                      <div>{"/>"}</div>
                     </div>
                   </div>
                 </div>
