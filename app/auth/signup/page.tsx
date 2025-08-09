@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useAuthActions } from "@convex-dev/auth/react"
+import { useAuthActions } from "@/lib/auth-context"
 import Link from "next/link"
 
 export default function SignUpPage() {
