@@ -176,6 +176,48 @@ export default function DashboardPage() {
             <DashboardStats />
           </div>
         )}
+
+        {/* Quick Actions inspired by mockups */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <button
+            onClick={() => handleQuickAction("social-media")}
+            className="p-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:shadow-lg transition-all duration-200 hover:scale-105 group"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="text-2xl group-hover:scale-110 transition-transform">📱</div>
+              <div className="text-left">
+                <div className="font-semibold">Social Media</div>
+                <div className="text-sm opacity-90">Automate posting</div>
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAction("email-automation")}
+            className="p-4 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl hover:shadow-lg transition-all duration-200 hover:scale-105 group"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="text-2xl group-hover:scale-110 transition-transform">📧</div>
+              <div className="text-left">
+                <div className="font-semibold">Email Automation</div>
+                <div className="text-sm opacity-90">Smart campaigns</div>
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleQuickAction("data-backup")}
+            className="p-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:shadow-lg transition-all duration-200 hover:scale-105 group"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="text-2xl group-hover:scale-110 transition-transform">💾</div>
+              <div className="text-left">
+                <div className="font-semibold">Data Backup</div>
+                <div className="text-sm opacity-90">Secure storage</div>
+              </div>
+            </div>
+          </button>
+        </div>
         
         <div className="space-y-4">
           {workflows.length === 0 ? (
@@ -189,13 +231,18 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="grid gap-4">
-              {filteredWorkflows.map((workflow) => (
-                <WorkflowCard
+              {filteredWorkflows.map((workflow, index) => (
+                <div
                   key={workflow.id}
-                  {...workflow}
-                  onStatusChange={handleStatusChange}
-                  onViewDetails={handleViewDetails}
-                />
+                  className="animate-in slide-in-from-bottom-2 duration-300"
+                  style={{ animationDelay: `${index * 100}ms` }}
+                >
+                  <WorkflowCard
+                    {...workflow}
+                    onStatusChange={handleStatusChange}
+                    onViewDetails={handleViewDetails}
+                  />
+                </div>
               ))}
             </div>
           )}
