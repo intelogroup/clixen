@@ -28,10 +28,23 @@ import {
 export default function DashboardPage() {
   const router = useRouter()
   const user = useCurrentUser()
-  const userProfile = useQuery(api.users.getUserProfile)
-  const userStats = useQuery(api.users.getUserStats)
-  const workflows = useQuery(api.workflows.getUserWorkflows, {})
-  const recentRuns = useQuery(api.workflows.getWorkflowRuns, { limit: 10 })
+  // Temporary mock data while we fix Convex setup
+  const userProfile = {
+    firstName: "Demo",
+    lastName: "User",
+    plan: "free" as const,
+    avatar: undefined
+  }
+  const userStats = {
+    totalWorkflows: 0,
+    activeWorkflows: 0,
+    totalRuns: 0,
+    successfulRuns: 0,
+    failedRuns: 0,
+    plan: "free" as const
+  }
+  const workflows: any[] = []
+  const recentRuns: any[] = []
   
   const [activeTab, setActiveTab] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
