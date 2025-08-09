@@ -68,6 +68,12 @@ export function TransitionManager({
       {showTransition && type === "permission-dialog" && (
         <PermissionDialog
           service={service || "Google Drive"}
+          permissions={[
+            { action: "Read your files", allowed: true },
+            { action: "Create folders", allowed: true },
+            { action: "Upload backups", allowed: true },
+            { action: "Delete files (never)", allowed: false }
+          ]}
           isOpen={showTransition}
           onAllow={handleTransitionComplete}
           onCancel={handleTransitionCancel}
