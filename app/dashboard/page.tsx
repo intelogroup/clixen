@@ -10,13 +10,11 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { 
-  Plus, 
-  Search, 
-  BarChart3, 
-  User,
-  Menu,
-  X
+import {
+  Plus,
+  Search,
+  BarChart3,
+  User
 } from "lucide-react"
 
 // Mock workflow data
@@ -94,7 +92,6 @@ export default function DashboardPage() {
   const { signOut } = useAuthActions()
   const [activeTab, setActiveTab] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
-  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Filter workflows based on active tab and search
   const filteredWorkflows = mockWorkflows.filter(workflow => {
@@ -126,13 +123,8 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
-
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform lg:relative lg:translate-x-0`}>
+      {/* Sidebar - Always Visible */}
+      <div className="relative">
         <DashboardSidebar onSignOut={handleSignOut} />
       </div>
 
@@ -142,14 +134,6 @@ export default function DashboardPage() {
         <div className="bg-white border-b px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="lg:hidden"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
               <h1 className="text-2xl font-bold text-gray-900">Workflows</h1>
             </div>
             
