@@ -1,55 +1,86 @@
-export default function Home() {
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex justify-between items-center max-w-6xl mx-auto">
-          <div className="flex items-center space-x-3">
-            <span className="text-xl">🔙</span>
-            <span className="text-lg font-semibold">🤖 New Workflow Chat</span>
-          </div>
-          <div className="flex items-center space-x-3">
-            <span className="text-xl cursor-pointer">⚙️</span>
-            <span className="text-xl cursor-pointer">👤</span>
-          </div>
-        </div>
-      </header>
+"use client"
 
-      {/* Chat Interface */}
+import { useState } from "react"
+import { ChatHeader } from "@/components/chat/chat-header"
+import { ChatMessage } from "@/components/chat/chat-message"
+import { ChatInput } from "@/components/chat/chat-input"
+
+export default function Home() {
+  const [messages, setMessages] = useState([
+    {
+      id: 1,
+      type: "ai" as const,
+      content: "Welcome to Clixen AI! I help you create powerful automation workflows using natural language. Just tell me what you'd like to automate, and I'll guide you through creating it step by step.\n\nTry something like: \"Send me an email every morning with the weather forecast\" or \"Backup my files to cloud storage weekly\"",
+      timestamp: "Now"
+    }
+  ])
+  const [isCreatingWorkflow, setIsCreatingWorkflow] = useState(false)
+
+  const handleSendMessage = (message: string) => {
+    // Add user message
+    const userMessage = {
+      id: Date.now(),
+      type: "user" as const,
+      content: message,
+      timestamp: "Now"
+    }
+    setMessages(prev => [...prev, userMessage])
+
+    // Simulate AI response
+    setTimeout(() => {
+      setIsCreatingWorkflow(true)
+      const aiMessage = {
+        id: Date.now() + 1,
+        type: "ai" as const,
+        content: "Perfect! I can create that workflow for you. Here's what I understand:",
+        timestamp: "Now",
+        workflowSummary: {
+          name: "Daily Email Automation",
+          trigger: "Daily at 8:00 AM",
+          action: "Fetch weather data",
+          output: "Send formatted email"
+        },
+        progress: [
+          { step: "Weather API configured", status: "completed" as const },
+          { step: "Email template created", status: "completed" as const },
+          { step: "Daily schedule set", status: "completed" as const },
+          { step: "Deploying to n8n...", status: "in-progress" as const }
+        ]
+      }
+      setMessages(prev => [...prev, aiMessage])
+
+      // Complete workflow creation after 3 seconds
+      setTimeout(() => {
+        setIsCreatingWorkflow(false)
+      }, 3000)
+    }, 1000)
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <ChatHeader />
+
       <div className="max-w-4xl mx-auto p-4">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-[calc(100vh-160px)] flex flex-col">
+        <div className="bg-card rounded-lg border h-[calc(100vh-120px)] flex flex-col">
           {/* Chat Messages */}
-          <div className="flex-1 p-6 overflow-y-auto space-y-4">
-            {/* AI Welcome Message */}
-            <div className="flex items-start space-x-3">
-              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                🤖
-              </div>
-              <div className="bg-gray-100 rounded-lg p-4 max-w-xl">
-                <p className="text-gray-800">
-                  👋 Welcome to Clixen AI! I help you create powerful automation workflows using natural language. 
-                  Just tell me what you'd like to automate, and I'll guide you through creating it step by step.
-                </p>
-                <p className="text-gray-600 mt-2 text-sm">
-                  Try something like: "Send me an email every morning with the weather forecast" or "Backup my files to cloud storage weekly"
-                </p>
-              </div>
-            </div>
+          <div className="flex-1 p-6 overflow-y-auto space-y-6">
+            {messages.map((message) => (
+              <ChatMessage
+                key={message.id}
+                type={message.type}
+                content={message.content}
+                timestamp={message.timestamp}
+                workflowSummary={message.workflowSummary}
+                progress={message.progress}
+              />
+            ))}
           </div>
 
           {/* Input Area */}
-          <div className="border-t border-gray-200 p-4">
-            <div className="flex space-x-3">
-              <input
-                type="text"
-                placeholder="Describe the workflow you'd like to create..."
-                className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <button className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-medium">
-                Send →
-              </button>
-            </div>
-          </div>
+          <ChatInput
+            onSendMessage={handleSendMessage}
+            disabled={isCreatingWorkflow}
+          />
         </div>
       </div>
     </div>
