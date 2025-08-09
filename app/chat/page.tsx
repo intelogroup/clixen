@@ -9,10 +9,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot, User, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth-context";
+import { useCurrentUser } from "@/lib/auth-context";
 
 export default function ChatPage() {
-  const { user } = useAuth();
+  const user = useCurrentUser();
   const router = useRouter();
   const messages = useQuery(api.messages.list);
   const sendMessage = useMutation(api.messages.send);
