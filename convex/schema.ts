@@ -5,7 +5,13 @@ import { authTables } from "@convex-dev/auth/server";
 export default defineSchema({
   // Auth tables
   ...authTables,
-  
+
+  // Simple messages table for chat (following Convex quickstart)
+  messages: defineTable({
+    author: v.string(),
+    body: v.string(),
+  }),
+
   // User profile table
   users: defineTable({
     email: v.string(),
