@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowLeft, Settings, User, Sparkles } from "lucide-react"
+import { ArrowLeft, Settings, User, Sparkles, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -22,6 +22,11 @@ export function ChatHeader() {
           <Button variant="ghost" size="sm" className="p-2" asChild>
             <a href="/transitions">
               <Sparkles className="h-4 w-4" />
+            </a>
+          </Button>
+          <Button variant="ghost" size="sm" className="p-2" asChild>
+            <a href="/modals">
+              <Shield className="h-4 w-4" />
             </a>
           </Button>
           <Button variant="ghost" size="sm" className="p-2">
