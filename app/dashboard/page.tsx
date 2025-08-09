@@ -213,22 +213,22 @@ export default function DashboardPage() {
 
         {/* Workflow List */}
         <div className="flex-1 p-4">
-          <div className="space-y-3">
-            {filteredWorkflows.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-slate-500 mb-4 text-sm">
-                  {searchQuery ? `No workflows found matching "${searchQuery}"` : "No workflows found"}
-                </div>
-                <Button
-                  onClick={() => router.push('/chat')}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-4 py-2 text-sm font-medium"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Workflow
-                </Button>
+          {filteredWorkflows.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-slate-500 mb-4 text-sm">
+                {searchQuery ? `No workflows found matching "${searchQuery}"` : "No workflows found"}
               </div>
-            ) : (
-              filteredWorkflows.map((workflow) => (
+              <Button
+                onClick={() => router.push('/chat')}
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-4 py-2 text-sm font-medium"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Workflow
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+              {filteredWorkflows.map((workflow) => (
                 <WorkflowCardDetailed
                   key={workflow.id}
                   id={workflow.id}
@@ -240,9 +240,9 @@ export default function DashboardPage() {
                   created={workflow.created}
                   onAction={handleWorkflowAction}
                 />
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
