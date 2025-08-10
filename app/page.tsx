@@ -191,7 +191,7 @@ export default function LandingPage() {
               <Button 
                 size="lg" 
                 variant="outline"
-                onClick={() => router.push('/chat')}
+                onClick={() => router.push('/demo')}
                 className="h-12 px-8 text-lg border-2"
               >
                 <PlayCircle className="mr-2 h-5 w-5" />
@@ -274,10 +274,10 @@ export default function LandingPage() {
           <div className="text-center mt-12">
             <Button 
               size="lg"
-              onClick={() => router.push('/chat')}
+              onClick={() => router.push('/demo')}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              Explore All Use Cases
+              View Live Demo
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </div>
@@ -340,7 +340,7 @@ export default function LandingPage() {
             <Button 
               size="lg"
               variant="outline"
-              onClick={() => router.push('/chat')}
+              onClick={() => router.push('/demo')}
               className="border-2 border-white text-white hover:bg-white hover:text-blue-600 h-12 px-8 text-lg"
             >
               <PlayCircle className="mr-2 h-5 w-5" />
