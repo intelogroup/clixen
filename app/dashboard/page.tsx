@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import { useCurrentUser, useAuthActions } from "@/lib/auth-context"
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar"
 import { WorkflowCardDetailed } from "@/components/dashboard/workflow-card-detailed"
+import { EmptyState } from "@/components/dashboard/empty-state"
+import { MobileSidebar } from "@/components/ui/mobile-sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -17,8 +19,10 @@ import {
   User
 } from "lucide-react"
 
-// Mock workflow data
+// Mock workflow data - set to empty for demo, can be populated with real data
 const mockWorkflows = [
+  // Uncomment below for demo data
+  /*
   {
     id: "daily-email-report",
     name: "Daily Email Report",
@@ -84,6 +88,7 @@ const mockWorkflows = [
     },
     created: "Yesterday"
   }
+  */
 ]
 
 export default function DashboardPage() {
@@ -123,13 +128,16 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex">
-      {/* Sidebar - Always Visible */}
-      <div className="relative">
+      {/* Mobile Sidebar */}
+      <MobileSidebar onSignOut={handleSignOut} />
+
+      {/* Desktop Sidebar - Hidden on mobile */}
+      <div className="hidden md:block relative">
         <DashboardSidebar onSignOut={handleSignOut} />
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 min-w-0 flex flex-col max-w-[900px] mx-auto w-full">
+      <div className="flex-1 min-w-0 flex flex-col max-w-[900px] mx-auto w-full md:ml-0 ml-0">
         {/* Header */}
         <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 px-6 py-4 shadow-sm">
           <div className="flex items-center justify-between">
@@ -212,35 +220,43 @@ export default function DashboardPage() {
         </div>
 
         {/* Workflow List */}
-        <div className="flex-1 p-4">
+        <div className="flex-1">
           {filteredWorkflows.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="text-slate-500 mb-4 text-sm">
-                {searchQuery ? `No workflows found matching "${searchQuery}"` : "No workflows found"}
+            searchQuery ? (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="text-center">
+                  <div className="text-slate-500 mb-4">
+                    No workflows found matching "{searchQuery}"
+                  </div>
+                  <Button
+                    onClick={() => router.push('/chat')}
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-4 py-2 text-sm font-medium"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Workflow
+                  </Button>
+                </div>
               </div>
-              <Button
-                onClick={() => router.push('/chat')}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 rounded-xl px-4 py-2 text-sm font-medium"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create Workflow
-              </Button>
-            </div>
+            ) : (
+              <EmptyState onCreateWorkflow={() => router.push('/chat')} />
+            )
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-              {filteredWorkflows.map((workflow) => (
-                <WorkflowCardDetailed
-                  key={workflow.id}
-                  id={workflow.id}
-                  name={workflow.name}
-                  description={workflow.description}
-                  status={workflow.status}
-                  trigger={workflow.trigger}
-                  metrics={workflow.metrics}
-                  created={workflow.created}
-                  onAction={handleWorkflowAction}
-                />
-              ))}
+            <div className="p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                {filteredWorkflows.map((workflow) => (
+                  <WorkflowCardDetailed
+                    key={workflow.id}
+                    id={workflow.id}
+                    name={workflow.name}
+                    description={workflow.description}
+                    status={workflow.status}
+                    trigger={workflow.trigger}
+                    metrics={workflow.metrics}
+                    created={workflow.created}
+                    onAction={handleWorkflowAction}
+                  />
+                ))}
+              </div>
             </div>
           )}
         </div>

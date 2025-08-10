@@ -9,6 +9,7 @@ import { Bot, User, History } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCurrentUser, useAuthActions } from "@/lib/auth-context";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
+import { MobileSidebar } from "@/components/ui/mobile-sidebar";
 
 interface Message {
   id: string;
@@ -115,28 +116,128 @@ export default function ChatPage() {
   const generateAiResponse = (userMessage: string): string => {
     const lowerMessage = userMessage.toLowerCase();
     
-    if (lowerMessage.includes("workflow") || lowerMessage.includes("automate")) {
-      return "I'd be happy to help you create a workflow! What specific task would you like to automate? For example, I can help with email automation, file syncing, social media posting, or data processing.";
-    } else if (lowerMessage.includes("email")) {
-      return "Great! For email automation, I can help you set up workflows for sending newsletters, automated responses, email notifications, or email list management. What type of email automation do you need?";
-    } else if (lowerMessage.includes("help")) {
-      return "I'm here to help you create powerful automation workflows! You can ask me to:\n\n• Create email automation workflows\n• Set up file syncing between services\n• Automate social media posts\n• Build data processing pipelines\n• Connect different apps and services\n\nWhat would you like to automate today?";
+    if (lowerMessage.includes("daily weather") || lowerMessage.includes("weather email") || lowerMessage.includes("weather updates")) {
+      return `🎯 Perfect! I'll create a weather notification workflow for you. Here's what I'll set up:
+
+📋 **Workflow Overview:**
+• Weather API integration
+• Daily email notifications  
+• Customizable schedule
+
+Quick questions to finalize:
+1. What's your email address?
+2. What timezone should I use?
+3. Which city's weather would you like?
+4. Any specific weather details you want included?
+
+Would you like me to proceed with this setup?`;
+    } else if (lowerMessage.includes("customer onboarding") || lowerMessage.includes("new signup")) {
+      return `🚀 Excellent! Customer onboarding automation is one of the most valuable workflows you can create.
+
+📈 **Customer Onboarding Workflow:**
+• **Trigger:** New user signup
+• **Immediate Actions:** Welcome email, CRM sync, team notification
+• **Follow-up:** Check-in emails, feedback surveys
+
+To set this up perfectly, I need some details:
+1. How do I detect new signups? (Webhook URL?)
+2. Which CRM system? (HubSpot, Salesforce, etc.)
+3. Team notification method? (Slack, email?)
+4. From email address for customer communications?
+
+Ready to build this automation?`;
+    } else if (lowerMessage.includes("email") && (lowerMessage.includes("daily") || lowerMessage.includes("report"))) {
+      return `📧 Great choice! Daily email reports keep teams aligned and informed.
+
+📋 **Daily Report Workflow:**
+• **Schedule:** Configurable time (e.g., 9:00 AM EST)
+• **Data Sources:** Analytics, sales metrics, user activity
+• **Recipients:** Team members, stakeholders
+• **Format:** Professional summary with key metrics
+
+Questions to get started:
+1. What data should be included in the reports?
+2. Who should receive these emails?
+3. What time should they be sent?
+4. How often? (Daily, weekly, etc.)
+
+Shall I create this workflow for you?`;
+    } else if (lowerMessage.includes("backup") || lowerMessage.includes("sync files")) {
+      return `💾 Smart thinking! File backup automation ensures your data is always safe.
+
+🔄 **File Backup Workflow:**
+• **Source:** Your files/folders
+• **Destination:** Cloud storage (Google Drive, Dropbox, etc.)
+• **Schedule:** Regular intervals (daily, weekly)
+• **Features:** Versioning, compression, notifications
+
+Setup questions:
+1. Which files/folders need backing up?
+2. Preferred cloud storage service?
+3. How often should backups run?
+4. Should you get confirmation emails?
+
+Ready to set up your backup automation?`;
+    } else if (lowerMessage.includes("help") || lowerMessage.includes("what can you")) {
+      return `👋 I'm here to help you create powerful automation workflows! Here's what I can do:
+
+**Popular Automations:**
+• 📧 Email workflows (newsletters, responses, reports)
+• 📊 Data processing and reporting
+• 🔄 File backup and synchronization
+• 📱 Social media management
+• 🎯 Customer communication flows
+• ⚡ Business process automation
+
+**How it works:**
+1. Tell me what you want to automate
+2. I'll ask clarifying questions
+3. I'll create the workflow for you
+4. Deploy and start automating!
+
+What would you like to automate today?`;
     } else if (lowerMessage.includes("clear") || lowerMessage.includes("reset")) {
-      // Clear chat history
       setTimeout(() => {
         setMessages([]);
         localStorage.removeItem('chat-messages');
       }, 500);
-      return "I've cleared our chat history. How can I help you create a new workflow?";
+      return "✅ Chat cleared! How can I help you create a new workflow?";
+    } else if (lowerMessage.includes("social media") || lowerMessage.includes("social post")) {
+      return `📱 Social media automation can save hours every week!
+
+🎯 **Social Media Workflow:**
+• **Content:** Auto-posting, scheduling, cross-platform sharing
+• **Sources:** RSS feeds, content calendars, user-generated content
+• **Platforms:** Twitter, LinkedIn, Facebook, Instagram
+• **Features:** Hashtag optimization, timing optimization
+
+Setup questions:
+1. Which social media platforms?
+2. What type of content? (blog posts, images, updates)
+3. How often should posts go out?
+4. Any specific hashtags or mentions to include?
+
+Let's automate your social presence!`;
     } else {
-      return `I understand you're interested in "${userMessage}". I can help you turn this into an automated workflow. Would you like me to suggest some automation ideas based on what you've described?`;
+      return `I understand you want to work with "${userMessage}". I can help turn this into a powerful automation workflow!
+
+🤔 **Let me suggest some possibilities:**
+• If this involves regular tasks → I can schedule them
+• If this needs notifications → I can set up alerts
+• If this requires data processing → I can automate it
+• If this involves multiple steps → I can create a complete flow
+
+Could you tell me more about what specific automation you have in mind? The more details you provide, the better I can help you build the perfect workflow!`;
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex">
-      {/* Sidebar - Always Visible */}
-      <div className="relative">
+      {/* Mobile Sidebar */}
+      <MobileSidebar onSignOut={handleSignOut} />
+
+      {/* Desktop Sidebar - Hidden on mobile */}
+      <div className="hidden md:block relative">
         <DashboardSidebar onSignOut={handleSignOut} />
       </div>
 
