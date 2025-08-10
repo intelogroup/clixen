@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useCurrentUser, useAuthActions } from "@/lib/auth-context";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
 import { MobileSidebar } from "@/components/ui/mobile-sidebar";
+import { WorkflowCreationProgress } from "@/components/chat/workflow-creation-progress";
 
 interface Message {
   id: string;
@@ -26,6 +27,9 @@ export default function ChatPage() {
   const [newMessageText, setNewMessageText] = useState("");
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [chatHistory, setChatHistory] = useState<Array<{id: string, title: string, timestamp: string}>>([]);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [showWorkflowProgress, setShowWorkflowProgress] = useState(false);
+  const [currentWorkflowName, setCurrentWorkflowName] = useState("");
 
   // Load messages and chat history from localStorage on mount
   useEffect(() => {
@@ -234,20 +238,31 @@ Could you tell me more about what specific automation you have in mind? The more
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex">
       {/* Mobile Sidebar */}
-      <MobileSidebar onSignOut={handleSignOut} />
+      <MobileSidebar 
+        isOpen={isMobileSidebarOpen} 
+        onClose={() => setIsMobileSidebarOpen(false)} 
+      />
 
       {/* Desktop Sidebar - Hidden on mobile */}
-      <div className="hidden md:block relative">
-        <DashboardSidebar onSignOut={handleSignOut} />
+      <div className="hidden lg:block relative">
+        <DashboardSidebar />
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex h-screen">
+      <div className="flex-1 flex h-screen lg:ml-80">
         {/* Chat Interface */}
         <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
           {/* Header */}
           <div className="bg-white/80 backdrop-blur-sm border-b border-white/20 p-4 shadow-sm">
             <div className="flex items-center gap-3">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                className="lg:hidden"
+                onClick={() => setIsMobileSidebarOpen(true)}
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
               <Bot className="h-6 w-6 text-blue-600" />
               <h1 className="text-xl font-semibold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
                 Clixen AI Chat
