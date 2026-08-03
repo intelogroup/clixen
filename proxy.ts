@@ -33,11 +33,13 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Auth pages: an already-logged-in user should go to the app.
+  // Auth pages pass through. We do NOT redirect an already-logged-in user to
+  // the app here: a cookie's presence proves nothing about its validity (the
+  // backend HMAC-validates it), so a stale/forged cookie would bounce auth
+  // pages to /dashboard in an infinite loop with the client-side RequireAuth
+  // guard. "Already authenticated" is decided by the client's real session
+  // check instead.
   if (isAuthRoute(pathname)) {
-    if (hasSession) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
     return NextResponse.next();
   }
 

@@ -1,19 +1,21 @@
 "use client"
 
-import { Suspense, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Bot, Eye, EyeOff, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useAuthActions } from "@/lib/auth-context"
+import { useAuthActions, useAuthLoading, useCurrentUser } from "@/lib/auth-context"
 import Link from "next/link"
 
 function SignInForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { signIn } = useAuthActions()
+  const user = useCurrentUser()
+  const authLoading = useAuthLoading()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -21,6 +23,16 @@ function SignInForm() {
     email: "",
     password: "",
   })
+
+  // A genuinely-authenticated session (validated by the backend) should land
+  // in the app, not the signin page. The middleware can't do this — a cookie's
+  // presence doesn't prove validity — so it's decided here after the real
+  // session check resolves.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    const next = searchParams.get("next");
+    router.replace(next && next.startsWith("/") ? next : "/dashboard");
+  }, [authLoading, user, searchParams, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useCurrentUser, useAuthActions } from "@/lib/auth-context"
+import { RequireAuth } from "@/components/auth/require-auth"
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar"
 import { WorkflowCardDetailed } from "@/components/dashboard/workflow-card-detailed"
 import { EmptyState } from "@/components/dashboard/empty-state"
@@ -127,6 +128,7 @@ export default function DashboardPage() {
   }
 
   return (
+    <RequireAuth>
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex">
       {/* Mobile Sidebar */}
       <MobileSidebar onSignOut={handleSignOut} />
@@ -261,6 +263,7 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </RequireAuth>
   )
 }
