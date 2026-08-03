@@ -737,17 +737,6 @@ document.getElementById('workspace-close').addEventListener('click', closeWorksp
 workspaceModal.addEventListener('click', e => {
   if(e.target === workspaceModal) closeWorkspaceModal();
 });
-document.getElementById('sidebar-auth-btn').addEventListener('click', () => {
-  if(workspaceState?.user?.authenticated) openWorkspaceModal();
-  else window.location.href='/login';
-});
-document.getElementById('sidebar-logout-btn').addEventListener('click', async () => {
-  try {
-    await logoutWorkspace();
-  } catch(err) {
-    console.error('sidebar logout failed', err);
-  }
-});
 document.getElementById('auth-banner-logout').addEventListener('click', async () => {
   try {
     await logoutWorkspace();

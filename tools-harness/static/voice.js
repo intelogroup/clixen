@@ -475,7 +475,7 @@ if (voiceBadge) voiceBadge.addEventListener('click', openVoiceModal);
 
 function checkVoiceStatus() {
   fetch('/voice/status').then(r => r.json()).then(data => {
-    const statusEl = document.getElementById('voice-status-text');
+    const statusEl = document.getElementById('voice-enroll-status-text');
     const enrollBtn = document.getElementById('voice-enroll-btn');
     if (data.enrolled) {
       voiceBadge.classList.add('enrolled');

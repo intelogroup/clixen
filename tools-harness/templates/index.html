@@ -12,12 +12,12 @@
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
 
-<link rel="stylesheet" href="/static/base.css?v=4"/>
-<link rel="stylesheet" href="/static/sidebar.css?v=4"/>
-<link rel="stylesheet" href="/static/chat.css?v=4"/>
-<link rel="stylesheet" href="/static/ide.css?v=4"/>
-<link rel="stylesheet" href="/static/workflows.css?v=4"/>
-<link rel="stylesheet" href="/static/responsive.css?v=4"/>
+<link rel="stylesheet" href="/static/base.css?v=5"/>
+<link rel="stylesheet" href="/static/sidebar.css?v=5"/>
+<link rel="stylesheet" href="/static/chat.css?v=5"/>
+<link rel="stylesheet" href="/static/ide.css?v=5"/>
+<link rel="stylesheet" href="/static/workflows.css?v=5"/>
+<link rel="stylesheet" href="/static/responsive.css?v=5"/>
 </head>
 <body>
 
@@ -36,11 +36,6 @@
     </button>
   </div>
   <div id="workspace-sidebar-card" class="workspace-card"></div>
-  <div id="auth-sidebar-actions" class="auth-sidebar-actions">
-    <div id="auth-sidebar-status" class="auth-sidebar-status">Locked</div>
-    <button id="sidebar-auth-btn" class="workspace-mini-btn" type="button">Sign in</button>
-    <button id="sidebar-logout-btn" class="workspace-mini-btn danger" type="button" style="display:none">Logout</button>
-  </div>
   <div id="sessions"></div>
 </div>
 <div id="sidebar-overlay"></div>
@@ -721,7 +716,7 @@
     </div>
     <div id="voice-modal-body">
       <p>Enroll your voice so Clixen can verify it's you speaking — not music or other people.</p>
-      <p class="voice-status" id="voice-status-text">Checking...</p>
+      <p class="voice-status" id="voice-enroll-status-text">Checking...</p>
       <button id="voice-enroll-btn" onclick="startVoiceEnroll()">Enroll (record 5s)</button>
       <div id="voice-recording" style="display:none;margin-top:8px;color:var(--accent)">Recording... speak clearly</div>
       <div id="voice-result" style="display:none;margin-top:8px"></div>
@@ -729,10 +724,10 @@
   </div>
 </div>
 
-<script src="/static/utils.js?v=4"></script>
-<script src="/static/voice.js?v=4"></script>
-<script src="/static/chat.js?v=4"></script>
-<script src="/static/ide.js?v=4"></script>
-<script src="/static/app.js?v=4"></script>
+<script src="/static/utils.js?v=5"></script>
+<script src="/static/voice.js?v=5"></script>
+<script src="/static/chat.js?v=5"></script>
+<script src="/static/ide.js?v=5"></script>
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>

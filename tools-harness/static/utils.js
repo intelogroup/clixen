@@ -735,13 +735,18 @@ function renderWorkspaceUI(data) {
   if (authPillText) authPillText.textContent = user.authenticated ? `Signed in as ${user.display_name}` : (auth.has_account ? 'Locked' : 'No account');
 
   const workspaceSidebarCard = document.getElementById('workspace-sidebar-card');
+  const cardAction = user.authenticated ? 'openWorkspaceModal()' : "window.location.href='/login'";
+  const cardBtnLabel = user.authenticated ? 'Settings' : (auth.has_account ? 'Sign in' : 'Create account');
+  const cardSub = user.authenticated
+    ? `Signed in · ${escHtml(user.email || '')}`
+    : (auth.has_account ? 'Locked · sign in required' : 'No account configured');
   if (workspaceSidebarCard) workspaceSidebarCard.innerHTML = `
-    <div class="workspace-card-head" onclick="openWorkspaceModal()" style="cursor:pointer">
+    <div class="workspace-card-head" onclick="${cardAction}" style="cursor:pointer">
       <div>
         <div class="workspace-card-title">${escHtml(user.authenticated ? user.display_name : 'Local Workspace')}</div>
-        <div class="workspace-card-sub">${escHtml(gmail.connected ? 'Gmail Connected' : 'Local Engine Active')}</div>
+        <div class="workspace-card-sub">${cardSub}</div>
       </div>
-      <button class="workspace-mini-btn" type="button">Settings</button>
+      <button class="workspace-mini-btn" type="button" onclick="event.stopPropagation(); ${cardAction}">${escHtml(cardBtnLabel)}</button>
     </div>
   `;
 
@@ -790,13 +795,6 @@ function renderWorkspaceUI(data) {
       })
       .catch(() => {});
   }
-
-  const authSidebarStatus = document.getElementById('auth-sidebar-status');
-  if (authSidebarStatus) authSidebarStatus.textContent = user.authenticated ? `Signed in · ${user.email}` : (auth.has_account ? 'Locked · Sign in required' : 'No account configured');
-  const sidebarAuthBtn = document.getElementById('sidebar-auth-btn');
-  if (sidebarAuthBtn) sidebarAuthBtn.textContent = user.authenticated ? 'Account' : (auth.has_account ? 'Sign in' : 'Create account');
-  const sidebarLogoutBtn = document.getElementById('sidebar-logout-btn');
-  if (sidebarLogoutBtn) sidebarLogoutBtn.style.display = 'none';
 
   const mockDisplayName = document.getElementById('mock-display-name');
   const mockEmail = document.getElementById('mock-email');

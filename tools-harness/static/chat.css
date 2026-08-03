@@ -1,7 +1,7 @@
 /* ── main ────────────────────────────────────────── */
 #main{flex:1;display:flex;flex-direction:column;min-width:0}
-header{background:var(--panel);padding:0 18px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:12px;height:52px;flex-shrink:0}
+header{background:var(--panel);padding:0 14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;height:46px;flex-shrink:0}
 .avatar{width:30px;height:30px;border-radius:50%;flex-shrink:0;
   background:var(--accent);
   display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
@@ -42,7 +42,7 @@ header{background:var(--panel);padding:0 18px;border-bottom:1px solid var(--bord
   display:none;align-items:center;justify-content:center;padding:0 3px}
 #notif-count.visible{display:flex}
 /* notification panel */
-#notif-panel{position:fixed;top:49px;right:12px;width:340px;max-height:420px;
+#notif-panel{position:fixed;top:43px;right:12px;width:340px;max-height:420px;
   background:var(--panel);border:1px solid var(--border-strong);border-radius:10px;
   box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:200;display:none;flex-direction:column;overflow:hidden}
 #notif-panel.open{display:flex}
