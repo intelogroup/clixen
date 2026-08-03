@@ -501,9 +501,15 @@ set `KOKORO_AUTH_TOKEN` to gate it.
 
 - The web UI is a **single-owner local account** model. Requests from `127.0.0.1`
   auto-authenticate as the owner (loopback = trusted); non-local requests require a
-  session cookie.
-- `G4L_DEV_MODE=1` is **off by default** and skips auth on `/chat/local-agent/*`
+  session cookie. Sessions are HMAC-signed with an expiry and an `auth_version`
+  counter — changing the password bumps the version and invalidates every
+  previously-issued session.
+- `CLIXEN_DEV_MODE=1` is **off by default** and skips auth on `/chat/local-agent/*`
   (full filesystem read/write/exec) — only enable it for local development.
-- If the app is ever exposed beyond loopback (tunnel/port-forward), set `DEV_EMAIL` +
-  `DEV_PASSWORD` in `.env` to lock down the owner account, and require auth on the
-  network-facing routes (they already check `_require_auth`).
+- The account is created via `/api/auth/register` (first-run setup). Once a password
+  is configured, register is locked out for any email and `/api/auth/reset-password`
+  requires the **current** password — a leaked email alone cannot take over the
+  account. Password changes invalidate old sessions.
+- `DEV_EMAIL` + `DEV_PASSWORD` only apply on **first-run account creation** and only
+  when `CLIXEN_DEV_MODE=1`; they never overwrite an existing account's password.
+- Login is rate-limited (10 failed attempts per 5 minutes per client IP).

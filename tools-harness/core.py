@@ -25,10 +25,10 @@ def _run_chat_ui():
     import uvicorn
     from chat_ui import app
 
-    # NOTE: G4L_DEV_MODE (skips auth on /chat/local-agent/*) is intentionally NOT
+    # NOTE: CLIXEN_DEV_MODE (skips auth on /chat/local-agent/*) is intentionally NOT
     # forced here — it used to be auto-enabled, permanently opening full filesystem
     # read/write/exec endpoints to the network. Opt in explicitly:
-    #   G4L_DEV_MODE=1 python chat_ui.py
+    #   CLIXEN_DEV_MODE=1 python chat_ui.py
     uvicorn.run(app, host="127.0.0.1", port=9234, log_level="warning")
 
 
