@@ -618,7 +618,7 @@ def execute(query: str, depth: int = 2, breadth: int = 3, chat_id: Optional[str]
         subagent_findings = []
         
         # Decompose initial query
-        decomposed = _decompose_query(query, _PRIMARY_MODEL)
+        decomposed = _decompose_query(query, _cloud_default())
         
         if chat_id:
             # Save checkpoint state and pause for user approval
@@ -647,7 +647,7 @@ def execute(query: str, depth: int = 2, breadth: int = 3, chat_id: Optional[str]
         theme_results = []
         with ThreadPoolExecutor(max_workers=len(decomposed)) as executor:
             futures = {
-                executor.submit(_run_theme_subagent, query, sub_q, seen_urls, breadth, _PRIMARY_MODEL): sub_q 
+                executor.submit(_run_theme_subagent, query, sub_q, seen_urls, breadth, _cloud_default()): sub_q 
                 for sub_q in decomposed
             }
             for fut in futures:
@@ -681,13 +681,13 @@ def execute(query: str, depth: int = 2, breadth: int = 3, chat_id: Optional[str]
             f"Source: {s['title']} ({s['url']})\nContent: {s['content'][:1000]}"
             for s in sources_gathered
         )
-        gap_questions = _get_gap_questions(query, findings_preview, _PRIMARY_MODEL)
+        gap_questions = _get_gap_questions(query, findings_preview, _cloud_default())
         _log.info("Gap questions identified: %s", gap_questions)
         
         if gap_questions:
             with ThreadPoolExecutor(max_workers=len(gap_questions)) as executor:
                 futures = {
-                    executor.submit(_run_theme_subagent, query, gap_q, seen_urls, breadth, _PRIMARY_MODEL): gap_q 
+                    executor.submit(_run_theme_subagent, query, gap_q, seen_urls, breadth, _cloud_default()): gap_q 
                     for gap_q in gap_questions
                 }
                 for fut in futures:
@@ -724,7 +724,7 @@ def execute(query: str, depth: int = 2, breadth: int = 3, chat_id: Optional[str]
 
     # 4. Draft Synthesis
     _log.info("Synthesizing report...")
-    draft = _synthesize_report(query, unique_sources, subagent_findings, _PRIMARY_MODEL)
+    draft = _synthesize_report(query, unique_sources, subagent_findings, _cloud_default())
 
     # Clean think tags if any
     draft = re.sub(r"<think>.*?</think>", "", draft, flags=re.DOTALL).strip()
@@ -738,7 +738,7 @@ def execute(query: str, depth: int = 2, breadth: int = 3, chat_id: Optional[str]
     else:
         _log.info("Running critique loop...")
         _critique_rounds = 1 if _left() < 60 else 3
-        final_report = _critique_and_revise(query, draft, unique_sources, _PRIMARY_MODEL, max_rounds=_critique_rounds)
+        final_report = _critique_and_revise(query, draft, unique_sources, _cloud_default(), max_rounds=_critique_rounds)
 
     # Clean think tags again if any
     final_report = re.sub(r"<think>.*?</think>", "", final_report, flags=re.DOTALL).strip()
@@ -755,7 +755,7 @@ def execute(query: str, depth: int = 2, breadth: int = 3, chat_id: Optional[str]
         _log.info("Skipping CRAAP evaluation — only %.0fs left", _left())
     else:
         _log.info("Running CRAAP test evaluation judge...")
-        craap_table = _evaluate_report_craap(query, final_report, _PRIMARY_MODEL)
+        craap_table = _evaluate_report_craap(query, final_report, _cloud_default())
         final_report += craap_table
 
     # 8. Save Report
@@ -780,7 +780,7 @@ def execute(query: str, depth: int = 2, breadth: int = 3, chat_id: Optional[str]
     else:
         summary_prompt = final_report[:3000]
         try:
-            summary = _call_llm(summary_prompt, _PRIMARY_MODEL, system=(
+            summary = _call_llm(summary_prompt, _cloud_default(), system=(
                 "Draft a concise 3-sentence summary highlighting the core findings of the "
                 "given research report."
             ))
