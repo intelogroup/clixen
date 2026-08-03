@@ -1,4 +1,4 @@
-# Gemma4Llama — Project Guide for Claude
+# Clixen — Project Guide for Claude
 
 ## What This Is
 Local LLM harness + chat app, on-device (Apple M4, 24 GB unified memory).
@@ -27,7 +27,7 @@ Local LLM harness + chat app, on-device (Apple M4, 24 GB unified memory).
 | `agents/local_agent_*.py` | LangGraph local agent — graph, nodes, tool filter |
 | `store/conversation.py` | Per-chat sliding window history |
 | `skills_hub.py` + `skills_data/*.py` | ~200 interactive skills, native + auto-discovered external |
-| `core.py` | Runs chat_ui+telegram_bot+email_watch+task_worker as threads in **one** process. Restart after any imported-code edit: `launchctl kickstart -k gui/$(id -u)/com.gemma4llama.core` |
+| `core.py` | Runs chat_ui+telegram_bot+email_watch+task_worker as threads in **one** process. Restart after any imported-code edit: `launchctl kickstart -k gui/$(id -u)/com.clixen.core` |
 | `messaging_supervisor.sh` | Supervises Telegram + WhatsApp bridge/bot, one process group |
 | `jobs/worker.py` | Polls `job_queue` (one-shot) + `workflow_store` (scheduled automations) |
 
@@ -61,7 +61,7 @@ Single pipeline, no LangGraph, zero API keys required for the base path: `guard 
 `tools/connector_{doordash,uber,sofascore}.py` drive a real logged-in BrowserOS session (no scraping/API keys); `"browser"`-tagged, reachable from web/Telegram but **not** the LangGraph local-agent (toolset gap, by design/not yet closed). `tools/connector_ringback.py`'s `call_my_phone()` places a real SIP call, gated by a 900s/15min cooldown (`ringback/.last_call_ts`, flock-guarded, restore-on-fail) — tool description tells the model to quote the exact cooldown remaining-seconds verbatim rather than paraphrase it. Full detail + bug history: `docs/agents/browser-automation.md`.
 
 ## Telegram + WhatsApp (single supervised job)
-One launchd job (`com.gemma4llama.messaging.plist`) runs `messaging_supervisor.sh`, which supervises `telegram_bot.py` + `whatsapp_bot.py` + `whatsapp_bridge.js` as one process group. `KeepAlive=true` — unload before manual kill. Both routers → `classify_telegram()` → `harness.run()`. Telegram/WhatsApp use Kokoro TTS for spoken replies.
+One launchd job (`com.clixen.messaging.plist`) runs `messaging_supervisor.sh`, which supervises `telegram_bot.py` + `whatsapp_bot.py` + `whatsapp_bridge.js` as one process group. `KeepAlive=true` — unload before manual kill. Both routers → `classify_telegram()` → `harness.run()`. Telegram/WhatsApp use Kokoro TTS for spoken replies.
 
 ## Tauri Desktop App (next phase)
 Not yet built. See `.claude/skills/tauri-migration-plan/SKILL.md`.
@@ -88,8 +88,8 @@ Task-scoped toolset (`document`/`code`/`full`) in `agents/local_agent_tools.py`.
 
 <!-- forge-learnings:start -->
 ## Learnings (auto-maintained by /um — human edits go ABOVE this block)
-- Repo dir renamed gemma4llama→clixen; package name, README, launchd label prefix `com.gemma4llama.*` still say gemma4llama. Watch for hardcoded `/gemma4llama` paths (security_utils.py WORKSPACE_ROOT must derive from `__file__`).
-- Messaging is ONE launchd job `com.gemma4llama.messaging.plist` → `messaging_supervisor.sh` (telegram_bot + whatsapp_bot:9236 + whatsapp_bridge:9235). Logs: `tools-harness/messaging_std{err,out}.log`. Restart via `launchctl unload/load` (KeepAlive=true).
+- Repo dir renamed gemma4llama→clixen; package name, README, launchd label prefix `com.clixen.*` (renamed 2026-08-03). Watch for hardcoded `/gemma4llama` paths (`tools/path_policy.py` WORKSPACE_ROOT must derive from `__file__`).
+- Messaging is ONE launchd job `com.clixen.messaging.plist` → `messaging_supervisor.sh` (telegram_bot + whatsapp_bot:9236 + whatsapp_bridge:9235). Logs: `tools-harness/messaging_std{err,out}.log`. Restart via `launchctl unload/load` (KeepAlive=true).
 - `src/g4l/` is a frozen phase-1 prototype; only `core/models.py` + `core/utils.py` are imported by production `chat_ui.py`. `tools-harness/` is the real runtime.
 - Router `classify()`/`classify_telegram()`: every branch returns cloud (`CLOUD_MODEL`) except `ocr`, which stays `gemma4:12b-mlx` (only multimodal model) — flipped cloud-first 2026-07, this line was stale (used to say every branch returns gemma4:12b-mlx). `harness.py`'s post-classify if/elif still re-overrides some intents back to local, see CLAUDE.md → Routing.
 - Telegram document intent (`_run_doc_agent`): deterministic gather→one `chat(tools=[])` synthesis→convert; NO agent loop (old loop hung ~80s/round). `_content_query` strips format words before web search; converters return error STRINGS not raises (verify file on disk).

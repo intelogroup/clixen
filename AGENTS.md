@@ -41,7 +41,7 @@ deliverable wasn't produced — check the last Report before treating it as new 
 
 <!-- forge-learnings:start -->
 ## Learnings (auto-maintained by /um — human edits go ABOVE this block)
-- Repo dir renamed gemma4llama→clixen; package name, README, launchd label prefix `com.gemma4llama.*` still say gemma4llama. Watch for hardcoded `/gemma4llama` paths (security_utils.py WORKSPACE_ROOT must derive from `__file__`).
+- Repo dir renamed gemma4llama→clixen; package name, README, launchd label prefix `com.clixen.*` (renamed 2026-08-03). Watch for hardcoded `/gemma4llama` paths (security_utils.py WORKSPACE_ROOT must derive from `__file__`).
 - Messaging is ONE launchd job `com.gemma4llama.messaging.plist` → `messaging_supervisor.sh` (telegram_bot + whatsapp_bot:9236 + whatsapp_bridge:9235). Logs: `tools-harness/messaging_std{err,out}.log`. Restart via `launchctl unload/load` (KeepAlive=true).
 - `src/g4l/` is a frozen phase-1 prototype; only `core/models.py` + `core/utils.py` are imported by production `chat_ui.py`. `tools-harness/` is the real runtime.
 - Router `classify()`/`classify_telegram()`: every branch returns cloud (`CLOUD_MODEL`) except `ocr`, which stays `gemma4:12b-mlx` (only multimodal model) — flipped cloud-first 2026-07, this line was stale (used to say every branch returns gemma4:12b-mlx). `harness.py`'s post-classify if/elif still re-overrides some intents back to local, see CLAUDE.md → Routing.
