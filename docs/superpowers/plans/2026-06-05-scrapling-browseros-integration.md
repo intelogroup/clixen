@@ -1,6 +1,6 @@
 # Scrapling + BrowserOS Hidden Tab Integration (June 2026)
 
-> Implementation plan for adding adaptive web scraping (Scrapling) and a complete Uber login flow to the gemma4llama agent harness. This documents work completed June 5, 2026.
+> Implementation plan for adding adaptive web scraping (Scrapling) and a complete Uber login flow to the clixen agent harness. This documents work completed June 5, 2026.
 
 ## Goal
 
@@ -12,7 +12,7 @@ Add two complementary capabilities to the local agent:
 ## Architecture
 
 ```
-gemma4llama/tools-harness/
+clixen/tools-harness/
 ├── tools/
 │   ├── scrapling_fetch.py        # NEW: 4 scrapling tool functions + schemas
 │   ├── connector_uber.py         # UPDATED: Scrapling integration, _login_uber_email, onMouseDown fix

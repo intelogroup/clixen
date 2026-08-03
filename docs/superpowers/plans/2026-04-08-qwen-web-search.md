@@ -16,7 +16,7 @@
 |--------|------|
 | Modify | `tools-harness/harness.py` (1 line + comment) |
 | Test | `tools-harness/test_harness_web_search.py` (new) |
-| Sync | `~/developer/gemma4llama/tools-harness/harness.py` |
+| Sync | `~/developer/clixen/tools-harness/harness.py` |
 
 ---
 
@@ -28,7 +28,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `/Users/kalinovdameus/Developer/gemma4llama/tools-harness/test_harness_web_search.py`:
+Create `/Users/kalinovdameus/Developer/clixen/tools-harness/test_harness_web_search.py`:
 
 ```python
 """
@@ -126,7 +126,7 @@ def test_no_force_web_search_qwen7b_gets_no_tools_for_casual():
 - [ ] **Step 2: Run to verify tests fail**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama/tools-harness
+cd /Users/kalinovdameus/Developer/clixen/tools-harness
 python3 -m pytest test_harness_web_search.py -v 2>&1 | tail -20
 ```
 
@@ -134,7 +134,7 @@ Expected: `test_force_web_search_qwen7b_keeps_model_and_gets_web_search` FAILS (
 
 - [ ] **Step 3: Apply the fix to harness.py**
 
-In `/Users/kalinovdameus/Developer/gemma4llama/tools-harness/harness.py`, find this block (around line 200):
+In `/Users/kalinovdameus/Developer/clixen/tools-harness/harness.py`, find this block (around line 200):
 
 ```python
     # UI web-search toggle: override whatever the router chose
@@ -161,7 +161,7 @@ Replace with:
 - [ ] **Step 4: Run tests — all should pass**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama/tools-harness
+cd /Users/kalinovdameus/Developer/clixen/tools-harness
 python3 -m pytest test_harness_web_search.py -v
 ```
 
@@ -178,10 +178,10 @@ test_harness_web_search.py::test_no_force_web_search_qwen7b_gets_no_tools_for_ca
 - [ ] **Step 5: Sync to lowercase repo and commit**
 
 ```bash
-cp ~/Developer/gemma4llama/tools-harness/harness.py \
-   ~/developer/gemma4llama/tools-harness/harness.py
+cp ~/Developer/clixen/tools-harness/harness.py \
+   ~/developer/clixen/tools-harness/harness.py
 
-diff ~/Developer/gemma4llama/tools-harness/harness.py \
-     ~/developer/gemma4llama/tools-harness/harness.py
+diff ~/Developer/clixen/tools-harness/harness.py \
+     ~/developer/clixen/tools-harness/harness.py
 # Expected: no output
 ```

@@ -18,7 +18,7 @@
 | Modify | `tools-harness/tools/registry.py` |
 | Modify | `tools-harness/clients/router.py` |
 | Modify | `tools-harness/harness.py` |
-| Sync (all 4 above) | `~/developer/gemma4llama/tools-harness/` (lowercase repo) |
+| Sync (all 4 above) | `~/developer/clixen/tools-harness/` (lowercase repo) |
 
 ---
 
@@ -62,7 +62,7 @@ Expected: prints `PaddleOCR import OK`. First run downloads ~15 MB of detection/
 
 - [ ] **Step 1: Write the tool module**
 
-Create `/Users/kalinovdameus/Developer/gemma4llama/tools-harness/tools/ocr.py`:
+Create `/Users/kalinovdameus/Developer/clixen/tools-harness/tools/ocr.py`:
 
 ```python
 """
@@ -239,7 +239,7 @@ def test_executor_in_registry():
 - [ ] **Step 5: Run tests to verify they fail correctly**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama/tools-harness
+cd /Users/kalinovdameus/Developer/clixen/tools-harness
 python3 -m pytest test_ocr.py -v
 ```
 
@@ -263,7 +263,7 @@ test_ocr.py::test_executor_in_registry PASSED
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama
+cd /Users/kalinovdameus/Developer/clixen
 git add tools-harness/tools/ocr.py tools-harness/tools/registry.py tools-harness/test_ocr.py
 git commit -m "feat: add PaddleOCR tool (ocr_image) with registry wiring"
 ```
@@ -328,7 +328,7 @@ def test_ocr_intent_telegram():
 - [ ] **Step 5: Run routing tests**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama/tools-harness
+cd /Users/kalinovdameus/Developer/clixen/tools-harness
 python3 -m pytest test_routing.py -v -k "ocr"
 ```
 
@@ -337,7 +337,7 @@ Expected: both new tests pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama
+cd /Users/kalinovdameus/Developer/clixen
 git add tools-harness/clients/router.py tools-harness/test_routing.py
 git commit -m "feat: add ocr intent to router → qwen2.5-coder:7b"
 ```
@@ -366,7 +366,7 @@ The `_manual_ide` stripping block (around line 191) only runs when `_manual_ide=
 - [ ] **Step 3: Quick integration smoke test**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama/tools-harness
+cd /Users/kalinovdameus/Developer/clixen/tools-harness
 python3 -c "
 from clients.router import classify
 model, intent = classify('read the text in this image /tmp/test.png')
@@ -385,7 +385,7 @@ ocr_image in EXECUTORS: True
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama
+cd /Users/kalinovdameus/Developer/clixen
 git add tools-harness/harness.py
 git commit -m "feat: wire ocr intent in harness → qwen7b + ocr_image tool"
 ```
@@ -395,32 +395,32 @@ git commit -m "feat: wire ocr intent in harness → qwen7b + ocr_image tool"
 ## Task 6: Sync to lowercase repo
 
 **Files:**
-- Sync: `~/developer/gemma4llama/tools-harness/tools/ocr.py`
-- Sync: `~/developer/gemma4llama/tools-harness/tools/registry.py`
-- Sync: `~/developer/gemma4llama/tools-harness/clients/router.py`
-- Sync: `~/developer/gemma4llama/tools-harness/harness.py`
+- Sync: `~/developer/clixen/tools-harness/tools/ocr.py`
+- Sync: `~/developer/clixen/tools-harness/tools/registry.py`
+- Sync: `~/developer/clixen/tools-harness/clients/router.py`
+- Sync: `~/developer/clixen/tools-harness/harness.py`
 
 - [ ] **Step 1: Copy all four modified files to the lowercase repo**
 
 ```bash
-cp ~/Developer/gemma4llama/tools-harness/tools/ocr.py \
-   ~/developer/gemma4llama/tools-harness/tools/ocr.py
+cp ~/Developer/clixen/tools-harness/tools/ocr.py \
+   ~/developer/clixen/tools-harness/tools/ocr.py
 
-cp ~/Developer/gemma4llama/tools-harness/tools/registry.py \
-   ~/developer/gemma4llama/tools-harness/tools/registry.py
+cp ~/Developer/clixen/tools-harness/tools/registry.py \
+   ~/developer/clixen/tools-harness/tools/registry.py
 
-cp ~/Developer/gemma4llama/tools-harness/clients/router.py \
-   ~/developer/gemma4llama/tools-harness/clients/router.py
+cp ~/Developer/clixen/tools-harness/clients/router.py \
+   ~/developer/clixen/tools-harness/clients/router.py
 
-cp ~/Developer/gemma4llama/tools-harness/harness.py \
-   ~/developer/gemma4llama/tools-harness/harness.py
+cp ~/Developer/clixen/tools-harness/harness.py \
+   ~/developer/clixen/tools-harness/harness.py
 ```
 
 - [ ] **Step 2: Verify the copy**
 
 ```bash
-diff ~/Developer/gemma4llama/tools-harness/tools/ocr.py \
-     ~/developer/gemma4llama/tools-harness/tools/ocr.py
+diff ~/Developer/clixen/tools-harness/tools/ocr.py \
+     ~/developer/clixen/tools-harness/tools/ocr.py
 ```
 
 Expected: no output (files identical).
@@ -428,7 +428,7 @@ Expected: no output (files identical).
 - [ ] **Step 3: Commit in lowercase repo**
 
 ```bash
-cd ~/developer/gemma4llama
+cd ~/developer/clixen
 git add tools-harness/tools/ocr.py tools-harness/tools/registry.py \
         tools-harness/clients/router.py tools-harness/harness.py
 git commit -m "sync: paddleocr tool + ocr intent from capital-D repo"
@@ -443,7 +443,7 @@ git commit -m "sync: paddleocr tool + ocr intent from capital-D repo"
 ```bash
 # Find and kill the running server (it auto-restarts via launchd or manual kill+relaunch)
 pkill -f chat_ui.py
-cd ~/Developer/gemma4llama/tools-harness
+cd ~/Developer/clixen/tools-harness
 python3 chat_ui.py &
 ```
 
@@ -462,7 +462,7 @@ Expected: qwen2.5-coder:7b calls `ocr_image`, PaddleOCR extracts text, model ret
 - [ ] **Step 3: Verify in server logs**
 
 ```bash
-tail -20 ~/Developer/gemma4llama/tools-harness/chat_ui.log
+tail -20 ~/Developer/clixen/tools-harness/chat_ui.log
 ```
 
 Expected: log line showing `[router] model=qwen2.5-coder:7b intent=ocr` and a tool call to `ocr_image`.

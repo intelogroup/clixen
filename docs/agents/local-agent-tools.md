@@ -67,12 +67,9 @@ When adding hints to `execute_tool()`:
 
 ## System Prompts
 
-Two variants in `local_agent_nodes.py`:
-- `_LOCAL_AGENT_SYSTEM_PROMPT_GEMMA4` (line 26) — used for gemma4 model
-- `_LOCAL_AGENT_SYSTEM_PROMPT_DEFAULT` (line 65) — used for all other models
-
-Both use `.format(home_dir=...)` at runtime (`_get_system_prompt()`, line 94).
-**Critical**: any `{` or `}` in prompt text must be `{{` `}}` — bare braces cause `KeyError`.
+Single dynamic builder in `local_agent_nodes.py` — no per-model prompt variants anymore:
+- `_build_system_prompt(task, tool_schemas, home)` (line 40) — composes the prompt per task (`document`/`code`/`full`) and the actual tool schemas passed in.
+- `_get_system_prompt(model, task="full", query="", tools=None)` (line 207) — wraps `_build_system_prompt`, prepends a memory-recall block via `tools.memory_tools.recall_block(query)` when a query is given.
 
 ## Path Resolution
 

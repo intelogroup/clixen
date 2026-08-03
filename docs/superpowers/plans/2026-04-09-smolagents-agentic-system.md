@@ -53,7 +53,7 @@ Create `tools-harness/agents/__init__.py` as an empty file.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 git add tools-harness/agents/__init__.py
 git commit -m "feat: add agents package skeleton"
 ```
@@ -94,7 +94,7 @@ def test_unknown_model_raises():
 - [ ] **Step 2: Run test — expect failure**
 
 ```bash
-cd ~/Developer/gemma4llama/tools-harness
+cd ~/Developer/clixen/tools-harness
 python -m pytest agents/test_models.py -v
 ```
 
@@ -1093,7 +1093,7 @@ def test_casual_uses_local_chat(monkeypatch):
 - [ ] **Step 2: Run test — expect failure**
 
 ```bash
-cd ~/Developer/gemma4llama/tools-harness
+cd ~/Developer/clixen/tools-harness
 python -m pytest test_harness_dispatch.py -v
 ```
 
@@ -1145,7 +1145,7 @@ Expected: 2 PASSED.
 - [ ] **Step 6: Smoke test — start server and send a temporal query**
 
 ```bash
-cd ~/Developer/gemma4llama/tools-harness
+cd ~/Developer/clixen/tools-harness
 python chat_ui.py &
 sleep 3
 curl -s -X POST http://localhost:9234/chat \
@@ -1173,34 +1173,34 @@ git commit -m "feat: wire smolagents dispatcher into harness.run()"
 ## Task 8: Sync lowercase repo
 
 **Files:**
-- Sync: `~/developer/gemma4llama/tools-harness/agents/`
-- Sync: `~/developer/gemma4llama/tools-harness/harness.py`
+- Sync: `~/developer/clixen/tools-harness/agents/`
+- Sync: `~/developer/clixen/tools-harness/harness.py`
 
 - [ ] **Step 1: Copy agents package**
 
 ```bash
-cp -r ~/Developer/gemma4llama/tools-harness/agents \
-      ~/developer/gemma4llama/tools-harness/agents
+cp -r ~/Developer/clixen/tools-harness/agents \
+      ~/developer/clixen/tools-harness/agents
 ```
 
 - [ ] **Step 2: Copy harness.py**
 
 ```bash
-cp ~/Developer/gemma4llama/tools-harness/harness.py \
-   ~/developer/gemma4llama/tools-harness/harness.py
+cp ~/Developer/clixen/tools-harness/harness.py \
+   ~/developer/clixen/tools-harness/harness.py
 ```
 
 - [ ] **Step 3: Restart Telegram bot**
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.gemma4llama.telegrambot.plist
-launchctl load ~/Library/LaunchAgents/com.gemma4llama.telegrambot.plist
+launchctl unload ~/Library/LaunchAgents/com.clixen.telegrambot.plist
+launchctl load ~/Library/LaunchAgents/com.clixen.telegrambot.plist
 ```
 
 - [ ] **Step 4: Verify no import errors**
 
 ```bash
-tail -20 ~/developer/gemma4llama/tools-harness/telegram_bot_stderr.log
+tail -20 ~/developer/clixen/tools-harness/telegram_bot_stderr.log
 ```
 
 Expected: no `ImportError` or `ModuleNotFoundError`.
@@ -1208,7 +1208,7 @@ Expected: no `ImportError` or `ModuleNotFoundError`.
 - [ ] **Step 5: Commit lowercase copy**
 
 ```bash
-cd ~/developer/gemma4llama
+cd ~/developer/clixen
 git add tools-harness/agents tools-harness/harness.py
 git commit -m "sync: smolagents dispatcher + agents package"
 ```

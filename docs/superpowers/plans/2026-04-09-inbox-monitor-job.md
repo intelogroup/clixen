@@ -31,7 +31,7 @@
 - [ ] **Step 1: Install pymupdf and openpyxl**
 
 ```bash
-cd ~/Developer/gemma4llama/tools-harness
+cd ~/Developer/clixen/tools-harness
 pip install pymupdf openpyxl
 ```
 
@@ -120,7 +120,7 @@ def test_download_attachment_saves_file(tmp_path):
 - [ ] **Step 2: Run test to confirm it fails**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 python -m pytest tests/test_gmail_attachments.py -v 2>&1 | head -30
 ```
 
@@ -246,7 +246,7 @@ def download_attachment(
 - [ ] **Step 4: Run tests to confirm they pass**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 python -m pytest tests/test_gmail_attachments.py -v
 ```
 
@@ -255,7 +255,7 @@ Expected: `2 passed`
 - [ ] **Step 5: Commit**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 git add tools-harness/tools/gmail.py tests/test_gmail_attachments.py
 git commit -m "feat: add Gmail attachment listing and download"
 ```
@@ -313,7 +313,7 @@ def test_extract_pdf_images_empty_pdf(tmp_path):
 - [ ] **Step 2: Run test to confirm it fails**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 python -m pytest tests/test_pdf_tools.py -v 2>&1 | head -20
 ```
 
@@ -413,7 +413,7 @@ def extract_pdf_images(pdf_path: str, output_dir: str) -> list[str]:
 - [ ] **Step 4: Run tests**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 python -m pytest tests/test_pdf_tools.py -v
 ```
 
@@ -422,7 +422,7 @@ Expected: `2 passed`
 - [ ] **Step 5: Commit**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 git add tools-harness/tools/pdf_tools.py tests/test_pdf_tools.py
 git commit -m "feat: add PDF to markdown conversion and image extraction"
 ```
@@ -493,7 +493,7 @@ def test_tracker_creates_directory(tmp_path):
 - [ ] **Step 2: Run test to confirm it fails**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 python -m pytest tests/test_file_tracker.py -v 2>&1 | head -20
 ```
 
@@ -579,7 +579,7 @@ def update_tracker(tracker_path: str, row: dict) -> None:
 - [ ] **Step 4: Run tests**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 python -m pytest tests/test_file_tracker.py -v
 ```
 
@@ -588,7 +588,7 @@ Expected: `2 passed`
 - [ ] **Step 5: Commit**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 git add tools-harness/tools/file_tracker.py tests/test_file_tracker.py
 git commit -m "feat: add Excel file tracker for processed PDFs"
 ```
@@ -637,7 +637,7 @@ def test_ollama_summarize_fallback():
 - [ ] **Step 3: Run test to confirm it fails**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 python -m pytest tests/test_inbox_monitor_job.py -v 2>&1 | head -20
 ```
 
@@ -937,7 +937,7 @@ if __name__ == "__main__":
 - [ ] **Step 5: Run the tests**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 python -m pytest tests/test_inbox_monitor_job.py -v
 ```
 
@@ -946,7 +946,7 @@ Expected: `3 passed`
 - [ ] **Step 6: Smoke test (dry run — one tick, no real emails required)**
 
 ```bash
-cd ~/Developer/gemma4llama/tools-harness
+cd ~/Developer/clixen/tools-harness
 python -m jobs.inbox_monitor_job --once 2>&1 | head -20
 ```
 
@@ -955,7 +955,7 @@ Expected: `[job] Inbox Monitor started. ...` and `[tick] ... — checking inbox`
 - [ ] **Step 7: Commit**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 git add tools-harness/jobs/__init__.py tools-harness/jobs/inbox_monitor_job.py \
     tests/test_inbox_monitor_job.py
 git commit -m "feat: add inbox monitor job — 5-min polling loop for PDF emails"
@@ -1075,7 +1075,7 @@ In the `ALL_TOOLS` list, after the Gmail schemas block, add:
 - [ ] **Step 4: Smoke test registry loads**
 
 ```bash
-cd ~/Developer/gemma4llama/tools-harness
+cd ~/Developer/clixen/tools-harness
 python -c "from tools.registry import ALL_TOOLS; names = [t['function']['name'] for t in ALL_TOOLS]; print([n for n in names if 'pdf' in n or 'attach' in n])"
 ```
 
@@ -1084,7 +1084,7 @@ Expected: `['list_pdf_attachments', 'convert_pdf']` (may include `read_pdf` too)
 - [ ] **Step 5: Commit**
 
 ```bash
-cd ~/Developer/gemma4llama
+cd ~/Developer/clixen
 git add tools-harness/tools/registry.py
 git commit -m "feat: register list_pdf_attachments and convert_pdf in tool registry"
 ```
@@ -1096,7 +1096,7 @@ git commit -m "feat: register list_pdf_attachments and convert_pdf in tool regis
 - [ ] **Step 1: Start the 1-hour job in background**
 
 ```bash
-cd ~/Developer/gemma4llama/tools-harness
+cd ~/Developer/clixen/tools-harness
 nohup python -m jobs.inbox_monitor_job > /tmp/inbox_monitor.log 2>&1 &
 echo "Job PID: $!"
 ```

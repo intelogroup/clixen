@@ -43,7 +43,7 @@
 - [ ] **Step 1: Install packages**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama/tools-harness
+cd /Users/kalinovdameus/Developer/clixen/tools-harness
 pip install "langgraph>=0.2.0" "langgraph-checkpoint>=1.0.0"
 ```
 
@@ -187,8 +187,8 @@ def test_wizard_trigger_morning_briefing():
 def test_wizard_trigger_inbox_monitor():
     assert WIZARD_TRIGGER_RE.search("configure inbox monitor")
 
-def test_wizard_trigger_medicospira():
-    assert WIZARD_TRIGGER_RE.search("enable medicospira")
+def test_wizard_trigger_example_workflow():
+    assert WIZARD_TRIGGER_RE.search("enable example_workflow")
 
 def test_wizard_no_trigger_on_casual():
     assert not WIZARD_TRIGGER_RE.search("how are you")
@@ -222,7 +222,7 @@ CANT_DO_RE = re.compile(
 
 WIZARD_TRIGGER_RE = re.compile(
     r"\b(set\s*up|setup|configure|enable|install|register|activate)\b.{0,50}"
-    r"\b(morning[\s\-]?briefing|inbox[\s\-]?monitor|medicospira"
+    r"\b(morning[\s\-]?briefing|inbox[\s\-]?monitor|example_workflow"
     r"|workflow|credential|bot[\s\-]?token|telegram)\b",
     re.IGNORECASE,
 )
@@ -239,7 +239,7 @@ CAPABILITY_STRING = """I can't do that. Here's what I can help with:
 • Code — write, debug, execute Python and bash
 • Files — read / write / search local filesystem
 • Git — status, diff, commit, branch
-• Workflows — morning briefing, inbox monitor, medicospira (after setup)
+• Workflows — morning briefing, inbox monitor, example_workflow (after setup)
 • Messaging — send Telegram notifications"""
 ```
 
@@ -323,7 +323,7 @@ def test_router_tool_task_email():
 def test_router_wizard_stays_active_mid_session():
     """Active wizard keeps routing to wizard regardless of message content."""
     with patch("agents.nodes.router_node.classify", return_value=("qwen3:4b", "casual")):
-        result = router_node(_state("how are you?", wizard_active=True, wizard_workflow="medicospira"))
+        result = router_node(_state("how are you?", wizard_active=True, wizard_workflow="example_workflow"))
     assert result["route"] == "wizard"
 
 
@@ -371,7 +371,7 @@ from clients.router import classify
 _WORKFLOW_NAMES = {
     "morning_briefing": re.compile(r"morning[\s\-]?briefing", re.IGNORECASE),
     "inbox_monitor":    re.compile(r"inbox[\s\-]?monitor", re.IGNORECASE),
-    "medicospira":      re.compile(r"medicospira", re.IGNORECASE),
+    "example_workflow":      re.compile(r"example_workflow", re.IGNORECASE),
 }
 
 
@@ -546,7 +546,7 @@ from agents.nodes.wizard.workflows import WORKFLOW_MANIFESTS
 def test_all_three_workflows_defined():
     assert "morning_briefing" in WORKFLOW_MANIFESTS
     assert "inbox_monitor" in WORKFLOW_MANIFESTS
-    assert "medicospira" in WORKFLOW_MANIFESTS
+    assert "example_workflow" in WORKFLOW_MANIFESTS
 
 
 def test_each_manifest_has_credentials_list():
@@ -570,16 +570,16 @@ def test_morning_briefing_requires_telegram_and_google():
     assert "GOOGLE_CREDENTIALS_PATH" in keys
 
 
-def test_medicospira_validate_accepts_valid_email():
-    creds = {c["key"]: c for c in WORKFLOW_MANIFESTS["medicospira"]["credentials"]}
-    assert creds["MEDICOSPIRA_EMAIL"]["validate"]("user@example.com")
-    assert not creds["MEDICOSPIRA_EMAIL"]["validate"]("notanemail")
+def test_example_workflow_validate_accepts_valid_email():
+    creds = {c["key"]: c for c in WORKFLOW_MANIFESTS["example_workflow"]["credentials"]}
+    assert creds["EXAMPLE_WORKFLOW_EMAIL"]["validate"]("user@example.com")
+    assert not creds["EXAMPLE_WORKFLOW_EMAIL"]["validate"]("notanemail")
 
 
-def test_medicospira_validate_rejects_short_password():
-    creds = {c["key"]: c for c in WORKFLOW_MANIFESTS["medicospira"]["credentials"]}
-    assert not creds["MEDICOSPIRA_PASSWORD"]["validate"]("abc")
-    assert creds["MEDICOSPIRA_PASSWORD"]["validate"]("abcd")
+def test_example_workflow_validate_rejects_short_password():
+    creds = {c["key"]: c for c in WORKFLOW_MANIFESTS["example_workflow"]["credentials"]}
+    assert not creds["EXAMPLE_WORKFLOW_PASSWORD"]["validate"]("abc")
+    assert creds["EXAMPLE_WORKFLOW_PASSWORD"]["validate"]("abcd")
 ```
 
 - [ ] **Step 2: Run to confirm failure**
@@ -659,17 +659,17 @@ WORKFLOW_MANIFESTS: dict[str, dict] = {
             },
         ],
     },
-    "medicospira": {
-        "description": "Medicospira quiz automation — auto-answers 5-question blocks",
+    "example_workflow": {
+        "description": "Example third-party site automation with stored credentials",
         "credentials": [
             {
-                "key": "MEDICOSPIRA_EMAIL",
-                "prompt": "Your Medicospira account email:",
+                "key": "EXAMPLE_WORKFLOW_EMAIL",
+                "prompt": "Your Example Workflow account email:",
                 "validate": lambda v: "@" in v and len(v) > 5,
             },
             {
-                "key": "MEDICOSPIRA_PASSWORD",
-                "prompt": "Your Medicospira account password (stored in macOS Keychain):",
+                "key": "EXAMPLE_WORKFLOW_PASSWORD",
+                "prompt": "Your Example Workflow account password (stored in macOS Keychain):",
                 "validate": lambda v: len(v) >= 4,
             },
         ],
@@ -728,19 +728,19 @@ def _wstate(msg, workflow, step, collected=None, missing=None, active=True):
 def test_wizard_init_asks_for_first_missing_cred():
     with patch("agents.nodes.wizard.wizard_node.vault") as mock_vault:
         mock_vault.has.return_value = False
-        result = wizard_node(_wstate("set up medicospira", "medicospira", "init"))
+        result = wizard_node(_wstate("set up example_workflow", "example_workflow", "init"))
     last_msg = result["messages"][-1]
     assert isinstance(last_msg, AIMessage)
-    assert "email" in last_msg.content.lower() or "medicospira" in last_msg.content.lower()
-    assert result["wizard_step"] == "MEDICOSPIRA_EMAIL"
+    assert "email" in last_msg.content.lower() or "example_workflow" in last_msg.content.lower()
+    assert result["wizard_step"] == "EXAMPLE_WORKFLOW_EMAIL"
 
 
 def test_wizard_invalid_value_re_asks():
     with patch("agents.nodes.wizard.wizard_node.vault") as mock_vault:
         mock_vault.has.return_value = False
-        result = wizard_node(_wstate("notanemail", "medicospira", "MEDICOSPIRA_EMAIL",
-                                     missing=["MEDICOSPIRA_EMAIL", "MEDICOSPIRA_PASSWORD"]))
-    assert result["wizard_step"] == "MEDICOSPIRA_EMAIL"
+        result = wizard_node(_wstate("notanemail", "example_workflow", "EXAMPLE_WORKFLOW_EMAIL",
+                                     missing=["EXAMPLE_WORKFLOW_EMAIL", "EXAMPLE_WORKFLOW_PASSWORD"]))
+    assert result["wizard_step"] == "EXAMPLE_WORKFLOW_EMAIL"
     assert result["wizard_active"] is True
 
 
@@ -748,30 +748,30 @@ def test_wizard_valid_value_advances_step():
     with patch("agents.nodes.wizard.wizard_node.vault") as mock_vault, \
          patch("agents.nodes.wizard.wizard_node._register_workflow"):
         mock_vault.has.return_value = False
-        result = wizard_node(_wstate("user@example.com", "medicospira", "MEDICOSPIRA_EMAIL",
-                                     missing=["MEDICOSPIRA_EMAIL", "MEDICOSPIRA_PASSWORD"]))
-    assert result["wizard_step"] == "MEDICOSPIRA_PASSWORD"
-    assert "MEDICOSPIRA_EMAIL" in result["wizard_collected"]
+        result = wizard_node(_wstate("user@example.com", "example_workflow", "EXAMPLE_WORKFLOW_EMAIL",
+                                     missing=["EXAMPLE_WORKFLOW_EMAIL", "EXAMPLE_WORKFLOW_PASSWORD"]))
+    assert result["wizard_step"] == "EXAMPLE_WORKFLOW_PASSWORD"
+    assert "EXAMPLE_WORKFLOW_EMAIL" in result["wizard_collected"]
 
 
 def test_wizard_completes_when_all_creds_collected():
     with patch("agents.nodes.wizard.wizard_node.vault") as mock_vault, \
          patch("agents.nodes.wizard.wizard_node._register_workflow") as mock_reg:
         mock_vault.has.return_value = False
-        result = wizard_node(_wstate("mypassword", "medicospira", "MEDICOSPIRA_PASSWORD",
-                                     collected={"MEDICOSPIRA_EMAIL": "u@x.com"},
-                                     missing=["MEDICOSPIRA_PASSWORD"]))
-    mock_reg.assert_called_once_with("medicospira")
+        result = wizard_node(_wstate("mypassword", "example_workflow", "EXAMPLE_WORKFLOW_PASSWORD",
+                                     collected={"EXAMPLE_WORKFLOW_EMAIL": "u@x.com"},
+                                     missing=["EXAMPLE_WORKFLOW_PASSWORD"]))
+    mock_reg.assert_called_once_with("example_workflow")
     assert result["wizard_active"] is False
 
 
 def test_wizard_skips_creds_already_in_vault():
     with patch("agents.nodes.wizard.wizard_node.vault") as mock_vault, \
          patch("agents.nodes.wizard.wizard_node._register_workflow") as mock_reg:
-        mock_vault.has.side_effect = lambda k: k == "MEDICOSPIRA_EMAIL"
-        result = wizard_node(_wstate("set up medicospira", "medicospira", "init"))
+        mock_vault.has.side_effect = lambda k: k == "EXAMPLE_WORKFLOW_EMAIL"
+        result = wizard_node(_wstate("set up example_workflow", "example_workflow", "init"))
     # Should ask for password (email already in vault), not email
-    assert result["wizard_step"] == "MEDICOSPIRA_PASSWORD"
+    assert result["wizard_step"] == "EXAMPLE_WORKFLOW_PASSWORD"
 ```
 
 - [ ] **Step 2: Run to confirm failure**
@@ -792,12 +792,12 @@ from pathlib import Path
 
 
 def _write_morning_briefing_plist(hour: str) -> None:
-    plist_path = Path.home() / "Library/LaunchAgents/com.gemma4llama.morningbriefing.plist"
+    plist_path = Path.home() / "Library/LaunchAgents/com.clixen.morningbriefing.plist"
     plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key><string>com.gemma4llama.morningbriefing</string>
+    <key>Label</key><string>com.clixen.morningbriefing</string>
     <key>ProgramArguments</key>
     <array>
         <string>/Users/{os.environ.get('USER','user')}/miniforge3/bin/python3</string>
@@ -836,7 +836,7 @@ def _register_workflow(workflow: str) -> None:
         job_queue.init()
         job_queue.enqueue("email_pipeline", {})
 
-    # medicospira: on-demand only — credentials stored, no schedule needed
+    # example_workflow: on-demand only — credentials stored, no schedule needed
 ```
 
 - [ ] **Step 4: Create wizard_node.py**
@@ -1223,18 +1223,18 @@ from unittest.mock import patch
 from agents.graph import run_agent
 
 
-def test_wizard_multi_turn_medicospira():
-    """Full 2-turn credential collection for medicospira."""
-    thread = "integration_medicospira_01"
+def test_wizard_multi_turn_example_workflow():
+    """Full 2-turn credential collection for example_workflow."""
+    thread = "integration_example_workflow_01"
     with patch("agents.nodes.wizard.wizard_node.vault") as mock_vault, \
          patch("agents.nodes.wizard.register._register_workflow"):
         mock_vault.has.return_value = False
         mock_vault.set.return_value = None
 
         # Turn 1: trigger wizard
-        reply1, route1, _ = run_agent("set up medicospira", thread_id=thread)
+        reply1, route1, _ = run_agent("set up example_workflow", thread_id=thread)
         assert route1 == "wizard"
-        assert "email" in reply1.lower() or "medicospira" in reply1.lower()
+        assert "email" in reply1.lower() or "example_workflow" in reply1.lower()
 
         # Turn 2: provide email
         reply2, route2, _ = run_agent("user@example.com", thread_id=thread)
@@ -1298,5 +1298,5 @@ python -m pytest tests/ -v
 # Live SSE smoke (server running)
 curl -sN 'http://localhost:9234/agent/stream?message=search+latest+AI+news&chat_id=live_test'
 curl -sN 'http://localhost:9234/agent/stream?message=call+me+on+my+phone&chat_id=live_test2'
-curl -sN 'http://localhost:9234/agent/stream?message=set+up+medicospira&chat_id=wizard_test'
+curl -sN 'http://localhost:9234/agent/stream?message=set+up+example_workflow&chat_id=wizard_test'
 ```

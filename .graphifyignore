@@ -1,0 +1,6 @@
+# Runtime-generated analytics chart exports — not source content
+tools-harness/static/charts/
+
+# Runtime/test noise
+tools-harness/scratch/
+tools-harness/.baileys_auth/

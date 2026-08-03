@@ -1,10 +1,11 @@
 # Web Search
 
 ```
-tools/websearch.py        155 lines — guard→rewrite→search→rerank→summarize→finalize
-tools/searxng_search.py   125 lines — SearXNG adapter (70+ engines, Google included) + DDG fallback
-tools/ddg_search.py       296 lines — DuckDuckGo free search fallback
-tools/search_agentic.py   1808 lines — rerank_items() + summarize_with_model()
+tools/websearch.py                  668 lines — guard→rewrite→search→rerank→summarize→finalize
+tools/searxng_search.py             125 lines — SearXNG adapter (70+ engines, Google included) + DDG fallback
+tools/ddg_search.py                 296 lines — DuckDuckGo free search fallback
+tools/search_agentic/_scoring.py    734 lines — scoring helpers (freshness/authority/domain-allow)
+tools/search_agentic/_summarize.py  866 lines — rerank_items() + summarize_with_model()
 ```
 
 Backend: SearXNG self-hosted in Docker (`docker run -d --name searxng -p 8888:8080 searxng/searxng`).

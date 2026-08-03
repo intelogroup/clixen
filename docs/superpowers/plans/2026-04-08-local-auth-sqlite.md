@@ -163,12 +163,12 @@ function setActiveId(id) { localStorage.setItem('g4l_active', id); }
 ### Task 5: Sync to lowercase repo
 
 **Files:**
-- Modify: `~/developer/gemma4llama/tools-harness/chat_ui.py` (copy)
-- Create: `~/developer/gemma4llama/tools-harness/store/chat_db.py` (copy)
+- Modify: `~/developer/clixen/tools-harness/chat_ui.py` (copy)
+- Create: `~/developer/clixen/tools-harness/store/chat_db.py` (copy)
 
-- [ ] `cp tools-harness/store/chat_db.py ~/developer/gemma4llama/tools-harness/store/chat_db.py`
-- [ ] `cp tools-harness/chat_ui.py ~/developer/gemma4llama/tools-harness/chat_ui.py`
-- [ ] Restart Telegram bot launchd service to pick up changes: `launchctl unload ~/Library/LaunchAgents/com.gemma4llama.telegrambot.plist && launchctl load ~/Library/LaunchAgents/com.gemma4llama.telegrambot.plist`
+- [ ] `cp tools-harness/store/chat_db.py ~/developer/clixen/tools-harness/store/chat_db.py`
+- [ ] `cp tools-harness/chat_ui.py ~/developer/clixen/tools-harness/chat_ui.py`
+- [ ] Restart Telegram bot launchd service to pick up changes: `launchctl unload ~/Library/LaunchAgents/com.clixen.telegrambot.plist && launchctl load ~/Library/LaunchAgents/com.clixen.telegrambot.plist`
 - [ ] Verify bot still responds
 - [ ] Commit in lowercase repo
 

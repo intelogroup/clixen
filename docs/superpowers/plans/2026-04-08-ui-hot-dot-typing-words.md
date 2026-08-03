@@ -15,7 +15,7 @@
 | Action | Path |
 |--------|------|
 | Modify | `tools-harness/chat_ui.py` — CSS (~line 492), `refreshHotModels()` (~line 2001), `showTyping()` (~line 1945), `removeTyping()` (~line 1950) |
-| Sync | `~/developer/gemma4llama/tools-harness/chat_ui.py` |
+| Sync | `~/developer/clixen/tools-harness/chat_ui.py` |
 
 ---
 
@@ -27,7 +27,7 @@
 - [ ] **Step 1: Read lines 1995–2012 to confirm exact current code**
 
 ```bash
-sed -n '1995,2012p' /Users/kalinovdameus/Developer/gemma4llama/tools-harness/chat_ui.py
+sed -n '1995,2012p' /Users/kalinovdameus/Developer/clixen/tools-harness/chat_ui.py
 ```
 
 - [ ] **Step 2: Replace `refreshHotModels` function body**
@@ -77,7 +77,7 @@ function refreshHotModels() {
 - [ ] **Step 3: Verify Python syntax**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama/tools-harness
+cd /Users/kalinovdameus/Developer/clixen/tools-harness
 python3 -c "
 import ast, sys
 with open('chat_ui.py') as f: src = f.read()
@@ -93,8 +93,8 @@ Expected: `OK`
 - [ ] **Step 4: Sync to lowercase repo**
 
 ```bash
-cp ~/Developer/gemma4llama/tools-harness/chat_ui.py \
-   ~/developer/gemma4llama/tools-harness/chat_ui.py
+cp ~/Developer/clixen/tools-harness/chat_ui.py \
+   ~/developer/clixen/tools-harness/chat_ui.py
 ```
 
 ---
@@ -201,7 +201,7 @@ function removeTyping() {
 - [ ] **Step 3: Verify Python syntax**
 
 ```bash
-cd /Users/kalinovdameus/Developer/gemma4llama/tools-harness
+cd /Users/kalinovdameus/Developer/clixen/tools-harness
 python3 -c "
 import ast, sys
 with open('chat_ui.py') as f: src = f.read()
@@ -217,6 +217,6 @@ Expected: `OK`
 - [ ] **Step 4: Sync to lowercase repo**
 
 ```bash
-cp ~/Developer/gemma4llama/tools-harness/chat_ui.py \
-   ~/developer/gemma4llama/tools-harness/chat_ui.py
+cp ~/Developer/clixen/tools-harness/chat_ui.py \
+   ~/developer/clixen/tools-harness/chat_ui.py
 ```

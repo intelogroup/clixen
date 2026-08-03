@@ -46,6 +46,8 @@ Cloud-first (2026-07): main agent defaults to cloud via OpenRouter — local gem
 
 `OPENROUTER_API_KEY` lives in `tools-harness/.env` (not project root). `clients/cost_guard.py` enforces a daily token budget (`CLOUD_DAILY_TOKEN_BUDGET`). See `docs/agents/models.md` for routing internals, thinking-mode gotchas, warmup/KV-cache detail.
 
+**Dead-provider circuit breaker** (`clients/cloud_client.py:287-342`): on a 402/payment or auth failure, that provider prefix (e.g. `deepseek/`, `openrouter/`) is marked dead in-memory and skipped for 24h (`_DEAD_RETRY_AFTER = 86400`), falling through the chain to the next configured model and ultimately `OPENAI_FALLBACK_MODEL` (`gpt-4o-mini`) as last resort. After 24h it's retried automatically on the next call — if still out of credits, marked dead again for another 24h. In-memory only (resets on process restart), so a `core.py` restart also clears dead-provider state early. Check `core_stderr.log` for `marked ... as dead` warnings — that's the signal a provider needs a credit top-up, not a code bug.
+
 ## Routing
 `router.py`'s classifiers pick an **intent**, not a model — every branch defaults to cloud except `ocr` (stays local, only multimodal model). `harness.py`'s post-classify block is what actually re-overrides `routed_model` for several intents (browser/transit/vision/etc, cloud-primary with automatic local fallback). Branch order in the classifiers is load-bearing — reordering is a behavior change. Full detail: `docs/agents/models.md`.
 
