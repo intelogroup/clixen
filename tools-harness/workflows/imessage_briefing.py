@@ -1,11 +1,9 @@
 """
 iMessage Morning Briefing — multi-step pipeline.
-Step 1: Check calendar
-Step 2: Check tasks
-Step 3: Check Gmail (unread today)
-Step 4: AI summarize into briefing text
-Step 5: Send iMessage summary
-Step 6: Telegram with full detail
+Step 1: Check Gmail (unread today)
+Step 2: AI summarize into briefing text
+Step 3: Send iMessage summary
+Step 4: Telegram with full detail
 """
 
 from workflows.pipeline import (

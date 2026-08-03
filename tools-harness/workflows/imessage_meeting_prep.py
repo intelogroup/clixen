@@ -1,11 +1,9 @@
 """
 iMessage Meeting Prep — multi-step conditional pipeline.
-Step 1: Check calendar for upcoming meetings
-Step 2: Check pending tasks
-Step 3: Search recent Gmail from meeting attendees
-Step 4: If meeting found: AI generate prep summary
-Step 5: Send prep via iMessage
-Step 6: If no meeting: send status update via Telegram only
+Step 1: Search recent Gmail from meeting attendees
+Step 2: If meeting found: AI generate prep summary
+Step 3: Send prep via iMessage
+Step 4: If no meeting: send status update via Telegram only
 """
 
 from workflows.pipeline import (
