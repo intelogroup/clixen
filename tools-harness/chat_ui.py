@@ -351,7 +351,12 @@ def _default_workspace_state() -> dict:
 
 def _persist_workspace_state() -> None:
     WORKSPACE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WORKSPACE_STATE_PATH.write_text(json.dumps(_workspace_state, indent=2), encoding="utf-8")
+    # Atomic write (temp + replace): a crash/kill mid-write previously truncated
+    # the live file, and the next boot clobbered it with defaults — wiping the
+    # configured account and rotating the session secret.
+    tmp_path = WORKSPACE_STATE_PATH.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(_workspace_state, indent=2), encoding="utf-8")
+    tmp_path.replace(WORKSPACE_STATE_PATH)
 
 
 # 2026-08-03: this exact secret was committed to git history (workspace_state.json
@@ -368,7 +373,15 @@ def _load_workspace_state() -> dict:
             if isinstance(loaded, dict):
                 state.update({k: v for k, v in loaded.items() if k in state})
         except Exception:
+            # Preserve the corrupt file for recovery instead of overwriting it
+            # with defaults on the next persist (was silently wiping the
+            # configured account + rotating the session secret).
             _log.warning("Failed to load workspace state from %s", WORKSPACE_STATE_PATH)
+            try:
+                import shutil as _sh
+                _sh.copy2(WORKSPACE_STATE_PATH, str(WORKSPACE_STATE_PATH) + f".corrupt-{int(time.time())}")
+            except Exception:
+                pass
     if not state.get("account"):
         state["account"] = _default_workspace_state()["account"]
     if not state.get("session_secret") or state["session_secret"] == _LEAKED_SESSION_SECRET:
@@ -944,8 +957,15 @@ async def upload(
     chat_id: str = Form(default="web_ui"),
 ):
     _require_auth(request)
+    # Reject oversized uploads BEFORE reading the body into RAM — file.read()
+    # buffers the whole payload, so a multi-GB upload would OOM the process
+    # before the 50MB check ran (live risk class: /chat/upload-audio already
+    # streams chunks with a size cap; this one didn't).
+    MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+    if file.size and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File too large (max 50 MB)")
     content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
+    if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File too large (max 50 MB)")
     file_id = str(uuid.uuid4())
     original_name = file.filename or "upload"
@@ -1379,9 +1399,16 @@ def _collect_image_b64(ids: list) -> list | None:
 async def chat(req: ChatRequest, request: Request):
     _require_auth(request)
     _log.info("chat request chat_id=%s message=%r", req.chat_id, _preview_text(req.message))
-    reply, model, intent = await asyncio.to_thread(
-        harness_run, req.message, None, None, req.chat_id
-    )
+    # Bound the non-streaming path — previously asyncio.to_thread with no
+    # timeout held the request open forever if the harness hung (dead Ollama,
+    # stuck tool). 300s matches the streaming path's stall window.
+    try:
+        reply, model, intent = await asyncio.wait_for(
+            asyncio.to_thread(harness_run, req.message, None, None, req.chat_id),
+            timeout=300,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "Request timed out after 300s")
     _mark_first_message_sent()
     return {"reply": reply, "model": model, "intent": intent}
 
@@ -1444,13 +1471,24 @@ async def chat_stream(
         loop = asyncio.get_event_loop()
         _visible_filter, _visible_flush = _make_visible_token_filter()
         streamed_any = False
+        _stall_pings = 0
         try:
             while True:
                 try:
                     token = await loop.run_in_executor(None, lambda: token_queue.get(timeout=300))
                 except queue_mod.Empty:
+                    # 2026-08-03: a genuinely slow round (bash_exec up to 300s,
+                    # a cloud model trickling with no on_token) previously got a
+                    # spurious {'done':True,'error':'timeout'} at exactly 300s of
+                    # silence. Ping once to keep the client alive; only give up
+                    # after two consecutive 300s stalls.
+                    _stall_pings += 1
+                    if _stall_pings < 2:
+                        yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                        continue
                     yield f"data: {json.dumps({'done': True, 'error': 'timeout'})}\n\n"
                     return
+                _stall_pings = 0
                 if token is None:
                     tail = _visible_flush()
                     if tail:
@@ -1536,7 +1574,15 @@ async def search_stream(
     async def generate():
         try:
             while True:
-                tok = await asyncio.get_event_loop().run_in_executor(None, queue.get)
+                # 2026-08-03: plain queue.get() had NO timeout — a stalled
+                # websearch thread never enqueues the None sentinel, and the SSE
+                # connection hung forever. 300s bound matches chat_stream; on
+                # timeout emit a done event so the client can close.
+                try:
+                    tok = await asyncio.get_event_loop().run_in_executor(None, lambda: queue.get(timeout=300))
+                except queue_mod.Empty:
+                    yield f"data: {json.dumps({'type': 'done', 'reply': '', 'model': 'websearch', 'error': 'search timed out'})}\n\n"
+                    break
                 if tok is None:
                     break
                 yield f"data: {json.dumps({'type': 'token', 'text': tok})}\n\n"
