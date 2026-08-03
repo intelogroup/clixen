@@ -85,7 +85,7 @@ def classify(message: str) -> tuple[str, str]:
     if _CONVO_REF_RE.search(msg):
         return CLOUD_MODEL, "casual"
 
-    # Browser automation → gemma4 (warm, native tools). A local file path/extension
+    # Browser automation → CLOUD_MODEL (warm, native tools). A local file path/extension
     # ("fill out the form in resume.docx") means it's a filesystem form-fill request,
     # not web-form automation — let it fall through to _FILESYSTEM_RE below.
     if _BROWSER_RE.search(msg) and not _LOCAL_FILE_RE.search(msg):
@@ -104,7 +104,7 @@ def classify(message: str) -> tuple[str, str]:
     if _CHINESE_WEB_RE.search(msg):
         return CLOUD_MODEL, "chinese_web"
 
-    # Library / framework docs → gemma4 (warm, sufficient for docs Q&A). Guarded against
+    # Library / framework docs → CLOUD_MODEL (warm, sufficient for docs Q&A). Guarded against
     # _is_temporal: the bare product-name list (openai, anthropic, stripe, ...) otherwise
     # steals current-events questions that merely mention one ("who's the current CEO of
     # OpenAI") into an ungrounded chat answer instead of grounded web search. Also guarded
@@ -113,11 +113,11 @@ def classify(message: str) -> tuple[str, str]:
     if _LIBRARY_DOCS_RE.search(msg) and not _is_temporal(msg) and not _ANALYSIS_RE.search(msg):
         return CLOUD_MODEL, "library_docs"
 
-    # Git operations → gemma4 (warm, native tools)
+    # Git operations → CLOUD_MODEL (warm, native tools)
     if _GIT_RE.search(msg):
         return CLOUD_MODEL, "git"
 
-    # Python REPL / code execution → gemma4 (warm)
+    # Python REPL / code execution → CLOUD_MODEL (warm)
     if _REPL_RE.search(msg):
         return CLOUD_MODEL, "repl"
 
@@ -126,7 +126,7 @@ def classify(message: str) -> tuple[str, str]:
     if _LOCAL_DISCOVERY_RE.search(msg):
         return CLOUD_MODEL, "temporal"
 
-    # Filesystem / file reading queries → gemma4 (warm, native tools). Skip when a URL is
+    # Filesystem / file reading queries → CLOUD_MODEL (warm, native tools). Skip when a URL is
     # present — "contents of" collides with url_fetch phrasings like "fetch and summarize
     # the contents of https://example.com" (found 2026-07-02: routed to the local-agent
     # filesystem path, which then genuinely hung trying to read a URL as a local path).
@@ -136,15 +136,15 @@ def classify(message: str) -> tuple[str, str]:
     if _FILESYSTEM_RE.search(msg) and not _URL_RE.search(msg) and not _MACOS_NATIVE_RE.search(msg):
         return CLOUD_MODEL, "filesystem"
 
-    # Hard math → gemma4 (warm)
+    # Hard math → CLOUD_MODEL (warm)
     if _HARD_MATH_RE.search(msg):
         return CLOUD_MODEL, "math"
 
-    # Heavy code tasks (implement/refactor/architecture/tests) → gemma4 (warm)
+    # Heavy code tasks (implement/refactor/architecture/tests) → CLOUD_MODEL (warm)
     if _CODE_HEAVY_RE.search(msg):
         return CLOUD_MODEL, "code_heavy"
 
-    # Automation / workflows / watchers → gemma4 (tool calls, handles automation schemas)
+    # Automation / workflows / watchers → CLOUD_MODEL (tool calls, handles automation schemas)
     # Must be checked before _CODE_QUICK_RE (which matches "list") and before _TASKS_RE.
     if _AUTOMATION_RE.search(msg):
         return CLOUD_MODEL, "automation"
@@ -164,7 +164,7 @@ def classify(message: str) -> tuple[str, str]:
     if _WHATSAPP_SEARCH_RE.search(msg):
         return CLOUD_MODEL, "whatsapp_search"
 
-    # Code snippets → gemma4. Skip when it looks like filesystem ("list files"), temporal/
+    # Code snippets → CLOUD_MODEL. Skip when it looks like filesystem ("list files"), temporal/
     # current-info ("list the top N ... in 2026"), or tasks ("add X to my task list") so those
     # aren't grabbed by the bare word "list" (found 2026-07-02 via live testing).
     if (
@@ -179,7 +179,7 @@ def classify(message: str) -> tuple[str, str]:
             return CLOUD_MODEL, "code_medium"
         return CLOUD_MODEL, "code_heavy"
 
-    # Inbox PDF monitor → gemma4 (warm, native tools)
+    # Inbox PDF monitor → CLOUD_MODEL (warm, native tools)
     if _INBOX_PDF_RE.search(msg):
         return CLOUD_MODEL, "automation"
 
@@ -214,19 +214,19 @@ def classify(message: str) -> tuple[str, str]:
     if _SPOTLIGHT_RE.search(msg):
         return CLOUD_MODEL, "spotlight"
 
-    # Calendar → gemma4 (warm, native tools)
+    # Calendar → CLOUD_MODEL (warm, native tools)
     if _CALENDAR_RE.search(msg):
         return CLOUD_MODEL, "calendar"
 
-    # Tasks → gemma4 (warm, native tools)
+    # Tasks → CLOUD_MODEL (warm, native tools)
     if _TASKS_RE.search(msg):
         return CLOUD_MODEL, "tasks"
 
-    # Reminder → gemma4 (warm, native tools)
+    # Reminder → CLOUD_MODEL (warm, native tools)
     if _REMINDER_RE.search(msg):
         return CLOUD_MODEL, "reminder"
 
-    # Simple email (read/list/send, single-tool) → gemma4 (warm)
+    # Simple email (read/list/send, single-tool) → CLOUD_MODEL (warm)
     if _EMAIL_RE.search(msg):
         return CLOUD_MODEL, "email"
 
@@ -247,16 +247,16 @@ def classify(message: str) -> tuple[str, str]:
     ):
         return CLOUD_MODEL, "temporal"
 
-    # Transit / transportation → gemma4 (warm, bus_eta + estimate_uber_ride tools)
+    # Transit / transportation → CLOUD_MODEL (warm, bus_eta + estimate_uber_ride tools)
     # Must be checked before _TEMPORAL_RE (transit queries often have "cost"/"price"/"right now")
     if _TRANSIT_RE.search(msg):
         return CLOUD_MODEL, "transit"
 
-    # Temporal / current info → gemma4 + web_search
+    # Temporal / current info → CLOUD_MODEL + web_search
     if _is_temporal(msg):
         return CLOUD_MODEL, "temporal"
 
-    # Multilingual input (Unicode script) → gemma4 (warm, multilingual capable)
+    # Multilingual input (Unicode script) → CLOUD_MODEL (warm, multilingual capable)
     if _MULTILINGUAL_RE.search(msg):
         return CLOUD_MODEL, "multilingual"
 
@@ -264,11 +264,11 @@ def classify(message: str) -> tuple[str, str]:
     if _CREOLE_FRENCH_RE.search(msg):
         return CLOUD_MODEL, "multilingual"
 
-    # Bare URL or URL-centric query → gemma4 (warm, can fetch and summarize)
+    # Bare URL or URL-centric query → CLOUD_MODEL (warm, can fetch and summarize)
     if _URL_RE.search(msg):
         return CLOUD_MODEL, "url_fetch"
 
-    # Analysis → gemma4 (warm, good for most analysis)
+    # Analysis → CLOUD_MODEL (warm, good for most analysis)
     if _ANALYSIS_RE.search(msg):
         return CLOUD_MODEL, "analysis"
 
@@ -278,12 +278,12 @@ def classify(message: str) -> tuple[str, str]:
     if _SIMPLE_MATH_RE.search(msg):
         return CLOUD_MODEL, "math"
 
-    # Factual questions (what/who/when/where/why/how + is/are) → gemma4 (warm)
+    # Factual questions (what/who/when/where/why/how + is/are) → CLOUD_MODEL (warm)
     # Knowledge base lookup preferred, fallback to gemma4's training data
     if _FACTUAL_QUESTION_RE.search(msg):
         return CLOUD_MODEL, "factual_qa"
 
-    # Default (casual / general Q&A) → gemma4 (warm, fast, accurate)
+    # Default (casual / general Q&A) → CLOUD_MODEL (warm, fast, accurate)
     # Reserved for: greetings, opinions, conversational exchanges, general knowledge
     return CLOUD_MODEL, "casual"
 
@@ -332,7 +332,7 @@ def classify_telegram(message: str) -> tuple[str, str]:
     if _CONVO_REF_RE.search(msg):
         return CLOUD_MODEL, "casual"
 
-    # Browser automation → gemma4 (warm, native tools). Local file path/extension
+    # Browser automation → CLOUD_MODEL (warm, native tools). Local file path/extension
     # means filesystem form-fill, not web-form automation — defer to _FILESYSTEM_RE.
     if _BROWSER_RE.search(msg) and not _LOCAL_FILE_RE.search(msg):
         return CLOUD_MODEL, "browser"
@@ -349,27 +349,27 @@ def classify_telegram(message: str) -> tuple[str, str]:
     if _CHINESE_WEB_RE.search(msg):
         return CLOUD_MODEL, "chinese_web"
 
-    # Library / framework docs → gemma4. Guarded against _is_temporal and _ANALYSIS_RE — see classify().
+    # Library / framework docs → CLOUD_MODEL. Guarded against _is_temporal and _ANALYSIS_RE — see classify().
     if _LIBRARY_DOCS_RE.search(msg) and not _is_temporal(msg) and not _ANALYSIS_RE.search(msg):
         return CLOUD_MODEL, "library_docs"
 
-    # Git operations → gemma4 (filesystem/git now enabled on Telegram)
+    # Git operations → CLOUD_MODEL (filesystem/git now enabled on Telegram)
     if _GIT_RE.search(msg):
         return CLOUD_MODEL, "git"
 
-    # Python REPL / code execution → gemma4
+    # Python REPL / code execution → CLOUD_MODEL
     if _REPL_RE.search(msg):
         return CLOUD_MODEL, "repl"
 
-    # Hard math → gemma4
+    # Hard math → CLOUD_MODEL
     if _HARD_MATH_RE.search(msg):
         return CLOUD_MODEL, "math"
 
-    # Heavy code tasks → gemma4 (warm)
+    # Heavy code tasks → CLOUD_MODEL (warm)
     if _CODE_HEAVY_RE.search(msg):
         return CLOUD_MODEL, "code_heavy"
 
-    # Automation / workflows / watchers → gemma4 (tool calls, handles automation schemas)
+    # Automation / workflows / watchers → CLOUD_MODEL (tool calls, handles automation schemas)
     # Must be checked before _CODE_QUICK_RE (which matches "list") and before _TASKS_RE.
     if _AUTOMATION_RE.search(msg):
         return CLOUD_MODEL, "automation"
@@ -399,7 +399,7 @@ def classify_telegram(message: str) -> tuple[str, str]:
     if len(msg) < 35 and _CASUAL_CHAT_RE.search(msg):
         return CLOUD_MODEL, "casual"
 
-    # Code snippets → gemma4. Skip when it looks like filesystem ("list files"), temporal/
+    # Code snippets → CLOUD_MODEL. Skip when it looks like filesystem ("list files"), temporal/
     # current-info ("list the top N ... in 2026"), or tasks ("add X to my task list") so those
     # aren't grabbed by the bare word "list" (found 2026-07-02 via live testing).
     if (
@@ -414,23 +414,23 @@ def classify_telegram(message: str) -> tuple[str, str]:
             return CLOUD_MODEL, "code_medium"
         return CLOUD_MODEL, "code_heavy"
 
-    # Calendar → gemma4 (warm, has tool support)
+    # Calendar → CLOUD_MODEL (warm, has tool support)
     if _CALENDAR_RE.search(msg):
         return CLOUD_MODEL, "calendar"
 
-    # Tasks → gemma4 (warm, has tool support)
+    # Tasks → CLOUD_MODEL (warm, has tool support)
     if _TASKS_RE.search(msg):
         return CLOUD_MODEL, "tasks"
 
-    # Reminder → gemma4 (warm, has tool support)
+    # Reminder → CLOUD_MODEL (warm, has tool support)
     if _REMINDER_RE.search(msg):
         return CLOUD_MODEL, "reminder"
 
-    # Agentic email → gemma4 (warm, native tools)
+    # Agentic email → CLOUD_MODEL (warm, native tools)
     if _EMAIL_RE.search(msg) and (_AGENTIC_RE.search(msg) or _DELIVERY_CHANNEL_RE.search(msg)):
         return CLOUD_MODEL, "email"
 
-    # Simple email → gemma4 (warm, native tools)
+    # Simple email → CLOUD_MODEL (warm, native tools)
     if _EMAIL_RE.search(msg):
         return CLOUD_MODEL, "email"
 
@@ -445,14 +445,14 @@ def classify_telegram(message: str) -> tuple[str, str]:
     ):
         return CLOUD_MODEL, "temporal"
 
-    # Filesystem / file reading → gemma4 (now enabled on Telegram). Checked before temporal,
+    # Filesystem / file reading → CLOUD_MODEL (now enabled on Telegram). Checked before temporal,
     # matching classify()'s order (line ~131 vs ~251) — filesystem wins on overlap on both
     # channels now (was inverted here: 2026-07-11 fix, see plan-a-soft-yawning-turing).
     # Skip when a URL is present — see classify().
     if _FILESYSTEM_RE.search(msg) and not _URL_RE.search(msg):
         return CLOUD_MODEL, "filesystem"
 
-    # Temporal / current info → gemma4 (warm, has web_search tool). Use _is_temporal, not
+    # Temporal / current info → CLOUD_MODEL (warm, has web_search tool). Use _is_temporal, not
     # a bare _TEMPORAL_RE.search — the former also catches live-sports ("who won X vs Y")
     # and price+market cues, so those get grounded search instead of an ungrounded
     # (hallucinated) chat answer.
@@ -464,7 +464,7 @@ def classify_telegram(message: str) -> tuple[str, str]:
     if _is_temporal(msg) and not _STRONG_LOCAL_FS_RE.search(msg):
         return CLOUD_MODEL, "temporal"
 
-    # Multilingual (Unicode script or Creole/French keywords) → gemma4 (warm, multilingual capable)
+    # Multilingual (Unicode script or Creole/French keywords) → CLOUD_MODEL (warm, multilingual capable)
     if _MULTILINGUAL_RE.search(msg) or _CREOLE_FRENCH_RE.search(msg):
         return CLOUD_MODEL, "multilingual"
 
