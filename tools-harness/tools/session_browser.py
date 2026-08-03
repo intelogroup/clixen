@@ -206,6 +206,25 @@ def session_login(service: str, timeout_s: int = 120) -> str:
     except Exception as e:
         log.error("session_login failed: %s", e, exc_info=True)
         return f"[session] Login failed: {e}"
+    finally:
+        # 2026-08-03: the exception path leaked Playwright/Chromium — pw started
+        # then a goto/context error raised before the close lines ran, leaving a
+        # chromium process per failed login. Close whatever exists, best-effort.
+        try:
+            if "ctx" in locals() and ctx:
+                ctx.close()
+        except Exception:
+            pass
+        try:
+            if "browser" in locals() and browser:
+                browser.close()
+        except Exception:
+            pass
+        try:
+            if "pw" in locals() and pw:
+                pw.stop()
+        except Exception:
+            pass
 
 
 def session_check(service: str) -> str:

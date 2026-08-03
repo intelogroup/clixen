@@ -162,7 +162,13 @@ _tutor_spoken: set[int] = set()
 _TUTOR_POLL = 0.5
 
 
-def _tutor_worker(chat_id: str, bot):
+def _tutor_worker(chat_id: str, bot, app_loop=None):
+    """Background worker polling the opencode tutor DB and forwarding new
+    assistant messages to the chat. `bot` is a python-telegram-bot object whose
+    coroutines must run on the app's event loop (`app_loop`, captured at start).
+    2026-08-03: previously called asyncio.get_event_loop() from this plain
+    thread — RuntimeError on py3.12+, swallowed by the broad except, so tutor
+    silently never forwarded a message."""
     conn = sqlite3.connect(_TUTOR_DB_PATH, check_same_thread=False)
     session_id = None
     _tutor_spoken.clear()
@@ -204,11 +210,13 @@ def _tutor_worker(chat_id: str, bot):
                         if text:
                             _tutor_spoken.add(mid)
                             msg = f"Tutor:\n{text[:2500]}"
-                            loop = asyncio.get_event_loop()
-                            asyncio.run_coroutine_threadsafe(
-                                bot.send_message(chat_id=chat_id, text=msg[:4000]),
-                                loop,
-                            )
+                            if app_loop is not None:
+                                asyncio.run_coroutine_threadsafe(
+                                    bot.send_message(chat_id=chat_id, text=msg[:4000]),
+                                    app_loop,
+                                )
+                            else:
+                                log.warning("Tutor worker: no event loop captured — skipping send")
                 time.sleep(_TUTOR_POLL)
             except sqlite3.OperationalError:
                 time.sleep(_TUTOR_POLL)
@@ -319,8 +327,15 @@ async def cmd_tutor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Tutor already running.")
             return
         _tutor_stop.clear()
+        # 2026-08-03: pass the app's running loop — _tutor_worker runs on a plain
+        # thread where asyncio.get_event_loop() raises RuntimeError (py3.12+),
+        # which the old broad except swallowed, so tutor never forwarded anything.
+        try:
+            app_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            app_loop = None
         _tutor_thread = threading.Thread(
-            target=_tutor_worker, args=(chat_id, ctx.bot), daemon=True
+            target=_tutor_worker, args=(chat_id, ctx.bot, app_loop), daemon=True
         )
         _tutor_thread.start()
         await update.message.reply_text(
@@ -944,10 +959,12 @@ def _analyze_screenshot_ocr(query: str, ocr_text: str, on_token=None) -> str | N
         import ollama
         from clients.ollama_client import DEFAULT_MODEL as _OCR_MODEL
         if not ocr_text.strip():
-            return "Couldn't read any text on the screen clearly — try again or move the window."
+            return "Couldn't read any text in the image clearly — try again or send a clearer photo."
         prompt = (
-            f"Context: The system has already successfully captured and shared the user's Mac screen. Do NOT refuse or state that you cannot see the screen or make a screenshot. Simply analyze the text captured from their screen to answer their request.\n\n"
-            f"Text OCR'd from the user's Mac screenshot (may include unrelated UI clutter like "
+            f"Context: The system has already captured the user's image (a Mac screenshot or a photo) and OCR'd it. "
+            f"Do NOT refuse or state that you cannot see the image or take a screenshot. Simply analyze the text captured "
+            f"from the image to answer their request.\n\n"
+            f"Text OCR'd from the user's image (may include unrelated UI clutter like "
             f"menu bars or app names — ignore those):\n\n{ocr_text}\n\n"
             f"User question: {query}\n\n"
             f"Rules: Answer using only the text above — never say you cannot see the screen or cannot take a screenshot. "
@@ -1017,8 +1034,23 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         def on_token(tok: str):
             loop.call_soon_threadsafe(q.put_nowait, tok)
 
+        # The user's photo is a real image file — OCR it to text first, then reason
+        # over that text (the old code passed photo_path straight into the ocr_text
+        # slot, so the model was literally reasoning about a temp-file path).
+        from tools.local_vision import ocr as _local_ocr
+
+        words = await asyncio.to_thread(_local_ocr, photo_path)
+        if words and "error" in words[0]:
+            log.warning("[photo] OCR failed: %s", words[0]["error"])
+            ocr_text = ""
+        else:
+            ocr_text = " ".join(w["text"] for w in words)
+        if not ocr_text.strip():
+            await placeholder.edit_text("Couldn't read any text in the image clearly — try again or send a clearer photo.")
+            return
+
         analysis_task = asyncio.create_task(
-            asyncio.to_thread(_analyze_screenshot_ocr, query, photo_path, on_token)
+            asyncio.to_thread(_analyze_screenshot_ocr, query, ocr_text, on_token)
         )
 
         shown = ""

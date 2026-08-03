@@ -12,9 +12,14 @@ Results are cached in KnowledgeBase (TTL: 7d) to avoid redundant spawns.
 """
 
 import json
+import os
 import subprocess
 import threading
 import time
+
+# Max seconds to wait for a single JSON-RPC response from the MCP subprocess.
+# Previously readline() blocked forever on a hung npx — this bounds the call.
+_MCP_RESPONSE_TIMEOUT_S = float(os.environ.get("CONTEXT7_TIMEOUT", "30"))
 
 SCHEMA = {
     "type": "function",
@@ -65,8 +70,18 @@ class _MCP:
             line = json.dumps(msg) + "\n"
             self._proc.stdin.write(line.encode())
             self._proc.stdin.flush()
-            # Read response lines until we get a JSON-RPC result/error for our id
+            # Read response lines until we get a JSON-RPC result/error for our id.
+            # readline() blocks forever if npx/network stalls — bound each wait so
+            # a hung MCP subprocess can't freeze the tool call.
+            import select as _select
+            deadline = time.time() + _MCP_RESPONSE_TIMEOUT_S
             while True:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    raise RuntimeError(f"MCP request timed out after {_MCP_RESPONSE_TIMEOUT_S}s")
+                ready, _, _ = _select.select([self._proc.stdout], [], [], max(0.1, remaining))
+                if not ready:
+                    continue
                 raw = self._proc.stdout.readline()
                 if not raw:
                     raise RuntimeError("MCP subprocess closed stdout")

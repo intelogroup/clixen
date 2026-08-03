@@ -1,6 +1,8 @@
 """
 Clixen Core — consolidated service entry point.
-Runs: chat_ui + telegram_bot + email_watch + task_worker in one process.
+Runs: chat_ui + email_watch + kokoro_daemon + voiceprint_daemon in one process.
+The task worker runs as its own launchd job (com.clixen.task_worker) so it
+survives core.py crashes and can be kickstarted independently.
 
 Run:  python core.py
 """
@@ -42,12 +44,6 @@ def _run_email_watch():
     email_main()
 
 
-def _run_task_worker():
-    from jobs.worker import main as _worker_main
-
-    _worker_main()
-
-
 def _run_kokoro_daemon():
     from kokoro_daemon import main as _kokoro_main
 
@@ -63,11 +59,16 @@ def _run_voiceprint_daemon():
 _TARGETS = {
     "chat_ui": _run_chat_ui,
     "email_watch": _run_email_watch,
-    "task_worker": _run_task_worker,
     "kokoro_daemon": _run_kokoro_daemon,
     "voiceprint_daemon": _run_voiceprint_daemon,
 }
 _RESTART_BACKOFF = 30  # seconds between restart attempts
+# Crash-loop guard: if a service dies within _CRASH_LOOP_WINDOW_S of its last
+# restart more than _CRASH_LOOP_MAX times, stop restarting it and log loudly —
+# otherwise a boot-time failure (port conflict, bad import, corrupt DB) restarts
+# forever every 30s, spamming logs and churning partial init.
+_CRASH_LOOP_WINDOW_S = 120
+_CRASH_LOOP_MAX = 5
 
 
 def _make_thread(name: str) -> threading.Thread:
@@ -79,6 +80,7 @@ def main():
 
     threads: dict[str, threading.Thread] = {}
     last_restart: dict[str, float] = {}
+    restart_counts: dict[str, int] = {}
 
     for name in _TARGETS:
         t = _make_thread(name)
@@ -96,8 +98,22 @@ def main():
             for name, t in list(threads.items()):
                 if not t.is_alive():
                     since_last = now - last_restart.get(name, 0)
+                    # Count restarts inside the window; reset when the service
+                    # stays up long enough to be considered stable.
+                    if since_last > _CRASH_LOOP_WINDOW_S:
+                        restart_counts[name] = 0
                     if since_last >= _RESTART_BACKOFF:
-                        print(f"WARNING: {name} died! Restarting...")
+                        restart_counts[name] = restart_counts.get(name, 0) + 1
+                        if restart_counts[name] > _CRASH_LOOP_MAX:
+                            print(
+                                f"FATAL: {name} crashed {restart_counts[name]} times within "
+                                f"{_CRASH_LOOP_WINDOW_S}s — giving up on auto-restart. "
+                                "Check logs and fix the underlying issue."
+                            )
+                            # Drop it from supervision (daemon thread stays dead).
+                            threads.pop(name, None)
+                            continue
+                        print(f"WARNING: {name} died! Restarting... ({restart_counts[name]}/{_CRASH_LOOP_MAX})")
                         new_t = _make_thread(name)
                         threads[name] = new_t
                         last_restart[name] = now

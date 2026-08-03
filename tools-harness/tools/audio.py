@@ -49,6 +49,8 @@ SCHEMA = {
 
 def _to_wav(input_path: str, out_path: str) -> None:
     """Convert any audio/video file to 16kHz mono WAV for whisper-cpp."""
+    # 2026-08-03: no timeout previously — a hung ffmpeg on corrupt/streaming
+    # input blocked the transcript thread forever. 120s bound, same as whisper-cli.
     subprocess.run(
         [
             FFMPEG, "-y", "-i", input_path,
@@ -57,6 +59,7 @@ def _to_wav(input_path: str, out_path: str) -> None:
         ],
         check=True,
         capture_output=True,
+        timeout=120,
     )
 
 
