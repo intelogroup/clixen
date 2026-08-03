@@ -354,6 +354,12 @@ def _persist_workspace_state() -> None:
     WORKSPACE_STATE_PATH.write_text(json.dumps(_workspace_state, indent=2), encoding="utf-8")
 
 
+# 2026-08-03: this exact secret was committed to git history (workspace_state.json
+# was tracked before it was gitignored). Treat it as compromised: any session cookie
+# signed with it must stop validating immediately.
+_LEAKED_SESSION_SECRET = "eb64ceead8e7e6ca0cd9bd1f6630781c29044e34d22162c233f3fd649ea8f720"
+
+
 def _load_workspace_state() -> dict:
     state = _default_workspace_state()
     if WORKSPACE_STATE_PATH.exists():
@@ -365,7 +371,9 @@ def _load_workspace_state() -> dict:
             _log.warning("Failed to load workspace state from %s", WORKSPACE_STATE_PATH)
     if not state.get("account"):
         state["account"] = _default_workspace_state()["account"]
-    if not state.get("session_secret"):
+    if not state.get("session_secret") or state["session_secret"] == _LEAKED_SESSION_SECRET:
+        if state.get("session_secret") == _LEAKED_SESSION_SECRET:
+            _log.warning("Rotating compromised session_secret from git history")
         state["session_secret"] = secrets.token_hex(32)
     return state
 
@@ -834,6 +842,18 @@ def auth_register(req: LocalRegisterRequest, response: Response):
         email = req.email.strip().lower()
         if not email:
             raise HTTPException(400, "Email is required")
+        existing = _workspace_state.get("account")
+        # Account takedown guard: once an account is configured (has a password
+        # hash), a different email cannot overwrite it via register. A fresh /
+        # unconfigured account (empty password_hash) can still be claimed by the
+        # first caller — that's the legitimate first-run setup path.
+        if (
+            existing
+            and existing.get("email")
+            and existing.get("password_hash")
+            and existing["email"].lower() != email
+        ):
+            raise HTTPException(409, "An account already exists for this workspace")
         display_name = req.display_name.strip() or "Local User"
         workspace_name = req.workspace_name.strip() or "Local Workspace"
         role = req.role.strip() or "Owner"
@@ -867,9 +887,12 @@ def auth_login(req: LocalLoginRequest, response: Response):
         email = req.email.strip().lower()
         if email != account["email"].lower():
             raise HTTPException(401, "Invalid email or password")
-        if account.get("password_hash"):
-            if not _verify_password(req.password, account["password_salt"], account["password_hash"]):
-                raise HTTPException(401, "Invalid email or password")
+        if not account.get("password_hash"):
+            # No password configured — require explicit setup via DEV_PASSWORD /
+            # register instead of silently accepting any password.
+            raise HTTPException(401, "No password configured for this account")
+        if not _verify_password(req.password, account["password_salt"], account["password_hash"]):
+            raise HTTPException(401, "Invalid email or password")
         _workspace_state["account"]["last_login_at"] = _now_iso()
         _persist_workspace_state()
         account = deepcopy(_workspace_state["account"])
@@ -1458,6 +1481,7 @@ async def chat_stream(
 @app.post("/chat/abort")
 def abort_chat(chat_id: str = "", thread_id: str = "", request: Request = None):
     """Abort an active stream by chat_id or thread_id. Called by frontend stop button."""
+    _require_auth(request)
     target = chat_id or thread_id
     if target:
         abort_active_stream(target)
@@ -1524,12 +1548,14 @@ async def search_stream(
 
 
 @app.get("/search/history/{thread_id}")
-async def search_history(thread_id: str):
+async def search_history(thread_id: str, request: Request):
+    _require_auth(request)
     return {"thread_id": thread_id, "history": []}
 
 
 @app.get("/models/hot")
-def models_hot():
+def models_hot(request: Request):
+    _require_auth(request)
     try:
         import ollama as _ollama
 
@@ -1540,7 +1566,8 @@ def models_hot():
 
 
 @app.get("/chat/context-usage")
-def chat_context_usage(chat_id: str, model: str = "deepseek/deepseek-v4-flash"):
+def chat_context_usage(chat_id: str, model: str = "deepseek/deepseek-v4-flash", request: Request = None):
+    _require_auth(request)
     from clients.router import MODEL_SPECS, _tok
 
     history = conv_get(chat_id) or []
@@ -1555,7 +1582,8 @@ def chat_context_usage(chat_id: str, model: str = "deepseek/deepseek-v4-flash"):
 
 
 @app.get("/health/ollama")
-def health_ollama():
+def health_ollama(request: Request):
+    _require_auth(request)
     host = (
         os.environ.get("OLLAMA_HOST")
         or os.environ.get("OLLAMA_BASE_URL")
@@ -1597,7 +1625,8 @@ def health_ollama():
 
 
 @app.post("/health/ollama/restart")
-def restart_ollama():
+def restart_ollama(request: Request):
+    _require_auth(request)
     from tools.notifications import push as _notify
 
     try:
@@ -1611,41 +1640,47 @@ def restart_ollama():
 
 
 @app.get("/notifications")
-def get_notifications(unread_only: bool = False):
+def get_notifications(unread_only: bool = False, request: Request = None):
+    _require_auth(request)
     from tools.notifications import list_all, unread_count
 
     return {"notifications": list_all(unread_only=unread_only), "unread": unread_count()}
 
 
 @app.post("/notifications/{notif_id}/read")
-def mark_notification_read(notif_id: str):
+def mark_notification_read(notif_id: str, request: Request = None):
+    _require_auth(request)
     from tools.notifications import mark_read
 
     return {"ok": mark_read(notif_id)}
 
 
 @app.delete("/notifications/{notif_id}")
-def delete_notification(notif_id: str):
+def delete_notification(notif_id: str, request: Request = None):
+    _require_auth(request)
     from tools.notifications import dismiss
 
     return {"ok": dismiss(notif_id)}
 
 
 @app.delete("/notifications")
-def clear_notifications():
+def clear_notifications(request: Request = None):
+    _require_auth(request)
     from tools.notifications import dismiss_all
 
     return {"cleared": dismiss_all()}
 
 
 @app.get("/approvals")
-def get_approvals(status: str = "", limit: int = 50):
+def get_approvals(status: str = "", limit: int = 50, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     return {"approvals": workflow_store.list_approval_requests(status=status, limit=limit)}
 
 
 @app.post("/approvals")
-def create_approval(body: ApprovalCreateRequest):
+def create_approval(body: ApprovalCreateRequest, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     approval = workflow_store.create_approval_request(
         kind=body.kind,
@@ -1669,19 +1704,22 @@ def create_approval(body: ApprovalCreateRequest):
 
 
 @app.post("/approvals/{approval_id}/approve")
-def approve_approval(approval_id: str):
+def approve_approval(approval_id: str, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     return workflow_store.resolve_approval_request(approval_id, "approved") or HTTPException(404)
 
 
 @app.post("/approvals/{approval_id}/reject")
-def reject_approval(approval_id: str):
+def reject_approval(approval_id: str, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     return workflow_store.resolve_approval_request(approval_id, "rejected") or HTTPException(404)
 
 
 @app.get("/fs/git-branch")
-def fs_git_branch(path: str = ""):
+def fs_git_branch(path: str = "", request: Request = None):
+    _require_auth(request)
     p = Path(path).expanduser().resolve() if path else Path.home()
     try:
         r = subprocess.run(
@@ -1697,7 +1735,8 @@ def fs_git_branch(path: str = ""):
 
 
 @app.get("/fs/tree")
-def fs_tree(path: str = "", depth: int = 2):
+def fs_tree(path: str = "", depth: int = 2, request: Request = None):
+    _require_auth(request)
     from pathlib import Path as P
 
     root = P(path).expanduser().resolve() if path else P.home()
@@ -1732,7 +1771,8 @@ def fs_tree(path: str = "", depth: int = 2):
 
 
 @app.get("/fs/read")
-def fs_read(path: str):
+def fs_read(path: str, request: Request = None):
+    _require_auth(request)
     p = Path(path).expanduser().resolve()
     try:
         content = p.read_text(encoding="utf-8", errors="replace")
@@ -1744,7 +1784,8 @@ def fs_read(path: str):
 
 
 @app.post("/fs/write")
-def fs_write(body: FSWrite):
+def fs_write(body: FSWrite, request: Request = None):
+    _require_auth(request)
     p = Path(body.path).expanduser().resolve()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -1755,7 +1796,8 @@ def fs_write(body: FSWrite):
 
 
 @app.post("/fs/run")
-def fs_run(body: FSRun):
+def fs_run(body: FSRun, request: Request = None):
+    _require_auth(request)
     p = Path(body.path).expanduser().resolve()
     try:
         ext = p.suffix.lower()
@@ -1778,7 +1820,8 @@ def fs_run(body: FSRun):
 
 
 @app.post("/ide/index")
-async def ide_index(req: IdeIndexRequest):
+async def ide_index(req: IdeIndexRequest, request: Request = None):
+    _require_auth(request)
     root = req.path.strip()
 
     def _run():
@@ -1794,7 +1837,8 @@ async def ide_index(req: IdeIndexRequest):
 
 
 @app.get("/automations")
-async def get_automation_catalog():
+async def get_automation_catalog(request: Request = None):
+    _require_auth(request)
     presets = automation_store.list_presets()
     automations = list_automations()
     for a in automations:
@@ -1804,7 +1848,8 @@ async def get_automation_catalog():
 
 
 @app.post("/automations/{automation_id}/preset")
-async def save_automation_preset(automation_id: str, body: AutomationPresetRequest):
+async def save_automation_preset(automation_id: str, body: AutomationPresetRequest, request: Request = None):
+    _require_auth(request)
     automation = get_automation(automation_id)
     if automation is None:
         raise HTTPException(404, "Automation not found")
@@ -1815,7 +1860,8 @@ async def save_automation_preset(automation_id: str, body: AutomationPresetReque
 
 
 @app.get("/automations/runs")
-async def get_automation_runs(limit: int = 20):
+async def get_automation_runs(limit: int = 20, request: Request = None):
+    _require_auth(request)
     catalog = list_automations()
     task_names = [i["task_name"] for i in catalog]
     runs = job_queue.list_jobs(limit=limit, task_names=task_names)
@@ -1826,7 +1872,8 @@ async def get_automation_runs(limit: int = 20):
 
 
 @app.post("/automations/{automation_id}/run")
-async def run_automation(automation_id: str, body: AutomationRunRequest):
+async def run_automation(automation_id: str, body: AutomationRunRequest, request: Request = None):
+    _require_auth(request)
     automation = get_automation(automation_id)
     if automation is None:
         raise HTTPException(404, "Automation not found")
@@ -1838,7 +1885,8 @@ async def run_automation(automation_id: str, body: AutomationRunRequest):
 
 
 @app.get("/workflows")
-async def get_workflows(automation_id: str = "", status: str = "", limit: int = 50):
+async def get_workflows(automation_id: str = "", status: str = "", limit: int = 50, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     return {
         "workflows": workflow_store.list_workflow_instances(
@@ -1848,7 +1896,8 @@ async def get_workflows(automation_id: str = "", status: str = "", limit: int = 
 
 
 @app.post("/workflows")
-async def create_workflow(body: WorkflowCreateRequest):
+async def create_workflow(body: WorkflowCreateRequest, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     return workflow_store.create_workflow_instance(
         automation_id=body.automation_id,
@@ -1862,32 +1911,37 @@ async def create_workflow(body: WorkflowCreateRequest):
 
 
 @app.post("/workflows/{workflow_id}/pause")
-async def pause_workflow(workflow_id: str):
+async def pause_workflow(workflow_id: str, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     return workflow_store.pause_workflow_instance(workflow_id) or HTTPException(404)
 
 
 @app.post("/workflows/{workflow_id}/resume")
-async def resume_workflow(workflow_id: str):
+async def resume_workflow(workflow_id: str, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     return workflow_store.resume_workflow_instance(workflow_id) or HTTPException(404)
 
 
 @app.post("/workflows/{workflow_id}/run-now")
-async def run_workflow_now(workflow_id: str):
+async def run_workflow_now(workflow_id: str, request: Request = None):
+    _require_auth(request)
     workflow_store.init()
     return workflow_store.trigger_workflow_instance(workflow_id) or HTTPException(404)
 
 
 @app.post("/tasks/dispatch")
-async def dispatch_task(body: TaskDispatchRequest):
+async def dispatch_task(body: TaskDispatchRequest, request: Request = None):
+    _require_auth(request)
     if body.task_name not in TASK_ROUTING:
         raise HTTPException(400)
     return {"job_id": job_queue.enqueue(body.task_name, body.params), "status": "queued"}
 
 
 @app.get("/tasks/{job_id}")
-async def get_task_status(job_id: str):
+async def get_task_status(job_id: str, request: Request = None):
+    _require_auth(request)
     job = job_queue.get_job(job_id)
     return job or HTTPException(404)
 
@@ -1896,8 +1950,9 @@ async def get_task_status(job_id: str):
 
 
 @app.get("/skills")
-async def get_skills(category: str = ""):
+async def get_skills(category: str = "", request: Request = None):
     """List all available skills, optionally filtered by category."""
+    _require_auth(request)
     return {
         "skills": _list_skills(category),
         "categories": _list_categories(),
@@ -1905,8 +1960,9 @@ async def get_skills(category: str = ""):
 
 
 @app.get("/skills/match")
-async def match_skills(query: str = ""):
+async def match_skills(query: str = "", request: Request = None):
     """Auto-match a user query to the best skill."""
+    _require_auth(request)
     if not query:
         raise HTTPException(400, "query required")
     skill = _match_skill(query)
@@ -2137,8 +2193,9 @@ async def local_agent_confirm(request: Request):
 
 
 @app.get("/local-agent/{job_id}")
-async def get_local_agent_status(job_id: str):
+async def get_local_agent_status(job_id: str, request: Request = None):
     """Get local-agent job status and result."""
+    _require_auth(request)
     with _local_agent_jobs_lock:
         job = _local_agent_jobs.get(job_id)
         if not job:
@@ -2195,6 +2252,7 @@ def get_recent_routing_decisions(request: Request, limit: int = 50):
 @app.post("/voice/ingest")
 async def voice_ingest(request: Request):
     """Brabble hook POSTs voice query+reply here. Pushes to all SSE listeners."""
+    _require_auth(request)
     body = await request.json()
     query = (body.get("query") or "").strip()
     reply = (body.get("reply") or "").strip()
@@ -2215,8 +2273,9 @@ async def voice_ingest(request: Request):
 
 
 @app.get("/voice/debug")
-async def voice_debug():
+async def voice_debug(request: Request):
     """Return voice debug info."""
+    _require_auth(request)
     with _voice_queues_lock:
         listener_count = len(_voice_queues)
     return {"listeners": listener_count}
@@ -2246,16 +2305,18 @@ async def voice_stream(request: Request):
 
 
 @app.get("/voice/status")
-async def voice_status():
+async def voice_status(request: Request):
     """Check if voiceprint is enrolled and return verification state."""
+    _require_auth(request)
     import os as _os
     vp_path = _os.path.expanduser("~/.config/g4l/voiceprint/voiceprint.npy")
     return {"enrolled": _os.path.exists(vp_path)}
 
 
 @app.post("/voice/enroll")
-async def voice_enroll(file: UploadFile = File(...)):
+async def voice_enroll(request: Request, file: UploadFile = File(...)):
     """Receive a WAV upload, extract speaker embedding, save voiceprint."""
+    _require_auth(request)
     import os as _os
     import tempfile as _tmp
     import numpy as _np
