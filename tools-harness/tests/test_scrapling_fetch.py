@@ -24,13 +24,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 def _fake_stealthy_fetcher(MockSF):
     """Make the tool's lazy `from scrapling import StealthyFetcher` resolve to a mock.
 
-    Scrapling 0.4.12 hardcodes chromium_version=149 but the bundled
-    apify-fingerprint-datapoints only covers to 143, so importing the real
-    StealthyFetcher raises ValueError inside browserforge's header generator.
-    The fetch tool already degrades to an error string at runtime; these tests
-    only need to exercise the call path, so swap the module out instead of
-    triggering the broken import (patching scrapling.StealthyFetcher does trigger
-    it — the real module's __getattr__ runs during patch lookup).
+    Swap the module out instead of letting the real StealthyFetcher launch a
+    Chromium browser (heavy, ~3s, hits the network) — these tests only need to
+    exercise the call path. Patching scrapling.StealthyFetcher doesn't work:
+    the real module's lazy __getattr__ runs during patch lookup.
     """
     import types
     fake_mod = types.SimpleNamespace(StealthyFetcher=MockSF)
@@ -352,6 +349,48 @@ class TestScraplingFetchAndExtract(unittest.TestCase):
             ))
         assert result["ok"] is False
         assert "ConnectionError" in result["error"]
+
+
+class TestScraplingChromeVersionClamp(unittest.TestCase):
+    """_clamp_scrapling_chrome_version / _datapoints_max_chrome_version.
+
+    scrapling hardcodes chromium_version/chrome_version above what the bundled
+    apify-fingerprint-datapoints header network covers, so importing the real
+    StealthyFetcher raises ValueError. The clamp lowers the constants to the
+    max supported version so the real Chromium fetcher works.
+    """
+
+    def setUp(self):
+        from tools.scrapling_fetch import (
+            _clamp_scrapling_chrome_version,
+            _datapoints_max_chrome_version,
+        )
+        self.clamp = _clamp_scrapling_chrome_version
+        self.datapoints_max = _datapoints_max_chrome_version
+
+    def test_datapoints_max_is_an_int(self):
+        max_ver = self.datapoints_max()
+        assert isinstance(max_ver, int) and 100 < max_ver < 200
+
+    def test_clamp_makes_real_import_work(self):
+        try:
+            from scrapling.fetchers import StealthyFetcher  # noqa: F401
+
+            already_works = True
+        except ValueError:
+            already_works = False
+        if already_works:
+            self.skipTest("installed scrapling already imports cleanly")
+        self.clamp()
+        from scrapling.fetchers import StealthyFetcher  # noqa: F401
+
+        assert True
+
+    def test_clamp_is_idempotent_and_safe_when_import_ok(self):
+        max_ver = self.datapoints_max()
+        self.clamp()  # must not raise even after a prior clamp / successful import
+        self.clamp()
+        assert max_ver == self.datapoints_max()
 
 
 class TestErrorPaths(unittest.TestCase):
