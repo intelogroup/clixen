@@ -1,5 +1,10 @@
+# Single source of truth is pyproject.toml at the repo root.
+# This file is kept for tooling that expects a requirements.txt.
+# Install with:  uv sync  (repo root)  or  pip install -e .[test]
+# Contains packages that were historically only listed here and are now merged
+# into pyproject.toml's [project.dependencies] — see `git log` for the merge.
 faster-whisper>=1.0.0
 paper-qa>=5.0.0
-twscrape[curl]>=0.19.2,<0.20
 reportlab>=4.0.0
 scrapling[fetchers]>=0.4.0
+twscrape[curl]>=0.19.2,<0.20
