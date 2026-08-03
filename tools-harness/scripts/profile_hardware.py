@@ -129,21 +129,23 @@ def get_recommendation(ram: float, gpu_name: str, vram: float) -> dict:
             rec["primary"] = "gemma4:e2b"
             rec["ctx"] = 4096
     else:
-        # Dedicated GPU PC/Linux
+        # Dedicated GPU PC/Linux — GGUF models only (gemma4:* MLX builds are
+        # Apple-Silicon-only; recommending them on NVIDIA/Linux was a portability
+        # bug — they'd never pull or run there).
         rec["type"] = f"Dedicated GPU ({gpu_name})"
         if vram >= 16.0:
             rec["tier"] = "Premium"
-            rec["models"] = ["gemma4:12b-mlx", "mistral-nemo", "qwen3.5:9b"]
-            rec["primary"] = "gemma4:12b-mlx"
+            rec["models"] = ["mistral-nemo", "qwen3.5:9b", "qwen3:8b"]
+            rec["primary"] = "mistral-nemo"
             rec["ctx"] = 16384
         elif vram >= 8.0:
             rec["tier"] = "Optimal (Standard)"
-            rec["models"] = ["gemma4:e2b", "mistral-nemo", "qwen3.5:4b"]
-            rec["primary"] = "gemma4:e2b"
+            rec["models"] = ["mistral-nemo", "qwen3:8b", "qwen3.5:4b"]
+            rec["primary"] = "mistral-nemo"
             rec["ctx"] = 8192
         else:
             rec["tier"] = "CPU / Light GPU"
-            rec["models"] = ["qwen3.5:4b", "gemma4:e2b"]
+            rec["models"] = ["qwen3.5:4b", "qwen3:4b"]
             rec["primary"] = "qwen3.5:4b"
             rec["ctx"] = 4096
 
