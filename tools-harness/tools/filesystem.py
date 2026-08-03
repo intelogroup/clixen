@@ -18,16 +18,24 @@ _HOME = str(Path.home())
 # Set per-request by the harness (run()) when an IDE/project folder is known, so that bare
 # relative paths the model emits ("pyproject.toml") resolve against the open project rather
 # than the server's process cwd (tools-harness/). None = fall back to cwd/home as before.
-_PROJECT_ROOT: str | None = None
+#
+# 2026-08-03: was a plain module global written per request — two concurrent
+# requests with different project roots raced (request A's relative paths
+# resolved against B's project root, reading/writing the wrong files). Now a
+# ContextVar: each request thread gets its own value, copied into tool-executor
+# threads via the cloud/local loop's copy_context().
+_PROJECT_ROOT: "ContextVar[str | None]" = None
+
+import contextvars as _cv
+_PROJECT_ROOT = _cv.ContextVar("_PROJECT_ROOT", default=None)
 
 
 def set_project_root(path: str | None) -> None:
-    global _PROJECT_ROOT
-    _PROJECT_ROOT = path or None
+    _PROJECT_ROOT.set(path or None)
 
 
 def get_project_root() -> str | None:
-    return _PROJECT_ROOT
+    return _PROJECT_ROOT.get()
 
 
 def _resolve_path(path_str: str) -> Path:
@@ -43,7 +51,7 @@ def _resolve_path(path_str: str) -> Path:
     # Bare relative path ("pyproject.toml", "src/app.py"): if it doesn't exist relative to
     # the process cwd, try the open project root, then the home directory.
     if not p.is_absolute() and not p.exists():
-        for base in (_PROJECT_ROOT, _HOME):
+        for base in (_PROJECT_ROOT.get(), _HOME):
             if not base:
                 continue
             candidate = Path(base) / path_str

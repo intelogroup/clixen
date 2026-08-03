@@ -115,22 +115,30 @@ KEEP_RECENT_TURNS = 10  # last 5 exchanges (5 user + 5 assistant turns)
 
 
 def get(chat_id: str) -> list[dict]:
-    """Return current history for chat_id; loads from disk on first access."""
+    """Return current history for chat_id; loads from disk on first access.
+
+    _store reads run under _cache_lock so the LRU eviction in _touch_cache
+    (which pops from _store) can never race a concurrent get() into a KeyError
+    (live class of crash — eviction and read were previously unsynchronized)."""
     cid = str(chat_id)
-    if cid not in _store:
-        _store[cid] = _load_from_disk(cid)
+    with _cache_lock:
+        if cid not in _store:
+            _store[cid] = _load_from_disk(cid)
+        history = list(_store[cid])
     _touch_cache(cid)
-    return list(_store[cid])
+    return history
 
 
 def append(chat_id: str, role: str, content: str) -> None:
     """Add a single turn to the history and persist to disk."""
     cid = str(chat_id)
-    if cid not in _store:
-        _store[cid] = _load_from_disk(cid)
-    _store[cid].append({"role": role, "content": content})
+    with _cache_lock:
+        if cid not in _store:
+            _store[cid] = _load_from_disk(cid)
+        _store[cid].append({"role": role, "content": content})
+        snapshot = list(_store[cid])
     _touch_cache(cid)
-    _save_to_disk(cid, _store[cid])
+    _save_to_disk(cid, snapshot)
 
 
 def _rolling_summary_turn(chat_id: str) -> dict | None:
@@ -491,7 +499,8 @@ def compact_old_turns(chat_id: str, model: str) -> None:
     so it never blocks the current response.
     """
     cid = str(chat_id)
-    history = _store.get(cid, [])
+    with _cache_lock:
+        history = _store.get(cid, [])
     older = history[:-KEEP_RECENT_TURNS] if len(history) > KEEP_RECENT_TURNS else []
     if not older:
         return
@@ -528,7 +537,8 @@ def _save_to_session_memory(cid: str, summary: str) -> None:
 
 def clear(chat_id: str) -> None:
     cid = str(chat_id)
-    _store.pop(cid, None)
+    with _cache_lock:
+        _store.pop(cid, None)
     with _summary_lock:
         _summary_cache.pop(cid, None)
     p = _session_path(cid)

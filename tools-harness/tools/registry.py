@@ -425,6 +425,10 @@ def _execute_raw(name: str, arguments: dict) -> str:
     try:
         raw_result = EXECUTORS[name](arguments)
         from tools.tool_policy import sanitize_output
+        # Coerce non-str results (executors returning None/dicts) so downstream
+        # len()/re.sub() never TypeError on an empty tool result — the old code
+        # passed None straight through and every LLM chat loop did len(result).
+        raw_result = raw_result if isinstance(raw_result, str) else str(raw_result)
         result = sanitize_output(name, raw_result)
         _warn_if_suspiciously_empty(name, result)
         return result
