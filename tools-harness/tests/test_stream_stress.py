@@ -25,6 +25,17 @@ from chat_ui import (
 from clients.cancellation import QueryAbortedException
 
 
+# ── Session-wide isolation: never touch the real workspace_state.json ──────
+# The stream endpoints persist lifecycle state on success, so without this the
+# tests would overwrite the production account with the stress fixture account.
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_workspace_state(tmp_path_factory):
+    import chat_ui
+    iso_path = tmp_path_factory.mktemp("ws") / "workspace_state.json"
+    chat_ui.WORKSPACE_STATE_PATH = iso_path
+
+
 # ── Auth fixture (replaces setup_module for isolation) ──────────────────────
 
 @pytest.fixture
