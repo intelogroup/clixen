@@ -587,6 +587,20 @@ def _user_timezone() -> str:
                 return name
     except Exception:
         _log.debug("timezone detection failed", exc_info=True)
+
+    # No IANA name resolvable (e.g. /etc/localtime missing on some containers).
+    # Fall back to the local UTC offset via Etc/GMT so scheduled automations
+    # still fire at the right wall-clock time, instead of silently assuming
+    # America/New_York. Etc/GMT signs are inverted (Etc/GMT-5 == UTC+5).
+    try:
+        offset_min = -datetime.now().astimezone().utcoffset().total_seconds() / 60
+        hours = int(offset_min // 60)
+        name = f"Etc/GMT{hours:+d}" if hours else "Etc/UTC"
+        if _is_valid_timezone(name):
+            _log.warning("tz name unresolvable; using UTC-offset fallback %s (set USER_TIMEZONE to override)", name)
+            return name
+    except Exception:
+        _log.debug("UTC-offset fallback failed", exc_info=True)
     return "America/New_York"
 
 

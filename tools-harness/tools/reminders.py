@@ -27,6 +27,22 @@ _TIMEOUT_S = 10
 _CALENDAR_TIMEOUT_S = 45  # Calendar iteration over many accounts is slow.
 
 
+def _fmt_native_datetime(dt: datetime) -> str:
+    """Format a datetime for AppleScript's free-form date parser, portably.
+
+    macOS strftime supports %-d/%-I (no padding); Linux glibc does not and
+    raises ValueError. Build the string by hand so the module never crashes
+    on the date-format step on either platform."""
+    month = dt.strftime("%B")
+    day = int(dt.strftime("%d"))  # strip leading zero
+    year = dt.strftime("%Y")
+    hour_12 = int(dt.strftime("%I")) % 12 or 12
+    minute = dt.strftime("%M")
+    second = dt.strftime("%S")
+    ampm = dt.strftime("%p")
+    return f"{month} {day}, {year} {hour_12}:{minute}:{second} {ampm}"
+
+
 def _osa(script: str, timeout_s: int = _TIMEOUT_S) -> tuple[int, str, str]:
     try:
         result = subprocess.run(
@@ -174,7 +190,7 @@ def create_reminder(title: str, due: str = "", list_name: str = "", notes: str =
         except ValueError:
             return f"[reminders error] could not parse due date {due!r}. Use YYYY-MM-DD or YYYY-MM-DD HH:MM."
         # AppleScript's date constructor accepts a free-form string via `date "..."`.
-        as_date = dt.strftime("%B %-d, %Y %-I:%M:%S %p")
+        as_date = _fmt_native_datetime(dt)
         props.append(f'due date:(date "{as_date}")')
 
     target_list = (
@@ -280,8 +296,8 @@ def list_calendar_events(days: int = 7) -> str:
     _ensure_calendar_running()
     now = datetime.now()
     end = now + timedelta(days=days)
-    start_str = now.strftime("%B %-d, %Y %-I:%M:%S %p")
-    end_str = end.strftime("%B %-d, %Y %-I:%M:%S %p")
+    start_str = _fmt_native_datetime(now)
+    end_str = _fmt_native_datetime(end)
     script = (
         f'set startDate to date "{start_str}"\n'
         f'set endDate to date "{end_str}"\n'
