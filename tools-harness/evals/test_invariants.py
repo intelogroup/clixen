@@ -226,15 +226,16 @@ def test_budget_default_is_the_stale_1m_when_env_absent():
 
 # ------------------------------------------------------------------ misc claims
 
-def test_summarizer_is_cloud_primary_with_gemma4_fallback():
-    """CLAUDE.md's "Summarizer: gemma4:12b-mlx" is stale — _summarize() calls the cloud
-    model first and only falls back to gemma4 on exception. This matters because every
-    latency/quality number attributed to "the gemma4 summarizer" was measured on DeepSeek."""
+def test_summarizer_is_cloud_primary_with_local_fallback():
+    """_summarize() calls the cloud model first and only falls back to the local
+    default (ollama_client.DEFAULT_MODEL, env-overridable via OLLAMA_DEFAULT_MODEL)
+    on exception. This matters because every latency/quality number attributed to
+    "the local summarizer" was measured on the cloud model."""
     src = inspect.getsource(__import__("tools.websearch", fromlist=["_summarize"])._summarize)
     cloud_at = src.index("DEFAULT_CLOUD_MODEL")
-    gemma_at = src.index('"gemma4:12b-mlx"')
-    assert cloud_at < gemma_at, "summarizer no longer tries cloud first"
-    assert "except" in src[:gemma_at], "gemma4 is no longer the fallback path"
+    fallback_at = src.rindex("_LOCAL_DEFAULT")  # usage site, not the import
+    assert cloud_at < fallback_at, "summarizer no longer tries cloud first"
+    assert "except" in src[:fallback_at], "local model is no longer the fallback path"
 
 
 def test_browser_wait_never_raises():
