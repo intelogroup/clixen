@@ -57,9 +57,6 @@ _ENV_GROUPS = {
 _PLISTS = [
     "com.clixen.autopilot-mail",
     "com.clixen.daily_email_summary",
-    "com.clixen.email_watch_benouchecapierre",
-    "com.clixen.email_watch_jayveedz19",
-    "com.clixen.email_watch_raymonvillemaxi",
     "com.clixen.health_writer",
     "com.clixen.task_worker",
 ]

@@ -491,8 +491,8 @@ def send(to: str, message: str, service: str = "iMessage",
         return "[imessage_send error] service must be 'iMessage' or 'SMS'."
 
     def _digits(s: str) -> str:
-        # last-10 comparison so "+18574261739" and "8574261739" (with/without
-        # the US country code) normalize to the same value.
+        # last-10 comparison so "+1XXXXXXXXXX" and "XXXXXXXXXX" (with/without
+        # the country code) normalize to the same value.
         d = "".join(c for c in (s or "") if c.isdigit())
         return d[-10:] if len(d) >= 10 else d
 
