@@ -153,5 +153,9 @@ def test_more_than_five_jobs_available_only_claims_five_per_cycle():
         execute_job=patch.object(worker, "_execute_job", side_effect=lambda j: executed.append(j["id"])),
     )
 
+    # claim_next() has no batch param — the outer range(5) caps claims per
+    # cycle even when more jobs are sitting in the queue. Exactly 5 must be
+    # claimed; compare as a set because the 3-worker pool completes them in
+    # arbitrary order (as_completed), so append order is not deterministic.
     assert len(executed) == 5
-    assert executed == ["0", "1", "2", "3", "4"]
+    assert set(executed) == {"0", "1", "2", "3", "4"}

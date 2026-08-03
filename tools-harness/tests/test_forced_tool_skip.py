@@ -25,7 +25,7 @@ def _patch(monkeyed):
         "exec": cc.execute_tool, "stream": cc._stream_completion,
         "trace": cc._record_trace, "resolve": cc._resolve,
         "reason": cc._reasoning_extra_body, "recover": cc._recover_from_garbage,
-        "abort": cc.check_aborted, "track": cc._track_usage,
+        "abort": cc.check_aborted, "track": cc._track_usage, "budget": cc.check_budget,
     }
     cc.execute_tool = lambda name, args: (calls["exec"].append((name, args)), "Italy won Euro 2020.")[1]
     def _stream(client, on_token, **kw):
@@ -38,10 +38,12 @@ def _patch(monkeyed):
     cc._recover_from_garbage = lambda client, model, on_token, messages, content: content
     cc.check_aborted = lambda: None
     cc._track_usage = lambda *a, **k: None
+    cc.check_budget = lambda *a, **k: None
     def restore():
         cc.execute_tool, cc._stream_completion, cc._record_trace = orig["exec"], orig["stream"], orig["trace"]
         cc._resolve, cc._reasoning_extra_body, cc._recover_from_garbage = orig["resolve"], orig["reason"], orig["recover"]
         cc.check_aborted, cc._track_usage = orig["abort"], orig["track"]
+        cc.check_budget = orig["budget"]
     return calls, restore
 
 
@@ -82,7 +84,7 @@ def test_deepseek_thinking_gets_reasoning_content():
     try:
         msgs = [{"role": "user", "content": "weather in paris"}]
         cc._run_tool_loop(
-            "deepseek/deepseek-v4-flash", msgs, tools=[{"x": 1}], on_token=None,
+            "openrouter/google/gemini-2.5-flash-lite", msgs, tools=[{"x": 1}], on_token=None,
             max_rounds=8, run_id="rid790", force_tool_choice="ask_web_search",
         )
     finally:
