@@ -44,35 +44,6 @@ class AiSummarizeStep(PipelineStep):
         return {"ok": not text.startswith("[error]"), "output": text}
 
 
-class CalendarCheckStep(PipelineStep):
-    def __init__(self, days_ahead: int = 1):
-        self.days_ahead = days_ahead
-
-    def run(self, ctx: dict) -> dict:
-        from tools.calendar import list_events
-        from datetime import timedelta
-        now = datetime.now(timezone.utc)
-        end = now + timedelta(days=self.days_ahead)
-        result = list_events(
-            time_min=now.isoformat(),
-            time_max=end.isoformat(),
-            max_results=20,
-        )
-        ctx["calendar_events"] = result
-        return {"ok": "error" not in result.lower(), "output": result}
-
-
-class TasksCheckStep(PipelineStep):
-    def __init__(self, max_results: int = 10):
-        self.max_results = max_results
-
-    def run(self, ctx: dict) -> dict:
-        from tools.tasks import list_tasks
-        result = list_tasks(max_results=self.max_results)
-        ctx["tasks"] = result
-        return {"ok": "error" not in result.lower(), "output": result}
-
-
 class iMessageSendStep(PipelineStep):
     def __init__(self, recipient: str, message_key: str = None,
                  message: str = None, from_: str = None):

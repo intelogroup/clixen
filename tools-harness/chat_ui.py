@@ -1,5 +1,5 @@
 """
-Gemma4Llama chat UI — http://localhost:9234
+Clixen chat UI — http://localhost:9234
 Run:  python chat_ui.py
 """
 

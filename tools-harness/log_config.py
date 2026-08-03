@@ -1,5 +1,5 @@
 """
-Shared logging configuration for gemma4llama.
+Shared logging configuration for clixen.
 
 Usage:
     from log_config import setup_logging

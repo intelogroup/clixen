@@ -10,12 +10,12 @@ command = "npx"
 
 [mcp_servers.clixen]
 args = ["/Users/kalinovdameus/Developer/clixen/tools-harness/mcp_server.py"]
-command = "/Users/kalinovdameus/miniforge3/bin/python"
+command = "/Users/kalinovdameus/Developer/clixen/.venv/bin/python"
 
 [mcp_servers.gmail-send]
-args = ["/Users/kalinovdameus/Developer/clixen/gmail-mcp/server.js"]
+args = ["/Users/kalinovdameus/Developer/clixen/google-mcp/server.js"]
 command = "/Users/kalinovdameus/.nvm/versions/node/v24.11.1/bin/node"
 
 [mcp_servers.gmail-send.env]
-GMAIL_CREDENTIALS_PATH = "/Users/kalinovdameus/Developer/clixen/gmail-mcp/credentials.json"
-GMAIL_TOKEN_PATH = "/Users/kalinovdameus/Developer/clixen/gmail-mcp/token.json"
+GMAIL_CREDENTIALS_PATH = "/Users/kalinovdameus/Developer/clixen/google-mcp/credentials.json"
+GMAIL_TOKEN_PATH = "/Users/kalinovdameus/Developer/clixen/google-mcp/token.json"

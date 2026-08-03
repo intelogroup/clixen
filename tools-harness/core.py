@@ -1,5 +1,5 @@
 """
-Gemma4Llama Core — consolidated service entry point.
+Clixen Core — consolidated service entry point.
 Runs: chat_ui + telegram_bot + email_watch + task_worker in one process.
 
 Run:  python core.py
@@ -75,7 +75,7 @@ def _make_thread(name: str) -> threading.Thread:
 
 
 def main():
-    print("Starting Gemma4Llama Core (consolidated)...")
+    print("Starting Clixen Core (consolidated)...")
 
     threads: dict[str, threading.Thread] = {}
     last_restart: dict[str, float] = {}

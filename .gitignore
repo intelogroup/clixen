@@ -2,9 +2,12 @@
 .env.local
 *.env
 .env.stale-root-backup
+.env.mcp
 models/
 tools-harness/uploads/
 tools-harness/data/
+node_modules/
+.next/
 
 # Logs
 *.log
@@ -14,6 +17,7 @@ tools-harness/data/
 # OAuth tokens / credentials (bare patterns catch google-mcp/ and gmail-mcp/)
 token.json
 credentials.json
+tools-harness/workspace_state.json
 
 .DS_Store
 *.db

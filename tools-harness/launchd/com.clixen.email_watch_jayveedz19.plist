@@ -32,8 +32,8 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/email_watch.log</string>
+    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/email_watch_jayveedz19.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/email_watch.err.log</string>
+    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/email_watch_jayveedz19.err.log</string>
 </dict>
 </plist>

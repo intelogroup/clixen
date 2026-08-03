@@ -24,7 +24,7 @@ sensitivity = 0.7
 [[hooks]]
 wake = ["clawd"]
 aliases = ["claude", "picovoice", ...]
-command = '~/Developer/gemma4llama/tools-harness/brabble_hook.py'
+command = '~/Developer/clixen/tools-harness/brabble_hook.py'
 cooldown_sec = 1.0
 min_chars = 1
 timeout_sec = 60
@@ -48,7 +48,7 @@ timeout_sec = 60
 - **VAD aggressiveness 1** over 2: MacBook Air built-in mic needs more sensitivity. 2+ missed many utterances.
 - **partial_flush_ms = 0**: eliminated segment queue overflow during continuous audio. Only VAD-terminated segments processed.
 - **energy_threshold -40dBFS** over -35dBFS: captures quieter speech without increasing noise hallucination.
-- **Absolute Python shebang** (`#!/Users/kalinovdameus/miniforge3/bin/python3`) in hook: launchd has restricted PATH.
+- **Absolute Python shebang** (`#!/usr/bin/env python3`) in hook: launchd has restricted PATH.
 
 ## Useful Commands
 

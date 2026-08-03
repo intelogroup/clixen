@@ -22,7 +22,7 @@ WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 # still excludes the rest of the filesystem (Documents, ~/.ssh, etc. stay
 # write-denied) and BLOCKED_PATTERNS still applies underneath it.
 DEV_ROOT = Path(__file__).resolve().parents[3]
-APP_DATA_DIR = Path("/Users/kalinovdameus/.gemini/antigravity").resolve()
+APP_DATA_DIR = (Path.home() / ".gemini/antigravity").resolve()
 HOME = Path.home().resolve()
 TMP_DIRS = [
     Path("/tmp").resolve(),

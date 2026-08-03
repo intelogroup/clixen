@@ -1989,7 +1989,7 @@ def _run_impl(
                 from tools.shell import write_file as _write_file
 
                 slug = _re_fn.sub(r"[^a-z0-9]+", "_", query.lower().strip())[:40].strip("_") or "results"
-                desktop = "/Users/kalinovdameus/Desktop"
+                desktop = str(Path.home() / "Desktop")
 
                 if _wants_md:
                     md_path = f"{desktop}/{slug}.md"

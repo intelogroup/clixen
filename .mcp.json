@@ -8,7 +8,7 @@
       ]
     },
     "clixen": {
-      "command": "/Users/kalinovdameus/miniforge3/bin/python",
+      "command": "/Users/kalinovdameus/Developer/clixen/.venv/bin/python",
       "args": [
         "/Users/kalinovdameus/Developer/clixen/tools-harness/mcp_server.py"
       ]
