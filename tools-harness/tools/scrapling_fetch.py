@@ -35,6 +35,58 @@ def _err(msg: str) -> str:
     return json.dumps({"ok": False, "error": msg})
 
 
+def _datapoints_max_chrome_version() -> int | None:
+    """Max Chrome major version the installed apify_fingerprint_datapoints
+    header network has fingerprint data for (e.g. 141). None if unknown."""
+    try:
+        import json
+        import os
+        import zipfile
+
+        from apify_fingerprint_datapoints import get_header_network  # noqa: F401  (import sanity)
+
+        path = os.path.join(
+            os.path.dirname(os.path.abspath(__import__("apify_fingerprint_datapoints").__file__)),
+            "data",
+            "header-network-definition.zip",
+        )
+        with zipfile.ZipFile(path) as z:
+            net = json.loads(z.read("network.json"))
+        majors: list[int] = []
+        for node in net["nodes"]:
+            if not node["name"].startswith("*BROWSER"):
+                continue
+            for value in node["possibleValues"]:
+                m = re.match(r"^chrome/(\d+)(?:\.|$)", str(value))
+                if m:
+                    majors.append(int(m.group(1)))
+        return max(majors) if majors else None
+    except Exception:
+        return None
+
+
+def _clamp_scrapling_chrome_version() -> None:
+    """scrapling hardcodes chromium_version/chrome_version (>=145) above what
+    the bundled apify_fingerprint_datapoints header network supports (max 141),
+    so `from scrapling.fetchers import StealthyFetcher` raises ValueError at
+    import time. Clamp the constants to the max supported version so the real
+    Chromium stealth fetcher actually works."""
+    try:
+        import scrapling.engines.toolbelt.fingerprints as _fp
+    except Exception:
+        return
+    try:
+        from scrapling.fetchers import StealthyFetcher  # noqa: F401
+
+        return
+    except ValueError:
+        pass
+    max_ver = _datapoints_max_chrome_version()
+    if max_ver:
+        for _attr in ("chromium_version", "chrome_version"):
+            setattr(_fp, _attr, max_ver)
+
+
 # ---------------------------------------------------------------------------
 # Tool schema (Ollama function-calling format)
 # ---------------------------------------------------------------------------
@@ -238,6 +290,7 @@ def _scrapling_stealthy_fetch(
 
     t0 = time.time()
     try:
+        _clamp_scrapling_chrome_version()
         from scrapling import StealthyFetcher
         page = StealthyFetcher.fetch(url, **kwargs)
     except Exception as e:
