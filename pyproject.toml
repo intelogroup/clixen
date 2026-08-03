@@ -23,7 +23,6 @@ dependencies = [
   "pydantic>=2.12,<3",
   "requests>=2.33,<3",
   "trafilatura>=2.0,<3",
-  "transformers>=5,<6",
   "uvicorn>=0.33,<1",
   "pymupdf>=1.23",
   "python-docx>=1,<2",
