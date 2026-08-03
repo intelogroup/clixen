@@ -212,9 +212,9 @@ clixen/
 │   │   └── serve_sidecar.py    # Sidecar server
 │   │
 │   ├── launchd/                # launchd plists for background services
-│   │   ├── com.gemma4llama.daily_email_summary.plist
-│   │   ├── com.gemma4llama.email_watch_*.plist (×3)
-│   │   └── com.gemma4llama.task_worker.plist
+│   │   ├── com.clixen.daily_email_summary.plist
+│   │   ├── com.clixen.email_watch_*.plist (×3)
+│   │   └── com.clixen.task_worker.plist
 │   │
 │   ├── templates/              # FastAPI Jinja2 templates
 │   │   ├── index.html
@@ -416,10 +416,10 @@ Ensure you have Docker running (for SearXNG) and Ollama installed.
 queue + scheduled automations) as threads in **one** process — this is what's actually
 running day-to-day, managed by launchd:
 ```bash
-launchctl load ~/Library/LaunchAgents/com.gemma4llama.core.plist
+launchctl load ~/Library/LaunchAgents/com.clixen.core.plist
 # after editing any code core.py imports, restart the whole process (threads share it —
 # a file edit needs a full process restart, not just a thread respawn):
-launchctl kickstart -k gui/$(id -u)/com.gemma4llama.core
+launchctl kickstart -k gui/$(id -u)/com.clixen.core
 ```
 Open [http://localhost:9234](http://localhost:9234) in your browser.
 
@@ -436,7 +436,7 @@ python chat_ui.py
 ### 4. WhatsApp + Telegram (single supervised job)
 Both bots run under one launchd job (not `core.py`, not separate plists per bot):
 ```bash
-launchctl load ~/Library/LaunchAgents/com.gemma4llama.messaging.plist
+launchctl load ~/Library/LaunchAgents/com.clixen.messaging.plist
 ```
 This runs `tools-harness/messaging_supervisor.sh`, which supervises `telegram_bot.py`,
 `whatsapp_bot.py`, and `whatsapp_bridge.js` (Node/Baileys) as one process group.
