@@ -1,14 +1,13 @@
 """
 Remaining telegram_bot coverage: the document-agent body (synthesis + conversion +
 NO DATA / error-string paths), screenshot capture pipeline (screencapture → OCR →
-downscale), screenshot OCR reasoning (streaming, empty-OCR, failure), ugent Q&A
-search, reminder firing, and the /start /new /tts /tutor /agent command surfaces.
+downscale), screenshot OCR reasoning (streaming, empty-OCR, failure),
+reminder firing, and the /start /new /tts /tutor /agent command surfaces.
 
 All LLM/network/fs boundaries mocked; orchestration runs for real.
 """
 
 import asyncio
-import json
 import sys
 from types import SimpleNamespace
 
@@ -308,42 +307,6 @@ def test_analyze_screenshot_ocr_surfaces_llm_failure(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# _search_ugent — substring over enriched Q&A jsonl
-# ---------------------------------------------------------------------------
-
-
-def test_search_ugent_matches_and_respects_limit(monkeypatch, tmp_path):
-    rows = [
-        {"enriched": {"diseaseName": "Diabetes", "questionText": "insulin dosing"}},
-        {"enriched": {"subject": "diabetes management", "questionText": "A1C targets"}},
-        {"enriched": {"system": "endocrinology", "questionText": "oral agents"}},
-        {"enriched": {"questionText": "nothing to do with it"}},
-    ]
-    path = tmp_path / "medicospira-enriched.jsonl"
-    path.write_text("\n".join(json.dumps(r) for r in rows))
-    monkeypatch.setattr(tb, "_UGENT_ENRICHED", str(path))
-
-    hits = tb._search_ugent("diabetes", limit=2)
-    assert len(hits) == 2  # capped at limit
-    assert all("diabetes" in (r.get("diseaseName") or r.get("subject") or "").lower() for r in hits)
-
-
-def test_search_ugent_case_insensitive(monkeypatch, tmp_path):
-    rows = [{"enriched": {"questionText": "DIABETES ketoacidosis"}}]
-    path = tmp_path / "medicospira-enriched.jsonl"
-    path.write_text(json.dumps(rows[0]))
-    monkeypatch.setattr(tb, "_UGENT_ENRICHED", str(path))
-    assert len(tb._search_ugent("Diabetes")) == 1
-
-
-def test_search_ugent_no_match_returns_empty(monkeypatch, tmp_path):
-    path = tmp_path / "medicospira-enriched.jsonl"
-    path.write_text(json.dumps({"enriched": {"questionText": "oncology"}}))
-    monkeypatch.setattr(tb, "_UGENT_ENRICHED", str(path))
-    assert tb._search_ugent("cardiology") == []
-
-
-# ---------------------------------------------------------------------------
 # _fire_reminder
 # ---------------------------------------------------------------------------
 
@@ -523,24 +486,6 @@ async def test_cmd_agent_unpacks_run_result_tuple(monkeypatch):
     await tb.cmd_agent(update, _CmdCtx(["do the thing"]))
     assert "final answer" in update.message.placeholder.edits[-1]
     assert "deepseek" not in update.message.placeholder.edits[-1]
-
-
-@pytest.mark.asyncio
-async def test_cmd_learn_unpacks_run_result_tuple(monkeypatch):
-    """Same tuple-unpacking regression for /learn — must send the response
-    string, not the (result, model, intent) tuple."""
-    monkeypatch.setattr(tb, "ALLOWED_USER_IDS", set())
-    monkeypatch.setattr(tb, "_search_ugent", lambda topic, limit=5: [{"questionText": "q?", "correctAnswer": "a", "explanation": "e"}])
-
-    def fake_run(query, **kw):
-        return "Here's your lecture", "deepseek/x", "casual"
-
-    monkeypatch.setattr(tb.harness, "run_for_messaging", fake_run)
-    monkeypatch.setattr(tb, "_send_long", _fake_send_long)
-
-    update = _CmdUpdate()
-    await tb.cmd_learn(update, _CmdCtx(["diabetes"]))
-    assert update.message.texts[0] == "Here's your lecture"
 
 
 async def _noop_images(update, text):
