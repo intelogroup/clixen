@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Agent Traces</title>
+<style>
+  body { font-family: -apple-system, sans-serif; background: #111; color: #ddd; margin: 0; padding: 16px; }
+  h1 { font-size: 16px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #333; vertical-align: top; }
+  th { color: #888; font-weight: 500; }
+  .ok { color: #4caf50; }
+  .degraded { color: #e53935; }
+  .normal { color: #4caf50; }
+  .pinned { color: #9cdcfe; }
+  .budget_blocked, .unhealthy_fallback { color: #e53935; }
+  code { color: #9cdcfe; }
+</style>
+</head>
+<body>
+<h1>Recent Agent Traces <span id="ts" style="color:#666;font-weight:400;"></span></h1>
+<table>
+  <thead><tr><th>run_id</th><th>status</th><th>tools</th><th>errors</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<h1>Recent Routing Decisions <span id="ts2" style="color:#666;font-weight:400;"></span></h1>
+<table>
+  <thead><tr><th>time</th><th>intent</th><th>picked</th><th>reason</th></tr></thead>
+  <tbody id="routing-rows"></tbody>
+</table>
+<script>
+async function refresh() {
+  try {
+    const res = await fetch("/agent/traces/recent?limit=50");
+    if (!res.ok) return;
+    const data = await res.json();
+    const rows = data.runs.map(r => `<tr>
+      <td><code>${r.run_id}</code></td>
+      <td class="${r.status}">${r.status}</td>
+      <td>${(r.tools || []).join(", ")}</td>
+      <td>${r.errors}</td>
+    </tr>`).join("");
+    document.getElementById("rows").innerHTML = rows;
+    document.getElementById("ts").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) { /* transient poll failure, retry next tick */ }
+}
+async function refreshRouting() {
+  try {
+    const res = await fetch("/agent/routing/recent?limit=50");
+    if (!res.ok) return;
+    const data = await res.json();
+    const rows = data.decisions.slice().reverse().map(d => `<tr>
+      <td>${new Date(d.ts * 1000).toLocaleTimeString()}</td>
+      <td>${d.intent}</td>
+      <td><code>${d.picked}</code></td>
+      <td class="${d.reason}">${d.reason}</td>
+    </tr>`).join("");
+    document.getElementById("routing-rows").innerHTML = rows;
+    document.getElementById("ts2").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) { /* transient poll failure, retry next tick */ }
+}
+refresh();
+refreshRouting();
+setInterval(refresh, 3000);
+setInterval(refreshRouting, 3000);
+</script>
+</body>
+</html>

@@ -1,0 +1,461 @@
+# Search Agent Configuration
+# Unified constants for discovery, merge, and dispatch
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JUNK DOMAINS - filtered from all search results
+# ─────────────────────────────────────────────────────────────────────────────
+junk_domains:
+  - ixbt.games
+  - templeshalomonline.org
+  - gamingdeputy.com
+  - tech-insider.org
+  - spheron.network
+  - thepromptbuddy.com
+  - endoflife.date
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE AUTHORITY - merge ranking scores
+# ─────────────────────────────────────────────────────────────────────────────
+source_authority:
+  discovery: 3.0
+  apple.com: 2.8
+  kubernetes.io: 2.8
+  dl.k8s.io: 3.0
+  api.github.com: 2.9
+  nvidianews.nvidia.com: 2.7
+  wccftech.com: 3.0
+  tomshardware.com: 2.6
+  servethehome.com: 0.7
+  swpc.noaa.gov: 2.8
+  spaceweather.com: 2.6
+  wired.com: 2.5
+  pcmag.com: 2.4
+  rting: 2.4
+  anandtech.com: 2.3
+  nobelprize.org: 2.7
+  bbc.co.uk: 2.2
+  wikipedia.org: 2.1
+  endoflife.date: 0.8
+  ddg: 1.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TIMEOUTS - seconds
+# ─────────────────────────────────────────────────────────────────────────────
+timeouts:
+  classify: 0.8
+  ddg: 4.0
+  enrich: 5.0
+  rewrite: 1.5
+  fetch_candidate: 3.0
+  passage_extract: 2.0
+
+# Circuit breaker config
+circuit_breaker:
+  failure_threshold: 3  # consecutive failures before disabling
+  cooldown_seconds: 60  # how long to skip disabled backend
+
+# Enrichment thresholds
+enrich:
+  min_snippet_length: 40
+  enrich_snippet_min: 150
+  fetch_chars: 800
+  max_workers: 3
+
+# Classification domains
+domains:
+  - sports
+  - finance
+  - news
+  - code
+  - academic
+  - health
+  - pricing
+  - weather
+  - tech
+  - travel
+  - general
+
+# Classification intents
+intents:
+  - live
+  - recent
+  - historical
+  - tech
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DOMAIN KEYWORDS - keyword triggers for adapter routing
+# ─────────────────────────────────────────────────────────────────────────────
+domain_keywords:
+  sports:
+    - soccer
+    - football
+    - basketball
+    - nba
+    - nfl
+    - nhl
+    - mlb
+    - tennis
+    - golf
+    - masters
+    - premier league
+    - champions league
+    - world cup
+
+  finance:
+    - stock
+    - market
+    - index
+    - portfolio
+    - invest
+    - dividend
+    - earnings
+    - gdp
+    - inflation
+    - fed
+    - treasury
+    - crypto
+    - bitcoin
+
+  health:
+    - symptoms
+    - disease
+    - treatment
+    - doctor
+    - hospital
+    - medication
+    - vaccine
+    - pandemic
+    - outbreak
+    - cdc
+
+  academic:
+    - paper
+    - research
+    - study
+    - journal
+    - arxiv
+    - pubmed
+
+  code:
+    - code
+    - programming
+    - github
+    - stackoverflow
+    - documentation
+    - api
+
+  semiconductor:
+    - intel
+    - nvidia
+    - amd
+    - tsmc
+    - qualcomm
+    - fab
+    - foundry
+
+  entertainment:
+    - music
+    - album
+    - song
+    - concert
+    - movie
+    - film
+
+  gov_triggers:
+    - usda
+    - aphis
+    - ftc
+    - doj
+    - cdc
+    - fda
+    - bird flu
+    - hpai
+    - court case
+    - antitrust
+    - s&p
+
+  # Authoritative data source triggers
+  authoritative:
+    - ror
+    - research organization
+    - university
+    - institution
+    - world bank
+    - gdp
+    - development indicator
+    - openfda
+    - fda drug
+    - drug label
+    - drug recall
+    - eurostat
+    - eu statistics
+    - europe data
+    - orcid
+    - researcher id
+    - author id
+    # LLM model queries
+    - gpt
+    - claude
+    - gemini
+    - deepseek
+    - llama
+    - qwen
+    - model pricing
+    - llm benchmark
+    - model comparison
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SEMICONDUCTOR ADAPTER - company keyword to URLs mapping
+# ─────────────────────────────────────────────────────────────────────────────
+semiconductor_companies:
+  tsmc:
+    keywords: [tsmc, taiwan semiconductor, foundry]
+    urls:
+      - https://investor.tsmc.com/english/investor-relations
+      - https://investor.tsmc.com/english/
+
+  intel:
+    keywords: [intel, intc]
+    urls:
+      - https://www.intc.com/investor-relations/
+      - https://www.intc.com/
+      - https://www.intc.com/news-releases/
+      - https://newsroom.intc.com/
+      - https://www.reuters.com/technology/
+
+  samsung:
+    keywords: [samsung]
+    urls:
+      - https://www.samsung.com/semiconductor/investor-relations/
+      - https://www.samsung.com/semiconductor/
+
+  nvidia:
+    keywords: [nvidia, nvda, rubin, blackwell, hopper, cuda, gpu roadmap]
+    urls:
+      - https://nvidianews.nvidia.com/
+      - https://nvidianews.nvidia.com/feed/
+      - https://www.nvidia.com/en-us/about-nvidia/
+      - https://www.nvidia.com/en-us/investor/
+      - https://www.nvidia.com/en-us/
+
+  amd:
+    keywords: [amd]
+    urls:
+      - https://www.amd.com/en/investor.html
+      - https://www.amd.com/en/
+
+  qualcomm:
+    keywords: [qualcomm, qcom]
+    urls:
+      - https://investor.qualcomm.com/
+
+  broadcom:
+    keywords: [broadcom, avgo]
+    urls:
+      - https://www.broadcom.com/investor-relations
+
+  generic:
+    urls:
+      - https://www.statista.com/outlook/cmo/semiconductors/worldwide
+      - https://www.gartner.com/en/newsroom/press-releases
+      - https://www.idc.com/
+      - https://semiengineering.com/
+      - https://www.eetimes.com/
+      - https://www.anandtech.com/
+
+# GovAdapter triggers - keyword-based routing to authoritative sources
+gov_triggers:
+  all_keywords:
+    - usda
+    - aphis
+    - faa
+    - tsa
+    - "sec "
+    - "ftc "
+    - doj
+    - cdc
+    - fda
+    - bird flu
+    - hpai
+    - avian influenza
+    - h5n1
+    - court case
+    - ruling
+    - verdict
+    - antitrust
+    - credit rating
+    - sovereign
+    - "s&p"
+    - standard & poor
+    - fitch
+    - moody's
+    - who wpro
+    - who emro
+    - who searo
+    - who euro
+    - western pacific
+    - eastern mediterranean
+    - geomagnetic
+    - geomagnetic storm
+    - solar storm
+    - space weather
+    - coronal hole
+    - coronal mass ejection
+    - kp index
+    - noaa swpc
+    - spaceweather
+
+  ftc:
+    keywords: [ftc, federal trade commission, antitrust, lawsuit, litigation]
+    urls:
+      - https://www.ftc.gov/search?q={q}
+      - https://www.ftc.gov/news-events/press-releases?q={q}
+      - https://law.justia.com/search/?q={q}
+      - https://www.oyez.org/
+
+  usda:
+    keywords: [usda, aphis, hpai, bird flu, avian influenza, h5n1, poultry]
+    urls:
+      - https://www.aphis.usda.gov/aphis/search?q={q}
+      - https://www.aphis.usda.gov/news-events/news-releases
+
+  who_regional:
+    keywords: [who wpro, who emro, who searo, who afro, world health organization, marburg, ebola]
+    urls:
+      - https://www.who.int/wpro/search?q={q}
+      - https://www.who.int/emro/search?q={q}
+      - https://www.who.int/searo/search?q={q}
+      - https://www.who.int/afro/search?q={q}
+      - https://www.who.int/searo/search?q={q}
+      - https://www.who.int/afro/search?q={q}
+
+  state_agriculture:
+    keywords: [state agriculture, department of agriculture, bird flu outbreak, hpai outbreak]
+    urls:
+      - https://www.aphis.usda.gov/aphis/search?q={q}
+
+  sovereign_credit:
+    keywords: [sovereign credit, s&p, moody's, fitch, credit rating, government debt]
+    urls:
+      - https://www.spglobal.com/search?q={q}
+      - https://finimize.com/search?q={q}
+
+  space_weather:
+    keywords: [geomagnetic, geomagnetic storm, solar storm, space weather, coronal hole, coronal mass ejection, kp index, noaa swpc, spaceweather, g1, g2, g3, g4, g5]
+    urls:
+      - https://www.swpc.noaa.gov/products/alerts-watches-and-warnings
+      - https://www.swpc.noaa.gov/
+      - https://spaceweather.com/
+      - https://www.spaceweatherlive.com/en/news.html
+
+# Domain classifier regex patterns (compiled at module level for performance)
+domain_patterns:
+  sports:
+    - soccer|football|basketball|nba|nfl|nhl|mlb|tennis|golf|masters
+    - premier league|champions league|world cup|olympics
+  finance:
+    - stock|market|index|portfolio|invest|dividend|earnings
+    - gdp|inflation|interest rate|fed|treasury|crypto|bitcoin
+  news:
+    - news|breaking|latest|announcement|update|report
+  health:
+    - symptoms|disease|treatment|doctor|hospital|medication
+    - vaccine|pandemic|outbreak|cdc|who
+  academic:
+    - paper|research|study|journal|arxiv|pubmed|doi
+  code:
+    - code|programming|github|stackoverflow|documentation|api
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTHORITATIVE DATA SOURCES - identity, authority, domain-specific data
+# ─────────────────────────────────────────────────────────────────────────────
+# These are high-authority sources that can be used for entity resolution,
+# identity verification, and domain-specific queries.
+
+authoritative_data_sources:
+  # Researcher identity - ORCID
+  # Note: API requires specific field (family-name, given-name, etc.)
+  orcid:
+    name: "ORCID"
+    description: "Open Researcher and Contributor ID - unique author identifiers"
+    base_url: "https://pub.orcid.org/v3.0"
+    # Use field-specific queries: family-name:Smith, orcid:0000-0001-2345-6789
+    search_url: "https://pub.orcid.org/v3.0/search/?q=family-name:{q}"
+    keywords: [orcid, researcher id, author id, scholar id, researcher, author, academic]
+
+  # Organization identity - ROR
+  ror:
+    name: "ROR"
+    description: "Research Organization Registry - unique institution IDs"
+    base_url: "https://api.ror.org"
+    query_url: "https://api.ror.org/organizations?query={q}"
+    keywords: [ror, research organization, institution, university, lab, research institute]
+
+  # Name authority - VIAF
+  # Note: API returns XML/HTML (no native JSON), search uses CQL syntax
+  viaf:
+    name: "VIAF"
+    description: "Virtual International Authority File - linked names across libraries"
+    base_url: "https://viaf.org"
+    # VIAF requires CQL syntax, returns XML. Use web search for better experience.
+    search_url: "https://viaf.org/viaf/search?query=local.personalNames+all+\"{q}\"&httpAccept=application/xml"
+    keywords: [viaf, authority, library, name authority, worldcat, author, person]
+
+  # US drug/medical data - OpenFDA
+  openfda:
+    name: "OpenFDA"
+    description: "FDA drugs, labels, recalls, devices, adverse events"
+    base_url: "https://api.fda.gov"
+    # Use openfda.brand_name for drug searches, activeingredient for ingredients
+    drugs_url: "https://api.fda.gov/drug/label.json?search=openfda.brand_name:{q}&limit=3"
+    recalls_url: "https://api.fda.gov/drug/enforcement.json?search=description:{q}&limit=3"
+    adverse_url: "https://api.fda.gov/drug/event.json?search=patient.drug.openfda.brand_name:{q}&limit=3"
+    keywords: [fda, openfda, drug, drug recall, adverse event, label, prescription, medication]
+
+  # Economic data - World Bank
+  worldbank:
+    name: "World Bank Data"
+    description: "Country-level economic and development indicators"
+    base_url: "https://api.worldbank.org/v2"
+    query_url: "https://api.worldbank.org/v2/country?format=json&per_page=50&search={q}"
+    keywords: [world bank, gdp, development, economic indicator, country data]
+
+  # Curated datasets - Our World in Data
+  owid:
+    name: "Our World in Data"
+    description: "Curated datasets across health, energy, climate, population"
+    base_url: "https://ourworldindata.org"
+    search_url: "https://ourworldindata.org/search?q={q}"
+    keywords: [our world in data, owid, climate, energy, population, health]
+
+  # International stats - UN Data
+  # Note: Complex SDMX API - use web search for simple queries
+  undata:
+    name: "UN Data"
+    description: "Multi-agency international statistics (UNSD)"
+    base_url: "https://data.un.org"
+    # UN Data REST API: /ws/rest/data/DF_UNDATA_SDG/{indicator}?format=json
+    # For simple queries, use the explorer/browse interface
+    search_url: "https://data.un.org/Handlers/DownloadHandler.ashx?DataSetId={q}"
+    keywords: [un data, united nations, international stats, unsd, un statistics]
+
+  # Europe-focused stats - Eurostat
+  # Note: requires specific dataset code (e.g., tipsun20 for unemployment, nama_10_gdp for GDP)
+  eurostat:
+    name: "Eurostat"
+    description: "European Union official statistics"
+    base_url: "https://ec.europa.eu/eurostat/api/dissemination"
+    # Dataset: tipsun20 = unemployment rate (annual), une_rt_m = unemployment (monthly)
+    unemployment_url: "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/tipsun20?geo={q}&time=2024&format=JSON"
+    # General pattern: /statistics/1.0/data/{dataset}?geo={country}&time={year}
+    keywords: [eurostat, eu statistics, europe data, euro area, unemployment, gdp]
+
+  # LLM model metadata - basellm/llm-metadata (free static API)
+  # Note: contains pricing, context, capabilities - NOT benchmark scores (those require separate API)
+  llm_metadata:
+    name: "LLM Metadata"
+    description: "Model pricing, context, capabilities for 4300+ models (no benchmark data)"
+    base_url: "https://basellm.github.io/llm-metadata/api/newapi"
+    models_url: "https://basellm.github.io/llm-metadata/api/newapi/models.json"
+    vendors_url: "https://basellm.github.io/llm-metadata/api/newapi/vendors.json"
+    keywords: [gpt, claude, gemini, deepseek, llama, qwen, mistral, model pricing, benchmark, llm comparison]

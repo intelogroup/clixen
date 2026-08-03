@@ -1,0 +1,59 @@
+# AGENTS.md — Agent Development Guide
+
+Map, not manual — deep detail lives in `docs/agents/*.md`, linked below. See the root
+`CLAUDE.md` first for stack overview, key files, model roster, and routing; this file is
+for agent-development internals CLAUDE.md doesn't cover.
+
+## Orchestrator & Routing
+- [docs/agents/orchestrator.md](docs/agents/orchestrator.md) — top-level Orchestrator Agent: 22 subagent tools, implementation files, latency bypasses.
+- [docs/agents/filesystem-routing.md](docs/agents/filesystem-routing.md) — 4-tier filesystem intent dispatch (regex → specialist → smolagents v2 → LangGraph), transport specialist.
+- [docs/agents/skills-hub.md](docs/agents/skills-hub.md) — `skills_hub.py` scoring signals, dispatch hierarchy.
+
+## Models & Conversation
+- [docs/agents/models.md](docs/agents/models.md) — cloud-first routing (DeepSeek default, gemma4 fallback/manual-override), local model roster, gemma4 thinking-mode gotcha, KV cache/warmup.
+- [docs/agents/conversation-history.md](docs/agents/conversation-history.md) — sliding-window history, continuous-fold compaction, corruption guards, concurrency race fix.
+
+## Tools
+- [docs/agents/web-search.md](docs/agents/web-search.md) — pipeline files/backend; see root CLAUDE.md for the live architecture/bug-history section.
+- [docs/agents/local-agent-tools.md](docs/agents/local-agent-tools.md) — task-scoped toolset (document/code/full), form workflow pattern, pipeline hint rules, system prompts, path resolution.
+- [docs/agents/automations.md](docs/agents/automations.md) — job_queue + workflow_store worker, builtin vs user automations, bug history.
+- [docs/agents/browser-automation.md](docs/agents/browser-automation.md) — Playwright/BrowserOS/vision/local-vision approaches, hidden-tab React-props rule, Scrapling, vault, service connectors (Uber/DoorDash/Sofascore).
+- [docs/agents/voice-brabble.md](docs/agents/voice-brabble.md) — wake-word voice agent config, architecture, latency fixes, TTS tool-progress-label stripping.
+- [docs/agents/agent-mail.md](docs/agents/agent-mail.md) — per-agent email infrastructure (Autopilot Mail daemon + Python client), architecture, integration status, review verdict.
+
+## When something's missing here
+If you need detail not covered by a linked doc, read the relevant source file directly —
+don't guess. If you learn something that belongs in one of these docs, update that doc (not
+this file) unless it's a short pointer.
+
+## User prompt spec (SCARF) — apply on every task
+User prompts are often terse/vague ("verify X", "why is Y failing?"). Forge the missing
+fields yourself before acting: **S**cope (exact file/log/DB/window), **C**ondition
+(explicit pass/fail), **A**rtifact (file(s) touched), **R**eport (declared output shape),
+**F**ence (what you will NOT touch). Vague verb → state the concrete condition back before
+acting. Debug prompt → root cause with evidence FIRST, fix second, no service restarts as
+a "fix". One-word prompts (`yes`/`fix`/`next`) after a multi-step plan usually mean a prior
+deliverable wasn't produced — check the last Report before treating it as new work.
+
+# Session learnings (2026-07-13)
+- BCH iMessage cursor stuck: `tools/imessage_search.py` `list_new_from()` SQL had `AND m.text IS NOT NULL AND m.text != ''` — watched contact's messages (rowid 1793+) store content in `attributedBody` with `text=NULL`, so filtered out. Fix: remove NULL-text filter, coalesce to `""`. `seen_rowid` advanced 1791→2070; polls every minute at 2070, ~10-14ms/cycle.
+- PubMed anti-aging workflows: two DB instances. "PubMed Anti-Aging Paper Alert" (paused, 0 seen_pmids). "Anti-Aging PubMed Watch" (active, 144 seen_pmids). Broad ~40-term OR query pulls tangential papers (osteoblast, quercetin, klotho match without aging relevance). Fix in `user_automation.py`: content-hash dedup (`sha256(title+year)` as `seen_hashes`) alongside legacy PMID dedup, plus keyword relevance gate (title must contain >=1 aging term from curated set: aging, senescence, longevity, senolytic, age-related, etc.). Both persist even on zero-send — prevents re-evaluating same non-relevant papers next cycle. Capped at 1000 entries each.
+
+<!-- forge-learnings:start -->
+## Learnings (auto-maintained by /um — human edits go ABOVE this block)
+- Repo dir renamed gemma4llama→clixen; package name, README, launchd label prefix `com.gemma4llama.*` still say gemma4llama. Watch for hardcoded `/gemma4llama` paths (security_utils.py WORKSPACE_ROOT must derive from `__file__`).
+- Messaging is ONE launchd job `com.gemma4llama.messaging.plist` → `messaging_supervisor.sh` (telegram_bot + whatsapp_bot:9236 + whatsapp_bridge:9235). Logs: `tools-harness/messaging_std{err,out}.log`. Restart via `launchctl unload/load` (KeepAlive=true).
+- `src/g4l/` is a frozen phase-1 prototype; only `core/models.py` + `core/utils.py` are imported by production `chat_ui.py`. `tools-harness/` is the real runtime.
+- Router `classify()`/`classify_telegram()`: every branch returns cloud (`CLOUD_MODEL`) except `ocr`, which stays `gemma4:12b-mlx` (only multimodal model) — flipped cloud-first 2026-07, this line was stale (used to say every branch returns gemma4:12b-mlx). `harness.py`'s post-classify if/elif still re-overrides some intents back to local, see CLAUDE.md → Routing.
+- Telegram document intent (`_run_doc_agent`): deterministic gather→one `chat(tools=[])` synthesis→convert; NO agent loop (old loop hung ~80s/round). `_content_query` strips format words before web search; converters return error STRINGS not raises (verify file on disk).
+- Two Ollama installs exist: `homebrew.mxcl.ollama.plist` is dead (port-conflicted). The real one is Ollama.app's Electron-spawned `ollama serve` — its env vars only update via `launchctl setenv` + killing both the `ollama serve` child and parent Electron process, then reopening the app. Editing either plist is a no-op for the live daemon.
+- Warm-daemon pattern for cold-exec-per-invocation scripts (e.g. `brabble_hook.py`, which execs fresh per wake-word): a tiny stdlib `http.server` daemon holding one singleton, wired as a `core.py`-supervised thread. Used for `kokoro_daemon.py` (:9237) and `voiceprint_daemon.py` (:9238) — same shape for any cold-import-heavy dependency (Kokoro TTS, Resemblyzer voiceprint).
+- `ThreadPoolExecutor` as `with ... as ex:` defeats `.result(timeout=X)` — `__exit__`'s `shutdown(wait=True)` blocks until the thread finishes anyway. Use `ex = ThreadPoolExecutor(...)` + explicit `ex.shutdown(wait=False)` when a real timeout matters.
+- `tools/websearch.py`'s `_rewrite_query` and `tools/followup.py`'s `_rewrite_standalone` are both cloud-primary (DeepSeek) with local qwen3.5:4b as fallback only — don't add a new local-only Ollama rewrite call, this env doesn't reliably have local models loaded (qwen3.5:4b 404'd in tests 2026-07-30). Any similar rewrite/query-processing helper should follow the same pattern.
+- Conversation fold (`store/conversation.py`): labeling the transcript `USER:`/`ASSISTANT:` makes the summarizer model hallucinate a conversational reply instead of extracting facts (chat-shaped input triggers a "continue this chat" prior stronger than the system prompt). Use neutral tags (`[A]`/`[B]`) + explicit "inert data, do not respond" framing.
+- `jobs/worker.py`'s `main()` has a deliberately broad `except Exception: _log.exception(...)` around its while-True daemon loop (correct — daemon must never crash on a bad job). Any test sentinel meant to break out of that loop (e.g. via a mocked `time.sleep` side_effect) MUST subclass `BaseException`, not `Exception`, or it gets silently swallowed and logged forever.
+- Daemons hold stale modules in memory until restarted: any store-file/code edit requires restarting the daemon that imports it (`launchctl kickstart -k`) — this bit again with `core.py` missing a fuzzy-dedup commit and `science_scout.py`'s niche-parsing fix, both required a restart to take effect.
+- `tools-harness/` had no `pytest.ini`/`conftest.py` — bare `pytest` walked vendored `ringback/src/tests/test_aec.py`, which `sys.exit(0)`s at import, crashing full-suite collection with `INTERNALERROR`. Fixed via `pytest.ini` `[pytest] testpaths = tests` so the vendored dir is never collected.
+- Tests that touch `science_scout.apply_decision`'s CREATE path must also isolate `store.world_monitor_store.DB_PATH` (not just `science_scout_store.DB_PATH`) and call `world_monitor_store.init()` — it's a second, shared cross-source dedup ledger; missing this leaks the test into the real prod DB.
+- DeepSeek: `deepseek-v4-flash` (direct API) is the current model name (verified 2026-08-03). Legacy aliases `deepseek-chat`/`deepseek-reasoner` were discontinued 2026-07-24 — irrelevant here since clixen never used them.
+<!-- forge-learnings:end -->

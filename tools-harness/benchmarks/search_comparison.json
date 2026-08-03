@@ -1,0 +1,172 @@
+[
+  {
+    "query": "What is Bitcoin trading at in USD right now?",
+    "intent": "live",
+    "domain": "finance",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- Grayscale Bitcoin Mini Trust ETF (BTC) | Currently at $76,289.16 (-1.40%) | Apr 28, 2026 [published 2026-04-28] (https://exa.ai/library/markets/crypto/BTC?date=2026-04-28&t=69f0afc9cde8c819f388907c)\n  # BTC \u2014 Grayscale Bitcoin Mini Trust ETF\n\nGrayscale Bitcoin Mini Trust ETF (BTC) is currently at $76,289.16, down $1,083.17 (1.40%) today, as of April 28, 2026.\n\n## Today's Trading\n\n- Open: $77,379.02\n- High: $77,479.21\n- Low: $76,254.17\n- Close: $76,289.16\n- Volume: 3.6K\n\n## Previous Close\n\n- Cl",
+      "items_count": 3,
+      "latency": 1.27
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "The current price of Bitcoin (BTC) is 76,550 USD, and it has fallen \u22120.84% in the past 24 hours, according to data from 16 hours ago.\n\nSources:\n- https://coinmarketcap.com/currencies/bitcoin/\n- https://www.coindesk.com/price/bitcoin\n- https://www.tradingview.com/symbols/BTCUSD/\n- https://www.coinbase.com/converter/btc/usd",
+      "latency": 9.02
+    }
+  },
+  {
+    "query": "Who is the current CEO of Microsoft?",
+    "intent": "recent",
+    "domain": "general",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- Microsoft CEO Satya Nadella congratulates Apple's new CEO John Ternus and shares 'All the Best' message for Tim Cook [published 2026-04-22] (https://timesofindia.indiatimes.com/technology/tech-news/microsoft-ceo-satya-nadella-congratulates-apples-new-ceo-john-ternus-and-shares-all-the-best-message-for-tim-cook/articleshow/130446998.cms)\n  Microsoft CEO Satya Nadella\n[...]\n4 things you really need to know\n[...]\ntimesofindia\n[...]\nbelieves-in\n[...]\nin-the-sea-of-\n\n- Satya Nadella | Vox [publishe",
+      "items_count": 3,
+      "latency": 1.06
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "Satya Narayana Nadella is the chief executive officer (CEO) of Microsoft.\n\nSources:\n- https://en.wikipedia.org/wiki/Microsoft\n- https://en.wikipedia.org/wiki/Satya_Nadella\n- https://www.business-standard.com/about/who-is-satya-nadella\n- https://en.wikipedia.org/wiki/Xbox_(division)",
+      "latency": 3.0
+    }
+  },
+  {
+    "query": "What was the final score in the latest Arsenal match?",
+    "intent": "live",
+    "domain": "sports",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- Arsenal 1 - 0 Newcastle United - Match Report - United Kingdom [published 2026-04-26] (https://www.europesays.com/uk/918690/)\n  fourth time Arsenal had won a match at the Emirates Stadium.\n\n## Story\n\nArsenal 1 - 0 Newcastle United - Match Report - United Kingdom Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read More Read ",
+      "items_count": 3,
+      "latency": 3.14
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "The search results did not return the final score of the latest Arsenal match.\n\nSources:\n- https://www.flashscoreusa.com/team/arsenal/hA1Zm19f/\n- https://www.espn.com/soccer/team/_/id/359/arsenal\n- https://www.reddit.com/r/Gunners/new/",
+      "latency": 4.6
+    }
+  },
+  {
+    "query": "What is the latest stable Python release?",
+    "intent": "tech",
+    "domain": "code",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- Python Insider: Python 3.14.2 and 3.13.11 are now available! [published 2026-04-25] (https://pythoninsider.blogspot.com/2025/12/python-3142-and-31311-are-now-available.html?m=1)\n  Python Insider: Python 3.14.2 and 3.13.11 are now available!\n[...]\n## Python 3.14.2\n[...]\nPython 3.14.2 is the second maintenance release of 3.14, containing 18 bugfixes, build improvements and documentation changes since 3.14.1.\n\n- Python Insider: Python 3.14.1 is now available! [published 2026-04-26] (https://pytho",
+      "items_count": 3,
+      "latency": 0.8
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "The latest stable Python version mentioned is Python 3.13.1.\n\nSources:\n- https://superops.com/blog/how-to-check-python-version\n- https://www.geeksforgeeks.org/python/download-and-install-python-3-latest-version/\n- https://en.wikipedia.org/wiki/Python_(programming_language)",
+      "latency": 2.41
+    }
+  },
+  {
+    "query": "What is the weather in Paris this week?",
+    "intent": "live",
+    "domain": "general",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- Paris, \u00cele-de-France, France 7-Day Weather Forecast [published 2026-04-28] (https://exa.ai/library/weather/paris-le-de-france-france?latitude=48.8600&longitude=2.3400&date=2026-04-28&t=69f0afe281fb3e2dbf5c1677)\n  # 7-Day Forecast for Paris, \u00cele-de-France, France - April 28 - May 4, 2026\n\n| Day | Conditions | High | Low | Rain % | Precip | Wind |\n|:----|:-----------|-----:|----:|-------:|-------:|-----:|\n| Tue 28 | Slight rain showers | 70\u00b0F | 51\u00b0F | 0% | 0.2mm | 8 mph NNE |\n| Wed 29 | Overcast",
+      "items_count": 3,
+      "latency": 0.99
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "The search results provide a 14-day weather forecast for Paris, France, updated 1 day ago, and a 10-day forecast updated 2 days ago, but they do not provide a specific weather forecast for the entire week.\n\nSources:\n- https://www.worldmeteo.info/en/europe/france/paris/weather-100001/\n- https://weather-and-climate.com/10-ten-day-forecast,Paris,France\n- https://www.theweathernetwork.com/en/city/fr/ile-de-france/paris/current\n- https://www.easeweather.com/europe/france/ile-de-france/paris/today",
+      "latency": 7.92
+    }
+  },
+  {
+    "query": "When did the latest SpaceX Starship test happen?",
+    "intent": "recent",
+    "domain": "news",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- SpaceX 'Test Like You Fly' Video Reveals Starship V3 Details [published 2026-04-28] (https://www.basenor.com/blogs/news/spacex-test-like-you-fly-video-reveals-starship-v3-details)\n  \ud83d\udcf0 TODAY \u2014 0h ago\n[...]\nThe News: SpaceX released a 25-minute documentary titled Test Like You Fly on April 24, 2026, offering the deepest public look yet at the Starship program's engineering philosophy and the incoming Version 3 hardware.\n[...]\nWhy It Matters: The video formally introduces Starship V3\n\n- SpaceX co",
+      "items_count": 3,
+      "latency": 1.19
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "SpaceX Starship Flight 8 took off from Orbital Launch Pad A at Boca Chica beach on March 06, 2025.\n\nSources:\n- https://www.foxweather.com/earth-space/when-spacexs-starship-12th-launch\n- https://www.youtube.com/watch?v=ANe_HW4X8oc\n- https://www.reddit.com/r/SpaceXLounge/comments/1sutxzz/spacex_test_like_you_fly_25_minute_official_video/\n- https://nextspaceflight.com/starship/\n- https://news.google.com/rss/search?q=spacex%20starship%20latest%20test%20date&hl=en-US&gl=US",
+      "latency": 6.64
+    }
+  },
+  {
+    "query": "When is the next Formula 1 race?",
+    "intent": "recent",
+    "domain": "sports",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- Miami Grand Prix 2026: Race and F1 sprint start times, how to watch, full schedule, predictions - ESPN [published 2026-04-28] (https://www.espn.com/f1/story/_/id/48473473/miami-grand-prix-2026-race-f1-sprint-start-s-how-watch-schedule-usa-tv-channel-live-stream-predictions-results)\n  Miami Grand Prix 2026: Race and F1 sprint start times, how to watch, full schedule, predictions - ESPN\n[...]\nAfter a five-week break Formula 1 returns to action in Miami for the first American race of the season a",
+      "items_count": 3,
+      "latency": 1.25
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "The evidence mentions the F1 2024 calendar but does not state the date of the next Formula 1 race.\n\nSources:\n- https://www.skysports.com/f1/news/12433/12768628/formula-1-2023-start-times-confirmed-with-saturday-night-race-for-inaugural-las-vegas-grand-prix\n- https://www.skysports.com/f1/news/12040/12971472/f1-2024-calendar-dates-line-ups-and-results-formula-1-gp-schedule-on-sky-sports-and-race-highlights",
+      "latency": 6.32
+    }
+  },
+  {
+    "query": "Which company bought GitHub, and in what year?",
+    "intent": "historical",
+    "domain": "general",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- HodentekHelp: Did Microsoft buy GitHub? [published 2026-04-27] (https://hodentekhelp.blogspot.com/2018/06/did-microsoft-buy-github.html)\n  Two days ago it was a rumor but according to a post on Mashable (https://mashable.com/2018/06/03/microsoft-github-acquistion/#7oGpfyPu4Oqt) it seems to have acquired GitHub to be announced on Monday. It is supposed to be valued at $2B but GitHub thinks it's true value exceeds the offer. It was also on Bloomberg TV Channel. https://www.bloomberg.com/news/art",
+      "items_count": 3,
+      "latency": 1.26
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "Microsoft bought GitHub for an impressive $7.5 billion a couple of years back.\n\nSources:\n- https://en.wikipedia.org/wiki/GitHub\n- https://idalko.com/blog/bitbucket-vs-github",
+      "latency": 5.02
+    }
+  },
+  {
+    "query": "What is TSMC's latest quarterly revenue?",
+    "intent": "live",
+    "domain": "finance",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- TSMC Q1 First Quarter 2026 Earnings: Revenue Hits $35.9 Billion [published 2026-04-20] (https://bayelsawatch.com/tsmc-q1-first-quarter-2026-earnings/)\n  revenue reached NT$1\n[...]\n10 billion (US$35\n[...]\n90 billion), increasing\n[...]\n572\n[...]\n3. Diluted EPS stood at NT$22.08 (US$3.49 per ADR), also increasing 58.3% year over year. 4. Gross margin reached a record\n[...]\n--- | --- | --- | --- | | Revenue | NT$1,134.10B | NT$839.25B | 35.1\n[...]\n% | | Net Income | NT$572.48B | NT$361.56B |\n[...]",
+      "items_count": 3,
+      "latency": 1.33
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "TSMC showed a 40.6% revenue increase in Q1 2026, which was driven by strong AI demand.\n\nSources:\n- https://en.wikipedia.org/wiki/TSMC\n- https://torrefinancial.substack.com/p/market-earnings-and-taiwan-semiconductor\n- https://finance.yahoo.com/quote/TSM/",
+      "latency": 5.63
+    }
+  },
+  {
+    "query": "Is the Euro stronger than the Dollar right now?",
+    "intent": "live",
+    "domain": "finance",
+    "websearch": {
+      "ok": true,
+      "source": "exa",
+      "content": "- EUR/USD holds losses below 1.1700 with ECB and Fed coming into focus [published 2026-04-28] (https://www.fxstreet.com/news/eur-usd-drifts-below-11700-as-the-us-dollar-bounces-on-cautions-trading-202604280757)\n  EUR/USD holds losses below 1.1700 with ECB and Fed coming into focus\n[...]\nThe Euro (EUR) has reversed the previous two trading days' recovery against the US Dollar (USD) on Tuesday and languishes right below 1.1700 ahead of the US session opening. The safe-haven US Dollar is building u",
+      "items_count": 3,
+      "latency": 0.92
+    },
+    "search_agent": {
+      "ok": true,
+      "response": "The euro strengthened above $1.17, recovering from two-week lows recorded last week, as investors await economic releases. One analysis suggests the weakening of the euro against the US dollar may be linked to a stronger dollar.\n\nSources:\n- https://tradingeconomics.com/euro-area/currency\n- https://www.fxstreet.com/currencies/eurusd\n- https://www.litefinance.org/blog/analysts-opinions/eurusd-forecast-and-price-prediction/",
+      "latency": 15.25
+    }
+  }
+]

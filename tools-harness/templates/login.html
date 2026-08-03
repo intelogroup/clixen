@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Login | Clixen</title>
+<link rel="preconnect" href="https://fonts.bunny.net"/>
+<link href="https://fonts.bunny.net/css?family=geist:400,500,600|geist-mono:400|ibm-plex-mono:400,500,600" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/public.css"/>
+</head>
+<body class="public-shell auth-shell">
+  <div class="public-noise"></div>
+  <main class="auth-layout">
+    <section class="auth-intro">
+      <a class="brand" href="/">
+        <span class="brand-mark">CX</span>
+        <span class="brand-copy">Clixen</span>
+      </a>
+      <div class="eyebrow">Local access</div>
+      <h1 id="auth-page-title">Sign in to your local workspace</h1>
+      <p id="auth-page-copy">
+        Use the account stored on this machine to unlock chat, uploads, and local integrations.
+      </p>
+      <div class="auth-points">
+        <div>Signed cookie sessions scoped to this local app.</div>
+        <div>No external auth provider required.</div>
+        <div>First use creates the owner account for this workspace.</div>
+      </div>
+    </section>
+
+    <section class="auth-card">
+      <div class="auth-card-head">
+        <div>
+          <div class="auth-kicker" id="auth-kicker">Welcome back</div>
+          <h2 id="auth-card-title">Sign in</h2>
+        </div>
+        <a class="text-link" href="/">Back home</a>
+      </div>
+
+      <form id="auth-form" class="auth-form">
+        <div class="field-grid">
+          <label class="field" id="display-name-field" for="display-name">
+            <span>Display name</span>
+            <input id="display-name" name="display_name" type="text" placeholder="Local Operator" autocomplete="name"/>
+          </label>
+          <label class="field" for="email">
+            <span>Email</span>
+            <input id="email" name="email" type="email" placeholder="operator@local.dev" autocomplete="email" required/>
+          </label>
+          <label class="field" for="password">
+            <span>Password</span>
+            <input id="password" name="password" type="password" placeholder="At least 8 characters" autocomplete="current-password" required/>
+          </label>
+          <label class="field" id="workspace-name-field" for="workspace-name">
+            <span>Workspace</span>
+            <input id="workspace-name" name="workspace_name" type="text" placeholder="Local Workspace" autocomplete="off"/>
+          </label>
+          <label class="field" id="role-field" for="role">
+            <span>Role</span>
+            <select id="role" name="role">
+              <option value="Owner">Owner</option>
+              <option value="Admin">Admin</option>
+              <option value="Member">Member</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field" id="confirm-password-field" for="confirm-password" style="display:none">
+            <span>Confirm password</span>
+            <input id="confirm-password" name="confirm_password" type="password" placeholder="Re-enter password" autocomplete="new-password"/>
+          </label>
+
+          <div class="auth-status" id="auth-status">Checking workspace state…</div>
+
+          <button class="btn btn-primary auth-submit" id="auth-submit" type="submit">Continue</button>
+
+          <button class="btn btn-secondary auth-submit" id="auth-cancel-reset" type="button" style="display:none">Back to sign in</button>
+        </form>
+
+        <div class="auth-footer" id="auth-footer-reset" style="display:none">
+          <span id="auth-footer-reset-text">Need to reset the owner password?</span>
+          <span class="mono" style="cursor:pointer;text-decoration:underline" id="auth-footer-reset-action">reset it here</span>
+        </div>
+
+        <div class="auth-footer" id="auth-footer-normal">
+          <span id="auth-footer-text">Need the first local account?</span>
+          <span class="mono" id="auth-footer-mode">create it here</span>
+        </div>
+    </section>
+  </main>
+
+  <script src="/static/auth.js"></script>
+</body>
+</html>

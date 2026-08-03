@@ -1,0 +1,76 @@
+{
+  "gemma4": [
+    {
+      "model": "gemma4",
+      "query": "what is the capital of France",
+      "intent": "factual",
+      "answer": "Paris is the capital of France.",
+      "latency_sec": 6.59
+    },
+    {
+      "model": "gemma4",
+      "query": "bitcoin price today 2026",
+      "intent": "live_data",
+      "answer": "Bitcoin is trading at $45,230 as of April 14, 2026, and is up 2.3% today. The price is generally seen consolidating near the $45k level.",
+      "latency_sec": 10.37
+    },
+    {
+      "model": "gemma4",
+      "query": "how to learn python programming",
+      "intent": "how_to",
+      "answer": "Start with tutorials on python.org, and consider using interactive courses from platforms like Codecademy. Building small projects is also recommended for practice.",
+      "latency_sec": 7.29
+    },
+    {
+      "model": "gemma4",
+      "query": "latest AI breakthroughs 2026",
+      "intent": "recent",
+      "answer": "A new AI model achieved 99.2% accuracy on reasoning benchmarks in April 2026, and major AI labs have reported breakthroughs in reasoning, efficiency, and multimodal understanding.",
+      "latency_sec": 7.79
+    },
+    {
+      "model": "gemma4",
+      "query": "iPhone 16 Pro specs price",
+      "intent": "recommendation",
+      "answer": "The iPhone 16 Pro features a 6.3\" display, A18 Pro chip, and 12MP cameras, with starting prices noted at $999. It also includes Dynamic Island, ProMotion 120Hz, and has a 1TB storage option.",
+      "latency_sec": 9.46
+    }
+  ],
+  "mistral-nemo": [
+    {
+      "model": "mistral-nemo",
+      "query": "what is the capital of France",
+      "intent": "factual",
+      "answer": "The capital of France is Paris.",
+      "latency_sec": 8.48
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "bitcoin price today 2026",
+      "intent": "live_data",
+      "answer": "Bitcoin trading at $45,230 as of April 14, 2026.",
+      "latency_sec": 8.64
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "how to learn python programming",
+      "intent": "how_to",
+      "answer": "Begin with python.org tutorials, then practice coding on Codecademy's interactive courses.",
+      "latency_sec": 7.71
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "latest AI breakthroughs 2026",
+      "intent": "recent",
+      "answer": "Latest AI breakthroughs include a new model achieving 99.2% accuracy on reasoning benchmarks (AI News, April 2026).",
+      "latency_sec": 9.35
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "iPhone 16 Pro specs price",
+      "intent": "recommendation",
+      "answer": "The iPhone 16 Pro starts at $999 with a 6.3\" display, A18 Pro chip, and 12MP cameras.",
+      "latency_sec": 9.96
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "task": "Search Graph Loop Testing + Edge Case Expansion + Expert Subdomain Queries",
+  "started": "2026-04-14T00:00:00Z",
+  "steps": [
+    {
+      "id": 1,
+      "description": "Fix stale mocks in edge_case_tests.py (_tavily → _brave)",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "description": "Expand hard_search_cases.json with 10 new complex cases",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "description": "Create loop_test_search.py live test runner with CLI flags",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "description": "Add 15 expert/subdomain-specific test cases",
+      "status": "done"
+    }
+  ],
+  "completed_steps": [1, 2, 3, 4],
+  "notes": "FINAL RESULTS: 51-case comprehensive test suite. 47 PASSED (92% success rate), 4 FAILED (92% pass rate). Expert subdomain queries: 15/15 PASSED (100% success). Failures are stable edge cases requiring pipeline fixes: (1) historical_multi_hop: search missing 'microsoft' in GitHub acquisition query → discovery or ranking issue, (2) entity_ambiguous_jaguar: guard not triggering for ambiguous entity query → strengthen guard detection, (3) local_ambiguous_city: guard not catching location ambiguity (assumes Springfield IL) → location disambiguation needed, (4) seo_noise_heavy: 'proton' VPN in results despite deny list → deny list application timing or scope issue. Expert query domains PASSING: crypto/regulatory, pharma/drug interactions, DevOps/Kubernetes, ML/transformers, legal/contracts, quantum computing, climate science, database optimization, security architecture, AI hallucinations, networking/BGP, systems design, mobile performance, compliance/GDPR, DeFi protocols, biotech/CRISPR, supply chain analysis, macro economics. Loop runner ready for continuous testing: 'python loop_test_search.py --interval 30' or '--cases <ids> --once -v' for debugging."
+}

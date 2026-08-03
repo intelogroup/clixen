@@ -1,0 +1,210 @@
+{
+  "results": [
+    {
+      "approach": "discovery",
+      "query": "LeBron James stats 2025-26 season",
+      "latency_sec": 0.92,
+      "success": true,
+      "source": "discovery",
+      "item_count": 1,
+      "content_length": 524,
+      "error": null
+    },
+    {
+      "approach": "ddg",
+      "query": "LeBron James stats 2025-26 season",
+      "latency_sec": 1.72,
+      "success": true,
+      "source": "ddg",
+      "item_count": 3,
+      "content_length": 842,
+      "error": null
+    },
+    {
+      "approach": "hybrid",
+      "query": "LeBron James stats 2025-26 season",
+      "latency_sec": 2.04,
+      "success": true,
+      "source": "hybrid",
+      "item_count": 4,
+      "content_length": 745,
+      "error": null
+    },
+    {
+      "approach": "discovery",
+      "query": "iPhone 16 Pro review",
+      "latency_sec": 1.28,
+      "success": true,
+      "source": "discovery",
+      "item_count": 1,
+      "content_length": 2536,
+      "error": null
+    },
+    {
+      "approach": "ddg",
+      "query": "iPhone 16 Pro review",
+      "latency_sec": 1.76,
+      "success": true,
+      "source": "ddg",
+      "item_count": 3,
+      "content_length": 783,
+      "error": null
+    },
+    {
+      "approach": "hybrid",
+      "query": "iPhone 16 Pro review",
+      "latency_sec": 3.57,
+      "success": true,
+      "source": "hybrid",
+      "item_count": 4,
+      "content_length": 2757,
+      "error": null
+    },
+    {
+      "approach": "discovery",
+      "query": "best movies on Netflix April 2026",
+      "latency_sec": 0.72,
+      "success": true,
+      "source": "discovery",
+      "item_count": 1,
+      "content_length": 1140,
+      "error": null
+    },
+    {
+      "approach": "ddg",
+      "query": "best movies on Netflix April 2026",
+      "latency_sec": 0.91,
+      "success": true,
+      "source": "ddg",
+      "item_count": 3,
+      "content_length": 987,
+      "error": null
+    },
+    {
+      "approach": "hybrid",
+      "query": "best movies on Netflix April 2026",
+      "latency_sec": 1.59,
+      "success": true,
+      "source": "hybrid",
+      "item_count": 4,
+      "content_length": 1361,
+      "error": null
+    },
+    {
+      "approach": "discovery",
+      "query": "Nobel Prize physics 2025",
+      "latency_sec": 0.18,
+      "success": true,
+      "source": "discovery",
+      "item_count": 1,
+      "content_length": 2517,
+      "error": null
+    },
+    {
+      "approach": "ddg",
+      "query": "Nobel Prize physics 2025",
+      "latency_sec": 2.36,
+      "success": true,
+      "source": "ddg",
+      "item_count": 3,
+      "content_length": 896,
+      "error": null
+    },
+    {
+      "approach": "hybrid",
+      "query": "Nobel Prize physics 2025",
+      "latency_sec": 3.55,
+      "success": true,
+      "source": "hybrid",
+      "item_count": 4,
+      "content_length": 2738,
+      "error": null
+    },
+    {
+      "approach": "discovery",
+      "query": "latest AI research papers arxiv",
+      "latency_sec": 0.56,
+      "success": false,
+      "source": "discovery",
+      "item_count": 0,
+      "content_length": 0,
+      "error": "quality_rejected"
+    },
+    {
+      "approach": "ddg",
+      "query": "latest AI research papers arxiv",
+      "latency_sec": 3.23,
+      "success": true,
+      "source": "ddg",
+      "item_count": 3,
+      "content_length": 909,
+      "error": null
+    },
+    {
+      "approach": "hybrid",
+      "query": "latest AI research papers arxiv",
+      "latency_sec": 2.12,
+      "success": true,
+      "source": "hybrid",
+      "item_count": 3,
+      "content_length": 909,
+      "error": null
+    }
+  ],
+  "by_approach": {
+    "discovery": {
+      "latencies": [
+        0.92,
+        1.28,
+        0.72,
+        0.18,
+        0.56
+      ],
+      "items": [
+        1,
+        1,
+        1,
+        1,
+        0
+      ],
+      "successes": 4,
+      "total": 5
+    },
+    "ddg": {
+      "latencies": [
+        1.72,
+        1.76,
+        0.91,
+        2.36,
+        3.23
+      ],
+      "items": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "successes": 5,
+      "total": 5
+    },
+    "hybrid": {
+      "latencies": [
+        2.04,
+        3.57,
+        1.59,
+        3.55,
+        2.12
+      ],
+      "items": [
+        4,
+        4,
+        4,
+        4,
+        3
+      ],
+      "successes": 5,
+      "total": 5
+    }
+  }
+}

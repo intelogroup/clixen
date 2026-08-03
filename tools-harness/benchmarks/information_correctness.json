@@ -1,0 +1,145 @@
+{
+  "model": "mistral-nemo",
+  "accuracy": 90.0,
+  "correct": 9,
+  "total": 10,
+  "results": [
+    {
+      "query": "What is the capital of France?",
+      "category": "geography",
+      "response": "Paris",
+      "response_length": 5,
+      "correct": true,
+      "score": 1.0,
+      "keywords_found": [
+        "Paris"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": []
+    },
+    {
+      "query": "In what year did World War 2 end?",
+      "category": "history",
+      "response": "World War II ended in 1945.",
+      "response_length": 27,
+      "correct": true,
+      "score": 1.0,
+      "keywords_found": [
+        "1945"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": []
+    },
+    {
+      "query": "What is 2 + 2?",
+      "category": "math",
+      "response": "4",
+      "response_length": 1,
+      "correct": true,
+      "score": 1.0,
+      "keywords_found": [
+        "4"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": []
+    },
+    {
+      "query": "Is Python a compiled or interpreted language?",
+      "category": "programming",
+      "response": "Python is an interpreted language. It's not compiled into machine code before execution, but rather translated at runtime by an interpreter.",
+      "response_length": 140,
+      "correct": true,
+      "score": 0.7,
+      "keywords_found": [
+        "interpreted"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": [
+        "compiled"
+      ]
+    },
+    {
+      "query": "What is the chemical symbol for Gold?",
+      "category": "science",
+      "response": "Au",
+      "response_length": 2,
+      "correct": true,
+      "score": 1.0,
+      "keywords_found": [
+        "Au"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": []
+    },
+    {
+      "query": "How many continents are there?",
+      "category": "geography",
+      "response": "7",
+      "response_length": 1,
+      "correct": false,
+      "score": 0.33,
+      "keywords_found": [
+        "7"
+      ],
+      "keywords_missing": [
+        "six",
+        "eight"
+      ],
+      "forbidden_found": []
+    },
+    {
+      "query": "What is the freezing point of water in Celsius?",
+      "category": "science",
+      "response": "0\u00b0C",
+      "response_length": 3,
+      "correct": true,
+      "score": 1.0,
+      "keywords_found": [
+        "0"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": []
+    },
+    {
+      "query": "Who wrote Romeo and Juliet?",
+      "category": "literature",
+      "response": "William Shakespeare",
+      "response_length": 19,
+      "correct": true,
+      "score": 1.0,
+      "keywords_found": [
+        "Shakespeare"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": []
+    },
+    {
+      "query": "What does HTTP stand for?",
+      "category": "technology",
+      "response": "Hypertext Transfer Protocol",
+      "response_length": 27,
+      "correct": true,
+      "score": 1.0,
+      "keywords_found": [
+        "HyperText",
+        "Transfer",
+        "Protocol"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": []
+    },
+    {
+      "query": "What is the largest planet in our solar system?",
+      "category": "astronomy",
+      "response": "Jupiter",
+      "response_length": 7,
+      "correct": true,
+      "score": 1.0,
+      "keywords_found": [
+        "Jupiter"
+      ],
+      "keywords_missing": [],
+      "forbidden_found": []
+    }
+  ]
+}

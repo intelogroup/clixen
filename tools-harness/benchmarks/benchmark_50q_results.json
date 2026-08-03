@@ -1,0 +1,202 @@
+[
+  {
+    "question_idx": 0,
+    "question": "What was the score in the latest Barcelona La Liga match?",
+    "path": "auto",
+    "answer": "Answer: FC Barcelona · La Liga. La Liga. 1 - 0. Rayo Vallecano ; FC Barcelona · UEFA Champions League. UEFA Champions League. 7 - 2. Newcastle United ; FC Barcelona · La ...",
+    "model": "search-graph",
+    "intent": "temporal_sports",
+    "error": "",
+    "elapsed_s": 0.2
+  },
+  {
+    "question_idx": 1,
+    "question": "Who won the most recent Real Madrid game and what was the score?",
+    "path": "auto",
+    "answer": "Answer: Real Madrid. infoIcon 2nd match, series of 2 wins, score: 2 - 1. Results. Catch up on the latest Real Madrid matches. 10 APRFT. Real Madrid.",
+    "model": "search-graph",
+    "intent": "temporal_sports",
+    "error": "",
+    "elapsed_s": 0.4
+  },
+  {
+    "question_idx": 2,
+    "question": "What is the current price of Bitcoin?",
+    "path": "auto",
+    "answer": "The current price of Bitcoin is $72,732.82 USD as of April 11, 2026, 11:06 am EDT.",
+    "model": "search-graph",
+    "intent": "temporal_finance",
+    "error": "",
+    "elapsed_s": 2.3
+  },
+  {
+    "question_idx": 3,
+    "question": "What is the latest news about OpenAI?",
+    "path": "auto",
+    "answer": "For the absolute latest information, I recommend checking a reliable, up-to-date news source like the BBC, Reuters, or OpenAI's official blog directly.",
+    "model": "gemma4",
+    "intent": "library_docs",
+    "error": "",
+    "elapsed_s": 86.9
+  },
+  {
+    "question_idx": 4,
+    "question": "When did World War 2 end?",
+    "path": "auto",
+    "answer": "World War II officially ended on September 2, 1945, when Germany surrendered, though the state of war formally concluded on April 20, 1952, when the Treaty of San Francisco came into force.",
+    "model": "search-graph",
+    "intent": "temporal_news",
+    "error": "",
+    "elapsed_s": 3.9
+  },
+  {
+    "question_idx": 5,
+    "question": "What is the speed of light in meters per second?",
+    "path": "auto",
+    "answer": "The speed of light in a vacuum is exactly 299,792,458 meters per second.",
+    "model": "qwen3:1.7b",
+    "intent": "casual",
+    "error": "",
+    "elapsed_s": 3.2
+  },
+  {
+    "question_idx": 6,
+    "question": "What is 17 multiplied by 23?",
+    "path": "auto",
+    "answer": "17 multiplied by 23 is 391.",
+    "model": "qwen3:1.7b",
+    "intent": "casual",
+    "error": "",
+    "elapsed_s": 0.6
+  },
+  {
+    "question_idx": 7,
+    "question": "What is the difference between == and === in JavaScript?",
+    "path": "auto",
+    "answer": "In JavaScript, `==` is a comparison operator that checks if the two values are equal when converted to numbers. `===` is a strict equality operator that checks if both the value and type are the same. \n\nThe main difference is that `===` ensures type checking, while `==` does not.",
+    "model": "qwen3:1.7b",
+    "intent": "code_quick",
+    "error": "",
+    "elapsed_s": 1.0
+  },
+  {
+    "question_idx": 8,
+    "question": "Who is the best footballer in the world right now?",
+    "path": "auto",
+    "answer": "As of 2026, Kylian Mbappe is widely regarded as the best footballer in the world, though some sources suggest Ousmane Dembélé edges him for the top spot.",
+    "model": "search-graph",
+    "intent": "temporal_local",
+    "error": "",
+    "elapsed_s": 12.0
+  },
+  {
+    "question_idx": 9,
+    "question": "What caused the 2008 financial crisis?",
+    "path": "auto",
+    "answer": "The 2008 financial crisis was caused by a combination of factors, including the proliferation of subprime mortgage loans, the collapse of the housing market, and the failure of major financial institutions. It resulted in a severe economic downturn and led to significant financial losses and economic hardship.",
+    "model": "qwen3:1.7b",
+    "intent": "casual",
+    "error": "",
+    "elapsed_s": 1.5
+  },
+  {
+    "question_idx": 0,
+    "question": "What was the score in the latest Barcelona La Liga match?",
+    "path": "web_search",
+    "answer": "Answer: FC Barcelona · La Liga. La Liga. 1 - 0. Rayo Vallecano ; FC Barcelona · UEFA Champions League. UEFA Champions League. 7 - 2. Newcastle United ; FC Barcelona · La ...",
+    "model": "search-graph",
+    "intent": "temporal_sports",
+    "error": "",
+    "elapsed_s": 0.9
+  },
+  {
+    "question_idx": 1,
+    "question": "Who won the most recent Real Madrid game and what was the score?",
+    "path": "web_search",
+    "answer": "Answer: Real Madrid. infoIcon 2nd match, series of 2 wins, score: 2 - 1. Results. Catch up on the latest Real Madrid matches. 10 APRFT. Real Madrid.",
+    "model": "search-graph",
+    "intent": "temporal_sports",
+    "error": "",
+    "elapsed_s": 0.4
+  },
+  {
+    "question_idx": 2,
+    "question": "What is the current price of Bitcoin?",
+    "path": "web_search",
+    "answer": "The current price of Bitcoin is $72,732.82 USD as of April 11, 2026, 11:06 am EDT.",
+    "model": "search-graph",
+    "intent": "temporal_finance",
+    "error": "",
+    "elapsed_s": 2.4
+  },
+  {
+    "question_idx": 3,
+    "question": "What is the latest news about OpenAI?",
+    "path": "web_search",
+    "answer": "OpenAI identified a security issue involving a third-party developer tool called Axios and is addressing it, while the European Commission is analyzing whether its platform should be regulated as a large online service.",
+    "model": "search-graph",
+    "intent": "temporal_tech",
+    "error": "",
+    "elapsed_s": 4.6
+  },
+  {
+    "question_idx": 4,
+    "question": "When did World War 2 end?",
+    "path": "web_search",
+    "answer": "World War II officially ended on September 2, 1945, when the formal surrender was signed, though the Treaty of San Francisco took effect on April 20, 1952, to formally end the state of war.",
+    "model": "search-graph",
+    "intent": "temporal_news",
+    "error": "",
+    "elapsed_s": 9.3
+  },
+  {
+    "question_idx": 5,
+    "question": "What is the speed of light in meters per second?",
+    "path": "web_search",
+    "answer": "The speed of light in a vacuum is exactly 299,792,458 meters per second.",
+    "model": "search-graph",
+    "intent": "temporal_news",
+    "error": "",
+    "elapsed_s": 5.7
+  },
+  {
+    "question_idx": 6,
+    "question": "What is 17 multiplied by 23?",
+    "path": "web_search",
+    "answer": "17 multiplied by 23 equals 391.",
+    "model": "search-graph",
+    "intent": "temporal_news",
+    "error": "",
+    "elapsed_s": 1.9
+  },
+  {
+    "question_idx": 7,
+    "question": "What is the difference between == and === in JavaScript?",
+    "path": "web_search",
+    "answer": "The difference is that the `==` operator performs type coercion before comparing values, while the `===` operator checks both value and type without converting them.",
+    "model": "search-graph",
+    "intent": "temporal_news",
+    "error": "",
+    "elapsed_s": 2.1
+  },
+  {
+    "question_idx": 8,
+    "question": "Who is the best footballer in the world right now?",
+    "path": "web_search",
+    "answer": "As of 2026, Lionel Messi is widely regarded as the best footballer in the world, though some sources suggest Ousmane Dembélé may be the top choice.",
+    "model": "search-graph",
+    "intent": "temporal_local",
+    "error": "",
+    "elapsed_s": 3.9
+  },
+  {
+    "question_idx": 9,
+    "question": "What caused the 2008 financial crisis?",
+    "path": "web_search",
+    "answer": "The 2008 financial crisis was primarily caused by excessive speculation on property values that created a housing bubble, combined with increased borrowing by banks and investors and excessive risk-taking in a favorable macroeconomic environment.",
+    "model": "search-graph",
+    "intent": "temporal_news",
+    "error": "",
+    "elapsed_s": 2.9
+  }
+]

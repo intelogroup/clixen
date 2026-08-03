@@ -1,0 +1,60 @@
+// Labeled classifier cases. Labels were written from the branch definitions BEFORE the
+// classifier was run, so a mismatch is a finding, not a fit-to-code.
+//
+// status: "pass"       — currently correct. A failure here is a REGRESSION; the eval fails.
+// status: "known_miss" — currently wrong, with the reason. Tracked, not gating. If one
+//                        starts passing, the eval says so and you promote it to "pass".
+//
+// Ambiguous cases are excluded, not guessed at: a task two people would label differently
+// is noise in the metric, not signal.
+{"tier": "routing", "channel": "web", "input": "hey what's up", "expect": "casual", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "thanks, that helped", "expect": "casual", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "what is the capital of Peru", "expect": "factual_qa", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "who wrote Dune", "expect": "factual_qa", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "who invented the telephone", "expect": "factual_qa", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "who wrote Snow Crash", "expect": "factual_qa", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "what time is the game tonight", "expect": "temporal", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "when is the next SpaceX launch", "expect": "temporal", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "when is the next iPhone released", "expect": "temporal", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "prove the eigenvalue decomposition theorem", "expect": "math", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "integrate x^2 sin(x) dx", "expect": "math", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "refactor the auth middleware to use JWT", "expect": "code_heavy", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "python list comprehension syntax", "expect": "code_quick", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "read ~/Downloads/notes.txt", "expect": "filesystem", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "list the files in my home dir", "expect": "filesystem", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "git status on this repo", "expect": "git", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "commit these changes", "expect": "git", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "what does this screenshot say", "expect": "ocr", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "run this in python: print(2+2)", "expect": "repl", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "summarize https://example.com/post", "expect": "url_fetch", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "create a workflow that emails me daily", "expect": "automation", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "list my automations", "expect": "automation", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "pause the tech brief workflow", "expect": "automation", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "add buy milk to my todo list", "expect": "tasks", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "what's on my calendar tomorrow", "expect": "calendar", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "check my inbox", "expect": "email", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "send an email to jim", "expect": "email", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "how much battery is left on my mac", "expect": "system_status", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "open safari for me", "expect": "browser", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "react useEffect docs", "expect": "library_docs", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "set a reminder for 5pm", "expect": "reminder", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "find my tax pdf with spotlight", "expect": "spotlight", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "what did I message Sarah on whatsapp", "expect": "whatsapp_search", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "summarize this youtube video https://youtu.be/abc", "expect": "youtube", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "什么是量子计算", "expect": "multilingual", "status": "pass", "note": "classify() routes Chinese to multilingual; the Bilibili/Exa short-circuit lives in websearch.search(), not the router."}
+{"tier": "routing", "channel": "telegram", "input": "hey", "expect": "casual", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "what's the last email", "expect": "email", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "send this as a .md", "expect": "document", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "list my automations", "expect": "automation", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "stop the tech brief workflow", "expect": "automation", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "pause the morning briefing", "expect": "automation", "status": "known_miss", "note": "Regex can't match automation by its user-given name. LLM primary path handles this; regex fallback requires literal 'automation'/'workflow'."}
+{"tier": "routing", "channel": "telegram", "input": "what's the weather right now", "expect": "temporal", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "who is the president of France", "expect": "factual_qa", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "prove the eigenvalue decomposition theorem", "expect": "math", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "check my inbox and summarize", "expect": "email", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "take a screenshot", "expect": "ocr", "status": "pass"}
+{"tier": "routing", "channel": "telegram", "input": "什么是量子计算", "expect": "multilingual", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "what's on my shopping list", "expect": "casual", "status": "pass"}
+{"tier": "routing", "channel": "web", "input": "there is a bug in the kitchen", "expect": "casual", "status": "pass", "note": "Regression guard: bare 'bug' removed from _CODE_QUICK_RE."}
+{"tier": "routing", "channel": "web", "input": "what class should I take this semester", "expect": "casual", "status": "known_miss", "note": "Regex fallback: bare 'class' matches code_quick; cannot distinguish code from academic without LLM. Primary path handles correctly."}
+{"tier": "routing", "channel": "web", "input": "get the pdf from my downloads folder", "expect": "filesystem", "status": "pass", "note": "Regression guard: 'get' removed from _DOC_CREATE_RE verbs; 'pdf' in filesystem context."}

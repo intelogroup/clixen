@@ -1,0 +1,186 @@
+{
+  "gemma4": [
+    {
+      "case_id": "live_finance_btc_usd",
+      "query": "What is Bitcoin trading at in USD right now, and is it up or down today?",
+      "answer": "The search results did not return relevant information about Bitcoin trading at what price in USD right now, or whether it is up or down today.",
+      "latency_sec": 7.88
+    },
+    {
+      "case_id": "live_finance_nvda_move",
+      "query": "Why is NVDA moving today?",
+      "answer": "The search results did not return relevant information about why NVDA is moving today.",
+      "latency_sec": 7.25
+    },
+    {
+      "case_id": "sports_score_specific",
+      "query": "What was the final score in the latest Arsenal match?",
+      "answer": "The information about the final score in the latest Arsenal match was not found in the evidence.",
+      "latency_sec": 7.71
+    },
+    {
+      "case_id": "sports_ambiguous_guard",
+      "query": "Who won the game?",
+      "answer": "The search results did not return relevant information about who won the game.",
+      "latency_sec": 7.48
+    },
+    {
+      "case_id": "news_breaking_entity_disambiguation",
+      "query": "What happened with OpenAI this week?",
+      "answer": "The search results did not return relevant information about what happened with OpenAI this week.",
+      "latency_sec": 7.61
+    },
+    {
+      "case_id": "news_conflict_resolution",
+      "query": "Did the Fed cut rates this week or hold steady?",
+      "answer": "The search results did not return relevant information about whether the Fed cut rates this week or held steady.",
+      "latency_sec": 7.91
+    },
+    {
+      "case_id": "tech_latest_python_release",
+      "query": "What is the latest stable Python release?",
+      "answer": "The information about the latest stable Python release was not found in the evidence.",
+      "latency_sec": 7.56
+    },
+    {
+      "case_id": "tech_fastapi_background_task",
+      "query": "How do you run a background task in FastAPI without blocking the response?",
+      "answer": "The information on how to run a background task in FastAPI without blocking the response was not found in the evidence.",
+      "latency_sec": 7.64
+    },
+    {
+      "case_id": "tech_ollama_latest_change",
+      "query": "What changed in the latest Ollama release?",
+      "answer": "The information about what changed in the latest Ollama release was not found in the evidence.",
+      "latency_sec": 9.18
+    },
+    {
+      "case_id": "historical_stable_fact",
+      "query": "Who was the first US president?",
+      "answer": "The information about who the first US president was was not found in the evidence.",
+      "latency_sec": 7.37
+    },
+    {
+      "case_id": "historical_multi_hop",
+      "query": "Which company bought GitHub, and in what year?",
+      "answer": "The information about which company bought GitHub and in what year was not found in the evidence.",
+      "latency_sec": 7.59
+    },
+    {
+      "case_id": "product_specs_realme",
+      "query": "What are the key specs of the Realme GT7 Pro?",
+      "answer": "The information about the key specs of the Realme GT7 Pro was not found in the evidence.",
+      "latency_sec": 8.91
+    },
+    {
+      "case_id": "weather_city_week",
+      "query": "What is the weather in Paris this week?",
+      "answer": "The search results did not return relevant information about the weather in Paris this week.",
+      "latency_sec": 7.83
+    },
+    {
+      "case_id": "entity_ambiguous_jaguar",
+      "query": "What is Jaguar doing this year?",
+      "answer": "The search results do not contain information about what Jaguar is doing this year.",
+      "latency_sec": 21.73
+    },
+    {
+      "case_id": "company_person_latest_ceo",
+      "query": "Who is the current CEO of Microsoft?",
+      "answer": "The search results did not return relevant information about Who is the current CEO of Microsoft?",
+      "latency_sec": 7.66
+    }
+  ],
+  "mistral-nemo": [
+    {
+      "case_id": "live_finance_btc_usd",
+      "query": "What is Bitcoin trading at in USD right now, and is it up or down today?",
+      "answer": "Bitcoin is currently trading at $35,789. It's down by approximately 1.5% from yesterday's close.",
+      "latency_sec": 11.13
+    },
+    {
+      "case_id": "live_finance_nvda_move",
+      "query": "Why is NVDA moving today?",
+      "answer": "This specific value was not found in the evidence.",
+      "latency_sec": 9.44
+    },
+    {
+      "case_id": "sports_score_specific",
+      "query": "What was the final score in the latest Arsenal match?",
+      "answer": "The final score was 3-1.",
+      "latency_sec": 9.42
+    },
+    {
+      "case_id": "sports_ambiguous_guard",
+      "query": "Who won the game?",
+      "answer": "The winner was Team A.",
+      "latency_sec": 9.22
+    },
+    {
+      "case_id": "news_breaking_entity_disambiguation",
+      "query": "What happened with OpenAI this week?",
+      "answer": "This week, OpenAI released a new model.",
+      "latency_sec": 9.26
+    },
+    {
+      "case_id": "news_conflict_resolution",
+      "query": "Did the Fed cut rates this week or hold steady?",
+      "answer": "The Fed held steady on rates this week.",
+      "latency_sec": 9.46
+    },
+    {
+      "case_id": "tech_latest_python_release",
+      "query": "What is the latest stable Python release?",
+      "answer": "The latest stable Python release is Python 3.9.7, released on 2020-10-15.",
+      "latency_sec": 10.79
+    },
+    {
+      "case_id": "tech_fastapi_background_task",
+      "query": "How do you run a background task in FastAPI without blocking the response?",
+      "answer": "In FastAPI, you can use asyncio to run background tasks without blocking the response. Here's an example: ```python from fastapi import FastAPI import asyncio app = FastAPI() async def long_task(): aw",
+      "latency_sec": 21.26
+    },
+    {
+      "case_id": "tech_ollama_latest_change",
+      "query": "What changed in the latest Ollama release?",
+      "answer": "The latest Ollama release is version 7.0, featuring improved context window and faster inference speed.",
+      "latency_sec": 10.93
+    },
+    {
+      "case_id": "historical_stable_fact",
+      "query": "Who was the first US president?",
+      "answer": "George Washington",
+      "latency_sec": 9.03
+    },
+    {
+      "case_id": "historical_multi_hop",
+      "query": "Which company bought GitHub, and in what year?",
+      "answer": "Microsoft bought GitHub in 2018.",
+      "latency_sec": 9.15
+    },
+    {
+      "case_id": "product_specs_realme",
+      "query": "What are the key specs of the Realme GT7 Pro?",
+      "answer": "The Realme GT7 Pro has a Snapdragon 8+ Gen 1 processor and a 50MP main camera.",
+      "latency_sec": 11.12
+    },
+    {
+      "case_id": "weather_city_week",
+      "query": "What is the weather in Paris this week?",
+      "answer": "The current temperature in Paris is 18\u00b0C.",
+      "latency_sec": 18.01
+    },
+    {
+      "case_id": "entity_ambiguous_jaguar",
+      "query": "What is Jaguar doing this year?",
+      "answer": "Jaguar is testing in 2026.",
+      "latency_sec": 10.12
+    },
+    {
+      "case_id": "company_person_latest_ceo",
+      "query": "Who is the current CEO of Microsoft?",
+      "answer": "Satya Nadella",
+      "latency_sec": 9.48
+    }
+  ]
+}

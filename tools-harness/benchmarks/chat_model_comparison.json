@@ -1,0 +1,134 @@
+{
+  "gemma4": [
+    {
+      "model": "gemma4",
+      "query": "What is the capital of France?",
+      "response": "Paris",
+      "response_length": 5,
+      "latency_sec": 5.37,
+      "token_count": 1
+    },
+    {
+      "model": "gemma4",
+      "query": "Explain quantum computing in simple terms",
+      "response": "Quantum computing is a new type of computation that uses the principles of **quantum mechanics**\u2014the physics that governs the very small (atoms and subatomic particles)\u2014to solve certain types of probl",
+      "response_length": 2406,
+      "latency_sec": 25.2,
+      "token_count": 521
+    },
+    {
+      "model": "gemma4",
+      "query": "Write a short haiku about spring",
+      "response": "Green shoots start to climb,\nWarm rain washes winter's dust,\nLife wakes up anew.",
+      "response_length": 80,
+      "latency_sec": 6.19,
+      "token_count": 21
+    },
+    {
+      "model": "gemma4",
+      "query": "How do I fix a leaky faucet?",
+      "response": "The fix depends on the faucet type and the leak source. Here are general steps for the most common issues:\n\n**1. Identify the Leak Source:**\n* **Dripping from the spout:** Usually a worn-out washer or",
+      "response_length": 1668,
+      "latency_sec": 21.22,
+      "token_count": 419
+    },
+    {
+      "model": "gemma4",
+      "query": "What's 15% of 280?",
+      "response": "42",
+      "response_length": 2,
+      "latency_sec": 5.48,
+      "token_count": 2
+    },
+    {
+      "model": "gemma4",
+      "query": "Tell me about the history of the internet",
+      "response": "The internet's history is a progression through several key stages:\n\n**1. Origins (ARPANET - 1960s):**\n* **Concept:** The idea of decentralized, packet-switching networks emerged from Cold War concern",
+      "response_length": 2972,
+      "latency_sec": 33.51,
+      "token_count": 720
+    },
+    {
+      "model": "gemma4",
+      "query": "Debate: is pineapple on pizza acceptable?",
+      "response": "## Pineapple on Pizza: Acceptable or Unacceptable?\n\n**Opening Statement:**\n\nThis debate hinges on the nature of \"acceptable.\" Taste is subjective, but arguments can be made on both sides.\n\n---\n\n### **",
+      "response_length": 2647,
+      "latency_sec": 26.44,
+      "token_count": 542
+    },
+    {
+      "model": "gemma4",
+      "query": "Debug this: my code prints 'hello' twice but should print once",
+      "response": "Please provide the code you are having trouble with. I need to see it to debug why it's printing \"hello\" twice.",
+      "response_length": 111,
+      "latency_sec": 6.36,
+      "token_count": 27
+    }
+  ],
+  "mistral-nemo": [
+    {
+      "model": "mistral-nemo",
+      "query": "What is the capital of France?",
+      "response": "Paris",
+      "response_length": 5,
+      "latency_sec": 3.9,
+      "token_count": 1
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "Explain quantum computing in simple terms",
+      "response": "Quantum computers use quantum bits or 'qubits' instead of classical bits (0s and 1s). Qubits can be both 0 and 1 at once (superposition), and change each other's state instantaneously (entanglement), ",
+      "response_length": 237,
+      "latency_sec": 8.07,
+      "token_count": 58
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "Write a short haiku about spring",
+      "response": "Blossoms bloom,\nMelted snow sings,\nSpring's soft kiss.",
+      "response_length": 54,
+      "latency_sec": 5.18,
+      "token_count": 16
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "How do I fix a leaky faucet?",
+      "response": "To fix a leaky faucet:\n\n1. **Turn off the water supply**: Underneath the sink, locate the shut-off valves for both hot and cold water lines. Turn them clockwise to close.\n\n2. **Prepare your tools**: Y",
+      "response_length": 1636,
+      "latency_sec": 32.31,
+      "token_count": 409
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "What's 15% of 280?",
+      "response": "42",
+      "response_length": 2,
+      "latency_sec": 4.47,
+      "token_count": 2
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "Tell me about the history of the internet",
+      "response": "The Internet's history can be traced back to the 1960s:\n\n1. **1962**: J.C.R. Licklider proposes a global computer network.\n2. **1965**: Thomas Merrill invents packet switching, enabling multiple devic",
+      "response_length": 1579,
+      "latency_sec": 29.35,
+      "token_count": 362
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "Debate: is pineapple on pizza acceptable?",
+      "response": "Yes, pineapple on pizza is acceptable. It's a matter of personal preference, but it's not uncommon or universally disliked.",
+      "response_length": 123,
+      "latency_sec": 6.57,
+      "token_count": 27
+    },
+    {
+      "model": "mistral-nemo",
+      "query": "Debug this: my code prints 'hello' twice but should print once",
+      "response": "The issue is likely due to an infinite loop or duplicate print statements in your code. To debug it:\n\n1. Check for any `while True:` loops without proper break conditions.\n2. Look out for multiple `pr",
+      "response_length": 548,
+      "latency_sec": 13.0,
+      "token_count": 125
+    }
+  ]
+}
