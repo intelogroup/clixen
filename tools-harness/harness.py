@@ -522,6 +522,13 @@ def run(*args, **kwargs):
         return _run_impl(*args, **kwargs)
     finally:
         CURRENT_RUN_ID.reset(token)
+        # Plan mode sets a process-global read-only flag for tool blocking. Reset it
+        # on every exit so a plan request can never leave write tools permanently
+        # locked (the old reset lived only on the url_fetch fast-path — unreachable
+        # for plan intents — so one plan request bricked all writes until restart).
+        import tools.registry as _reg
+        if _reg.PLAN_MODE_ACTIVE:
+            _reg.PLAN_MODE_ACTIVE = False
 
 
 def _run_impl(

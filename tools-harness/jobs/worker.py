@@ -16,6 +16,7 @@ import json
 import sqlite3
 import sys
 import time
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -350,11 +351,11 @@ def main() -> None:
                         break
                     claimed.append(job)
 
-                # _execute_job's per-task timeout for _TASK_MODULES uses
-                # signal.alarm(), which only fires on the main thread — those jobs
-                # must stay sequential here. Everything else (the harness.run()
-                # branch) has no signal dependency and is I/O-bound (LLM/network
-                # calls), so it's safe to run concurrently.
+                # _TASK_MODULES jobs get a per-task timeout via fut.result(timeout=)
+                # with shutdown(wait=False); they run sequentially to keep the
+                # number of in-flight module runs predictable. Everything else
+                # (the harness.run() branch) is I/O-bound (LLM/network calls),
+                # so it's safe to run concurrently.
                 sequential_jobs = [j for j in claimed if j["task_name"] in _TASK_MODULES]
                 concurrent_jobs = [j for j in claimed if j["task_name"] not in _TASK_MODULES]
 

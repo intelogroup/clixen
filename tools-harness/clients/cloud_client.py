@@ -275,12 +275,14 @@ OPENAI_FALLBACK_MODEL = "openai/gpt-4o-mini"
 # every other cheap vision option tested (Qwen-VL, Nemotron, Nova, DeepInfra-hosted
 # Gemma) 404s with "no allowed providers". $0.10/$0.40 per M vs claude-haiku-4.5's
 # $1/$5, verified live 2026-07-05 with a real OCR read against a synthetic test image.
-# gemini-2.5-flash-lite retired by Google (404 "no longer available", hit live
-# 2026-07-09) — swapped to gemini-3.1-flash-lite, same $0.10/$0.40 pricing tier,
-# re-verified live with a real OCR read the same day. Note: 3.1-flash-lite scored
-# 2/5 on the agentic tool-calling benchmark above (repetitive-loop drift) — that's
-# the multi-round tool-loop case, irrelevant here since vision calls are single-shot
-# OCR reads, not agentic chains.
+# NOTE 2026-08-03: gemini-2.5-flash-lite (used by CLOUD_FALLBACK_MODEL, conversation
+# fold, memory-verify) was believed retired after a 2026-07-09 404, but a live
+# completion + catalog check re-confirmed it's available again — it stays valid for
+# the fallback/fold/verify tiers. 3.1-flash-lite remains the primary vision model
+# (CLOUD_VISION_MODEL): re-verified live with a real OCR read 2026-07-09. Note:
+# 3.1-flash-lite scored 2/5 on the agentic tool-calling benchmark above
+# (repetitive-loop drift) — that's the multi-round tool-loop case, irrelevant here
+# since vision calls are single-shot OCR reads, not agentic chains.
 CLOUD_VISION_MODEL = "openrouter/google/gemini-3.1-flash-lite"
 MAX_ROUNDS = 25
 

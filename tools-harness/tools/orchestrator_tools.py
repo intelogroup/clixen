@@ -779,6 +779,7 @@ def _run_subagent(intent: str, query: str) -> str:
         f"[subagent intent={intent} status={summary['status']} "
         f"tools={','.join(summary['tools']) or 'none'} errors={summary['errors']}]"
     )
+    off_topic_warning = ""
     if intent in ("temporal", "research_connectors", "youtube", "x_search"):
         chat_id = _get_chat_id()
         if chat_id is not None:
@@ -797,16 +798,16 @@ def _run_subagent(intent: str, query: str) -> str:
                                 "[relevance-guard] parent_run=%s query=%r summary_keys=%s result_keys=%s",
                                 parent_run_id or "?", query[:80], sorted(summary_words)[:10], sorted(result_words)[:10],
                             )
-                            result = (
+                            off_topic_warning = (
                                 "[OFF-TOPIC WARNING: this search result has zero keyword overlap "
                                 "with the conversation context. It may be about a completely "
                                 "different topic than what the user intended. Verify with the "
-                                "user before presenting as fact.]\n\n" + result
+                                "user before presenting as fact.]\n\n"
                             )
             except Exception:
                 pass
 
-    result = f"{res}\n\n{footer}"
+    result = off_topic_warning + f"{res}\n\n{footer}"
 
     if parent_run_id:
         run_cache = _SUBAGENT_CACHE.setdefault(parent_run_id, {})
