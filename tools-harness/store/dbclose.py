@@ -23,4 +23,16 @@ class ClosingConnection(sqlite3.Connection):
 
 def connect(path: str, **kwargs: Any) -> sqlite3.Connection:
     kwargs.setdefault("factory", ClosingConnection)
-    return sqlite3.connect(path, **kwargs)
+    conn = sqlite3.connect(path, **kwargs)
+    # 2026-08-03: multi-process stores (event_log/trace_store/upload_store are
+    # written by the worker process while chat_ui/crash_watchdog read them) had
+    # no WAL and no busy_timeout — a concurrent writer raised "database is
+    # locked" after the 5s default and the worker's broad except swallowed the
+    # whole cycle. WAL allows concurrent readers + a single writer; a 10s
+    # busy_timeout absorbs brief write contention.
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=10000")
+    except sqlite3.Error:
+        pass  # read-only mounts / attached DBs — best-effort pragma
+    return conn

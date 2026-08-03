@@ -19,7 +19,10 @@ from pathlib import Path
 _log = logging.getLogger(__name__)
 
 _USAGE_FILE = Path(__file__).resolve().parent.parent / "data" / "cloud_usage.json"
-DAILY_TOKEN_BUDGET = int(os.environ.get("CLOUD_DAILY_TOKEN_BUDGET", 1_000_000_000_000))
+# Sane default so the guard is actually on for a fresh user (the previous 1e12
+# default meant unlimited cloud spend unless someone set the env var). 5M
+# tokens/day ≈ $4-8 on DeepSeek; override via CLOUD_DAILY_TOKEN_BUDGET.
+DAILY_TOKEN_BUDGET = int(os.environ.get("CLOUD_DAILY_TOKEN_BUDGET", 5_000_000))
 
 _lock = threading.Lock()
 
@@ -47,13 +50,32 @@ def _write(data: dict) -> None:
     tmp.replace(_USAGE_FILE)
 
 
+def _locked_read_modify_write(mutate) -> None:
+    """Serialize the counter read-modify-write ACROSS processes (worker + chat_ui
+    threads run in different processes and the threading.Lock only guards one).
+    fcntl.flock on a sidecar lockfile; best-effort — if flock is unavailable or
+    fails, fall back to the in-process lock only (still better than nothing)."""
+    lock_path = _USAGE_FILE.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import fcntl
+        with open(lock_path, "w") as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            with _lock:
+                mutate()
+    except (ImportError, OSError):
+        with _lock:
+            mutate()
+
+
 def record_usage(prompt_tokens: int, completion_tokens: int) -> None:
     """Add today's usage. Resets automatically on date rollover (see _read())."""
-    with _lock:
+    def _do() -> None:
         data = _read()
         data["prompt_tokens"] += prompt_tokens or 0
         data["completion_tokens"] += completion_tokens or 0
         _write(data)
+    _locked_read_modify_write(_do)
 
 
 def today_usage() -> dict:

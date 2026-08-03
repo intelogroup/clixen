@@ -70,12 +70,14 @@ def record(run_id: str, entry: dict) -> None:
     """Append one trace entry (tool name/args/latency/error) for this run."""
     with _conn() as conn:
         _touch_run(conn, run_id)
-        (next_seq,) = conn.execute(
-            "SELECT COALESCE(MAX(seq), -1) + 1 FROM trace_entries WHERE run_id = ?", (run_id,)
-        ).fetchone()
+        # Atomic seq assignment: computing MAX(seq)+1 in Python then inserting
+        # was a read-modify-write race — two concurrent callers (worker threads
+        # + chat_ui) read the same MAX and collided on the PRIMARY KEY, dropping
+        # one trace. A single INSERT...SELECT serializes with the table lock.
         conn.execute(
-            "INSERT INTO trace_entries (run_id, seq, entry) VALUES (?, ?, ?)",
-            (run_id, next_seq, json.dumps(entry)),
+            "INSERT INTO trace_entries (run_id, seq, entry) "
+            "SELECT ?, COALESCE(MAX(seq), -1) + 1, ? FROM trace_entries WHERE run_id = ?",
+            (run_id, json.dumps(entry), run_id),
         )
 
 
