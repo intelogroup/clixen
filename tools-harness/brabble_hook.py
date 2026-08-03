@@ -225,6 +225,28 @@ def _wrap_for_kokoro(clean: str, max_chars: int = _KOKORO_MAX_CHARS) -> list[str
     return pieces
 
 
+def _fallback_speak(text: str) -> None:
+    """Last-resort TTS when Kokoro is down: macOS `say`, else nothing (log only).
+
+    On Linux `say` doesn't exist and would silently fail — keep the call from
+    crashing and surface a warning instead of fake audio."""
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(
+                ["say", "-r", "180", text],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+            )
+            return
+        except Exception:
+            pass
+    import logging
+    logging.getLogger("brabble_hook").warning(
+        "no TTS available on this platform (Kokoro down, macOS `say` missing) — audio skipped"
+    )
+
+
 def _speak(text: str) -> None:
     """Speak text via TTS, blocking until playback finishes.
 
@@ -251,14 +273,7 @@ def _speak(text: str) -> None:
         player.close()
     if played:
         return
-    try:
-        subprocess.run(
-            ["say", "-r", "180", clean],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        pass
+    _fallback_speak(clean)
 
 
 def _read_exact(resp, n: int) -> bytes:
@@ -447,10 +462,7 @@ class _TTSPipeline:
                         # `say` has no shared-stream hook — closes the sox
                         # stream first so the two don't fight over the device.
                         player.close()
-                        try:
-                            subprocess.run(["say", "-r", "180", payload], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        except Exception:
-                            pass
+                        _fallback_speak(payload)
         finally:
             player.close()
         self._worker.join(timeout=5)
@@ -786,8 +798,9 @@ def main() -> int:
     # ── Check if harness is already busy ──
     if _is_locked():
         sys.stderr.write("[brabble_hook] harness busy, rejecting utterance\n")
-        subprocess.Popen(["say", "busy"], stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
+        if sys.platform == "darwin":
+            subprocess.Popen(["say", "busy"], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
         return 0
 
     # ── Acquire lock and process ──

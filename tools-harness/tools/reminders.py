@@ -239,11 +239,13 @@ LIST_CAL_SCHEMA = {
 def _ensure_calendar_running(wait_s: float = 3.0) -> None:
     """Launch Calendar.app if not running, poll briefly. Best-effort — a
     failure here just means the AppleScript call below fails as before."""
+    import sys
     import time
     _, out, _ = _osa('tell application "System Events" to (name of processes) contains "Calendar"')
     if out == "true":
         return
-    subprocess.run(["open", "-a", "Calendar"], capture_output=True, timeout=5)
+    if sys.platform == "darwin":
+        subprocess.run(["open", "-a", "Calendar"], capture_output=True, timeout=5)
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline:
         _, out, _ = _osa('tell application "System Events" to (name of processes) contains "Calendar"')

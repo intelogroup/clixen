@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -92,6 +93,8 @@ def execute(mode: str = "screen", app: str = "") -> str:
     out_path = _DEFAULT_DIR / f"shot-{int(time.time())}.png"
 
     if not binary:
+        if sys.platform != "darwin":
+            return "[error] no screenshot binary found and native screencapture is macOS-only — install playwright/maim/scrot"
         # Fallback to macOS native screencapture
         cmd = ["/usr/sbin/screencapture", "-x", str(out_path)]
         try:

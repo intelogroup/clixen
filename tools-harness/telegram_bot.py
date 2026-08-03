@@ -74,7 +74,11 @@ def _get_kokoro():
                 log.info("Kokoro: using %s", os.environ["ONNX_PROVIDER"])
                 from kokoro_onnx import Kokoro
 
-                _kokoro = Kokoro(os.environ["KOKORO_ONNX_PATH"], os.environ["KOKORO_VOICES_PATH"])
+                repo_models = Path(__file__).resolve().parent.parent / "models"
+                _kokoro = Kokoro(
+                    os.environ.get("KOKORO_ONNX_PATH", str(repo_models / "kokoro-v1.0.onnx")),
+                    os.environ.get("KOKORO_VOICES_PATH", str(repo_models / "voices-v1.0.bin")),
+                )
     return _kokoro
 
 
@@ -880,6 +884,8 @@ def _capture_screenshot(screenshot_path: str) -> tuple[bool, str]:
     at screenshot_path for sending to the user as a photo. Returns (success, ocr_text)."""
     import subprocess
     import os
+    if sys.platform != "darwin":
+        return False, "screenshot tool not available on this platform (macOS-only)"
     png_path = screenshot_path + ".png"
     res = subprocess.run(["/usr/sbin/screencapture", "-x", png_path], capture_output=True)
     if res.returncode != 0:

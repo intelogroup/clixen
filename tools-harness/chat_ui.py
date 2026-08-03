@@ -1630,9 +1630,14 @@ def restart_ollama(request: Request):
     from tools.notifications import push as _notify
 
     try:
-        subprocess.Popen(
-            ["open", "-a", "Ollama"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
+        if sys.platform == "darwin":
+            subprocess.Popen(
+                ["open", "-a", "Ollama"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        else:
+            subprocess.Popen(
+                ["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
         _notify("Ollama restart requested.", level="info", source="ollama_health")
         return {"launched": True}
     except Exception as e:
