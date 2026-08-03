@@ -18,7 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   signIn: (provider: string, options?: any) => Promise<void>;
   signOut: () => Promise<void>;
-  resetPassword: (email: string, password: string) => Promise<void>;
+  resetPassword: (email: string, currentPassword: string, newPassword: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -90,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             display_name: [options.firstName, options.lastName].filter(Boolean).join(" ").trim() || "Local User",
             email: options.email,
             password: options.password,
+            workspace_name: options.company?.trim() || "Local Workspace",
           }),
         });
         setUser(data.user ? mapUser(data.user) : { id: options.email, email: options.email, firstName: options.firstName, lastName: options.lastName });
@@ -113,10 +114,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  const resetPassword = async (email: string, password: string) => {
+  const resetPassword = async (email: string, currentPassword: string, newPassword: string) => {
     await apiFetch("/api/auth/reset-password", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, current_password: currentPassword, password: newPassword }),
     });
     setUser({ id: email, email });
   };

@@ -35,6 +35,7 @@ export default function SignUpPage() {
         password: formData.password,
         firstName: formData.firstName,
         lastName: formData.lastName,
+        company: formData.company,
         flow: "signUp",
       })
 
