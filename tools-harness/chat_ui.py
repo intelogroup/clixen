@@ -40,7 +40,7 @@ import uvicorn
 
 from harness import run as harness_run
 from automation_catalog import list_automations, build_dispatch_payload, get_automation
-from clients.ollama_client import warmup as ollama_warmup
+from clients.ollama_client import warmup as ollama_warmup, DEFAULT_MODEL as _OLLAMA_DEFAULT_MODEL
 from clients.router import TASK_ROUTING
 from clients.cloud_client import DEFAULT_CLOUD_MODEL, _TOOL_PROGRESS_LABELS
 from tools.websearch import search as _websearch
@@ -679,7 +679,7 @@ async def lifespan(app: FastAPI):
         # ornith:9b dropped 2026-07-10: conversation folding moved to a cloud
         # OpenRouter model (unreliable in a head-to-head bench), no local hot
         # path left to warm for it.
-        target=lambda: ollama_warmup(["gemma4:12b-mlx"]),
+        target=lambda: ollama_warmup([_OLLAMA_DEFAULT_MODEL]),
         daemon=True,
     ).start()
     threading.Thread(target=warm_classifier, daemon=True).start()

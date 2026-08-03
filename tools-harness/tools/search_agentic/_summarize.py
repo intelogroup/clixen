@@ -605,9 +605,12 @@ def summarize_with_model(
     timeout_s: float = 120.0,
     on_token=None,
     format_hint: str | None = None,
-    model: str = "gemma4:12b-mlx",
+    model: str | None = None,
 ) -> str:
     from clients import cloud_client as _cc
+    from clients.ollama_client import DEFAULT_MODEL as _LOCAL_DEFAULT
+    if model is None:
+        model = _LOCAL_DEFAULT
     _is_cloud = _cc.is_cloud_model(model)
     # NEW: Debug logging — see exactly what evidence is fed to the model
     _log.debug("summarize_with_model: query=%r intent=%s domain=%s items=%d", query[:80], intent, domain, len(items))

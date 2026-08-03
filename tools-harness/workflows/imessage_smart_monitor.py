@@ -18,6 +18,8 @@ from workflows.pipeline import (
     PipelineStep,
 )
 
+import os
+
 WATCHER_SCHEMA = {
     "type": "function",
     "function": {
@@ -130,7 +132,7 @@ class ClassifyAndRouteStep(PipelineStep):
             try:
                 resp = httpx.post(
                     "http://127.0.0.1:11434/api/generate",
-                    json={"model": "qwen3.5:4b", "prompt": prompt, "stream": False,
+                    json={"model": os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b"), "prompt": prompt, "stream": False,
                            "options": {"num_predict": 10, "temperature": 0.1}},
                     timeout=15,
                 )

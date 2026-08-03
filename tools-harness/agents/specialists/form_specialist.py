@@ -24,6 +24,7 @@ import re
 import time
 from pathlib import Path
 
+from clients.ollama_client import DEFAULT_MODEL
 import ollama
 from pydantic import BaseModel, Field
 
@@ -227,7 +228,7 @@ def _llm_extract(
 
 def run_form_specialist(
     query: str,
-    model: str = "gemma4:12b-mlx",
+    model: str = DEFAULT_MODEL,
     known_path: str | None = None,
     fields: dict | None = None,
     max_steps: int = 6,   # kept for API compat, not used in direct path

@@ -71,6 +71,7 @@ ANSWER:"""
 def _rewrite_query(query: str, timeout_s: float = 6.0) -> str:
     """Rewrite query for better search results using local LLM (qwen3.5:4b)."""
     import datetime as _dt
+    import os
     import re as _re_dt
     
     # 1. Preprocess relative date terms deterministically to prevent qwen3.5:4b from dropping them
@@ -133,7 +134,7 @@ def _rewrite_query(query: str, timeout_s: float = 6.0) -> str:
     def _call_local() -> str:
         import ollama
         resp = ollama.generate(
-            model="qwen3.5:4b",
+            model=os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b"),
             prompt=prompt,
             options={"temperature": 0.0, "num_predict": 30},
             keep_alive=-1,
@@ -459,6 +460,7 @@ def _summarize(
     """Summarize search results using cloud model (deepseek), falls back to gemma4."""
     from tools.search_agentic import summarize_with_model
     from clients import cloud_client
+    from clients.ollama_client import DEFAULT_MODEL as _LOCAL_DEFAULT
 
     try:
         return summarize_with_model(
@@ -466,9 +468,9 @@ def _summarize(
             model=cloud_client.DEFAULT_CLOUD_MODEL,
         )
     except Exception as _e:
-        _log.warning("cloud summarize failed (%s), falling back to gemma4", _e)
+        _log.warning("cloud summarize failed (%s), falling back to local", _e)
         return summarize_with_model(
-            query=query, items=items, timeout_s=timeout_s, on_token=on_token, model="gemma4:12b-mlx",
+            query=query, items=items, timeout_s=timeout_s, on_token=on_token, model=_LOCAL_DEFAULT,
         )
 
 def _finalize(answer: str) -> str:

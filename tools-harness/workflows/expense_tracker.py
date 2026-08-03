@@ -10,6 +10,7 @@ Expense Tracker — 7-step pipeline.
 """
 
 import json
+import os
 from datetime import datetime
 
 from workflows.pipeline import (
@@ -122,7 +123,7 @@ class BatchProcessExpensesStep(PipelineStep):
             try:
                 resp = httpx.post(
                     "http://127.0.0.1:11434/api/generate",
-                    json={"model": "qwen3.5:4b", "prompt": prompt, "stream": False,
+                    json={"model": os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b"), "prompt": prompt, "stream": False,
                            "options": {"num_predict": 100, "temperature": 0.1}},
                     timeout=20,
                 )
@@ -142,7 +143,7 @@ class BatchProcessExpensesStep(PipelineStep):
             try:
                 resp = httpx.post(
                     "http://127.0.0.1:11434/api/generate",
-                    json={"model": "qwen3.5:4b", "prompt": cat_prompt, "stream": False,
+                    json={"model": os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b"), "prompt": cat_prompt, "stream": False,
                            "options": {"num_predict": 10, "temperature": 0.1}},
                     timeout=10,
                 )

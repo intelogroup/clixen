@@ -20,6 +20,7 @@ import re
 import time
 from pathlib import Path
 
+from clients.ollama_client import DEFAULT_MODEL
 import ollama
 from pydantic import BaseModel, Field
 
@@ -140,7 +141,7 @@ def _build_system_prompt(max_steps: int) -> str:
 
 def run_scraper_specialist(
     query: str,
-    model: str = "gemma4:12b-mlx",
+    model: str = DEFAULT_MODEL,
     url: str | None = None,
     max_steps: int = 8,
     timeout_s: float = 300.0,

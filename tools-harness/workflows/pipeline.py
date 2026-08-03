@@ -282,7 +282,7 @@ class FileWatchStep(PipelineStep):
 def _call_ai(prompt: str, model: str = None, max_tokens: int = 512,
              temperature: float = 0.5) -> str:
     """Call local Ollama and return text response."""
-    model = model or "qwen3.5:4b"
+    model = model or os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b")
     try:
         import httpx
         resp = httpx.post(
@@ -571,7 +571,7 @@ class SvgGenerateStep(PipelineStep):
             import re
             resp = httpx.post(
                 "http://127.0.0.1:11434/api/generate",
-                json={"model": "qwen3.5:4b", "prompt": sys_prompt, "stream": False,
+                json={"model": os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b"), "prompt": sys_prompt, "stream": False,
                        "options": {"num_predict": 2000, "temperature": 0.4}},
                 timeout=120,
             )

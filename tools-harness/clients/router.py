@@ -501,7 +501,8 @@ def classify_ide(query: str) -> tuple[str, str]:
     _, intent = classify(query)
 
     if intent == "ocr":
-        return "gemma4:12b-mlx", "ocr"  # IDE mode stays local/offline, deliberate
+        from clients.ollama_client import DEFAULT_MODEL
+        return DEFAULT_MODEL, "ocr"  # IDE mode stays local/offline, deliberate
     elif intent == "multilingual":
         return CLOUD_MODEL, "multilingual"
     else:

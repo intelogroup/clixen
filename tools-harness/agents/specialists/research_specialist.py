@@ -16,6 +16,7 @@ import logging
 import re
 import time
 
+from clients.ollama_client import DEFAULT_MODEL
 import ollama
 from pydantic import BaseModel, Field
 
@@ -60,7 +61,7 @@ def _build_system_prompt(max_steps: int) -> str:
 
 def run_research_specialist(
     query: str,
-    model: str = "gemma4:12b-mlx",
+    model: str = DEFAULT_MODEL,
     max_steps: int = 6,
     timeout_s: float = 300.0,
 ) -> ResearchResult:

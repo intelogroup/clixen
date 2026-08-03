@@ -33,7 +33,7 @@ def _llm_json_extract(prompt: str, schema: dict, model: str | None = None) -> di
     env — qwen3.5:4b 404'd in tests 2026-07-30). Cloud path has no native
     format=, so it instructs JSON-only and re-parses."""
     import json as _json
-    model = model or "qwen3.5:4b"
+    model = model or os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b")
     from clients.cloud_client import is_cloud_model
     if not is_cloud_model(model):
         try:
@@ -185,9 +185,9 @@ def _synthesize_news_email(*, task_name, date_str, topics, source_pack, recipien
     except Exception as exc:
         _log.warning("user.automation: cloud news synthesis failed (%s), trying local ollama", exc)
         try:
-            from clients.ollama_client import _get_client
+            from clients.ollama_client import _get_client, DEFAULT_MODEL as _LOCAL_DEFAULT
             client = _get_client()
-            resp = client.chat(model="gemma4:12b-mlx", messages=messages, tools=tool_defs,
+            resp = client.chat(model=_LOCAL_DEFAULT, messages=messages, tools=tool_defs,
                                keep_alive=-1, options=opts, think=False)
             msg = resp
         except Exception as exc2:

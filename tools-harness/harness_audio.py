@@ -13,6 +13,7 @@ from store.conversation import (
     compact_old_turns,
     get_lock,
 )
+from clients.ollama_client import DEFAULT_MODEL
 from tools.memory_tools import recall_block as memory_recall
 from tools.registry import ALL_TOOLS
 from harness_tts import _speak
@@ -21,7 +22,7 @@ from harness_tts import _speak
 def run_audio(
     audio_path: str,
     prompt: str = "",
-    model: str = "gemma4:12b-mlx",
+    model: str = DEFAULT_MODEL,
     tts: bool = False,
     tts_voice: str = "af_heart",
     chat_id: str | None = None,

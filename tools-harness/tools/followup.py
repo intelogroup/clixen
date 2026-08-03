@@ -19,6 +19,7 @@ standalone decisions are pure regex, so they're deterministic and unit-testable 
 from __future__ import annotations
 
 import logging
+import os
 import re
 
 _log = logging.getLogger("websearch")
@@ -140,7 +141,7 @@ def _rewrite_standalone(query: str, history: list) -> str:
     try:
         import ollama
         resp = ollama.generate(
-            model="qwen3.5:4b",
+            model=os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b"),
             prompt=prompt,
             options={"temperature": 0.0, "num_predict": 40},
             keep_alive=-1,

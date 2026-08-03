@@ -1060,7 +1060,7 @@ def _run_impl(
     if force_local_agent:
         intent = "filesystem"
         if model is None:
-            routed_model = "gemma4:12b-mlx"
+            routed_model = ollama_client.DEFAULT_MODEL
 
     _log.info("[router] run_id=%s chat_id=%s intent=%s model=%s", run_id, chat_id, intent, routed_model)
 
@@ -1100,7 +1100,7 @@ def _run_impl(
     if intent == "library_docs":
         active_tools = _tool("get_library_docs", "local_search")
         if not _chat_mode:
-            routed_model = "gemma4:12b-mlx"
+            routed_model = ollama_client.DEFAULT_MODEL
         # chat mode: qwen3:4b handles docs well with get_library_docs tool
     elif intent == "reminder":
         active_tools = _tool("set_reminder", "get_current_time")
@@ -1608,7 +1608,7 @@ def _run_impl(
     # while gemma4 (temp=0 on tool rounds) is already deterministic.
     if intent == "filesystem" and active_tools:
         _home = str(Path.home())
-        if routed_model == "gemma4:12b-mlx":
+        if routed_model == ollama_client.DEFAULT_MODEL:
             system_prompt = (
                 "You are local-agent running on this computer. "
                 "For EVERY file operation request you MUST call a function — "

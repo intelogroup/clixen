@@ -67,7 +67,10 @@ def _parse_text_tool_call(content: str, available_tool_names: set) -> tuple[str,
     return None
 
 
-DEFAULT_MODEL = "gemma4:12b-mlx"
+# Single source of truth for the default local model. Override per machine via
+# OLLAMA_DEFAULT_MODEL in .env (scripts/profile_hardware.py writes it). Runtime
+# sites should import this instead of hardcoding a model name.
+DEFAULT_MODEL = os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:12b-mlx")
 MAX_ROUNDS = 25
 
 # Human-readable progress labels emitted via on_token before each tool executes.
@@ -360,7 +363,9 @@ def warmup(models: list[str] = None):
 
     log = logging.getLogger(__name__)
     if models is None:
-        models = ["gemma4:12b-mlx", "gemma4:e2b"]
+        models = [DEFAULT_MODEL]
+        if DEFAULT_MODEL != "gemma4:12b-mlx":
+            models.append("gemma4:12b-mlx")
     try:
         _hot = {m["model"] for m in _get_client().ps().get("models", [])}
     except Exception:

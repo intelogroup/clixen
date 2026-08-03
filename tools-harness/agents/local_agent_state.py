@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import operator
 from typing import Annotated, Any
+from clients.ollama_client import DEFAULT_MODEL
 
 from pydantic import BaseModel, Field
 
@@ -44,7 +45,7 @@ class LocalAgentState(BaseModel):
         description="Maximum allowed steps before forced termination",
     )
     current_model: str = Field(
-        default="gemma4:12b-mlx",
+        default=DEFAULT_MODEL,
         description="Model being used for inference",
     )
     chat_id: str | None = Field(

@@ -8,6 +8,7 @@ import re
 import time
 from pathlib import Path
 
+from clients.ollama_client import DEFAULT_MODEL
 import ollama
 
 from tools.registry import execute_tool
@@ -20,7 +21,7 @@ from . import _schemas as _schemas  # noqa: F401
 
 def run_data_specialist(
     query: str,
-    model: str = "gemma4:12b-mlx",
+    model: str = DEFAULT_MODEL,
     known_path: str | None = None,
     max_steps: int = 10,
     timeout_s: float = 600.0,

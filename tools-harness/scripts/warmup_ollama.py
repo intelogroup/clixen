@@ -2,9 +2,14 @@
 """Warm Ollama models at startup with keep_alive=-1."""
 import urllib.request
 import json
+import os
 import sys
 
-MODELS = ["gemma4:12b-mlx", "qwen3.5:4b"]
+MODELS = [
+    os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:12b-mlx"),
+    os.environ.get("OLLAMA_REWRITE_MODEL", "qwen3.5:4b"),
+    "nomic-embed-text",
+]
 
 for model in MODELS:
     try:

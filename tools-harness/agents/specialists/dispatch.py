@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from clients.ollama_client import DEFAULT_MODEL
 from agents.specialists.path_specialist import PathResult, run_path_specialist
 from agents.specialists.read_specialist import ReadResult, run_read_specialist
 from agents.specialists.data_specialist import DataResult, run_data_specialist
@@ -300,7 +301,7 @@ class DispatchResult:
 
 def dispatch(
     query: str,
-    model: str = "gemma4:12b-mlx",
+    model: str = DEFAULT_MODEL,
     known_path: str | None = None,
     specialist_hint: str | None = None,
 ) -> DispatchResult | None:
@@ -342,7 +343,7 @@ def dispatch(
 def should_dispatch_to_path(query: str) -> bool:
     return classify(query) == "path"
 
-def dispatch_path_specialist(query: str, model: str = "gemma4:12b-mlx"):
+def dispatch_path_specialist(query: str, model: str = DEFAULT_MODEL):
     r = run_path_specialist(query, model=model)
     return r, _mk_events("path_discovery", query, paths=r.paths, summary=r.summary,
                          tool_trace=r.tool_trace, elapsed_s=r.elapsed_s, error=r.error)

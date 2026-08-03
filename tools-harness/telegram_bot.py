@@ -199,19 +199,7 @@ def _tutor_worker(chat_id: str, bot):
                         text = part.get("text", "").strip()
                         if text:
                             _tutor_spoken.add(mid)
-                            topic_keywords = " ".join(text.split()[:15])
-                            related = _search_ugent(topic_keywords, limit=2)
-                            extra = ""
-                            if related:
-                                bits = []
-                                for q in related:
-                                    bits.append(
-                                        f"Q: {q.get('questionText','')[:250]}\n"
-                                        f"Ans: {q.get('correctAnswer','')}\n"
-                                        f"Exp: {q.get('explanation','')[:200]}"
-                                    )
-                                extra = "\n\nRelated Q&A:\n" + "\n---\n".join(bits)
-                            msg = f"Tutor:\n{text[:2500]}{extra}"
+                            msg = f"Tutor:\n{text[:2500]}"
                             loop = asyncio.get_event_loop()
                             asyncio.run_coroutine_threadsafe(
                                 bot.send_message(chat_id=chat_id, text=msg[:4000]),
@@ -225,38 +213,6 @@ def _tutor_worker(chat_id: str, bot):
                 time.sleep(2)
     finally:
         conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Ugent question search
-# ---------------------------------------------------------------------------
-
-_UGENT_ENRICHED = os.path.expanduser("~/Developer/ugent-app/data/medicospira-enriched.jsonl")
-
-
-def _search_ugent(topic: str, limit: int = 5) -> list[dict]:
-    results = []
-    t = topic.lower()
-    with open(_UGENT_ENRICHED) as f:
-        for line in f:
-            e = json.loads(line).get("enriched", {})
-            haystack = " ".join(
-                filter(
-                    None,
-                    [
-                        e.get("diseaseName", ""),
-                        e.get("subject", ""),
-                        e.get("system", ""),
-                        e.get("questionText", ""),
-                        e.get("educationalObjective", ""),
-                    ],
-                )
-            ).lower()
-            if t in haystack:
-                results.append(e)
-                if len(results) >= limit:
-                    break
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -369,43 +325,6 @@ async def cmd_tutor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text("Usage: /tutor {start|stop|status}")
-
-
-async def cmd_learn(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    topic = " ".join(ctx.args).strip()
-    if not topic:
-        await update.message.reply_text("Usage: /learn <topic>\nExample: /learn diabetes treatment")
-        return
-
-    await update.message.chat.send_action("typing")
-    questions = await asyncio.to_thread(_search_ugent, topic)
-    if not questions:
-        await update.message.reply_text(f"No questions found on '{topic}'.")
-        return
-
-    context = "\n\n".join(
-        f"Q{i+1}: {q.get('questionText','')[:600]}\nAnswer: {q.get('correctAnswer','')}\n"
-        f"Explanation: {q.get('explanation','')[:400]}"
-        for i, q in enumerate(questions)
-    )
-
-    task = (
-        f"You are a USMLE tutor. Give a concise lecture on '{topic}' using these "
-        f"source questions. Format: pathophysiology overview → key clinical pearls → "
-        f"2 practice questions with answers. Keep under 2000 chars, no markdown except **bold** for terms.\n\n"
-        f"Source questions:\n{context}"
-    )
-
-    try:
-        chat_id = str(update.effective_chat.id)
-        result, _, _ = await asyncio.to_thread(harness.run_for_messaging, task, on_token=None, chat_id=chat_id)
-        if result:
-            await _send_long(update, result)
-        else:
-            await update.message.reply_text("Lecture generation failed.")
-    except Exception as e:
-        log.error("learn failed: %s", e, exc_info=True)
-        await update.message.reply_text(f"Error: {e}")
 
 
 async def _synthesize_chunks(sentence_q: asyncio.Queue, voice: str = "af_heart") -> str | None:
@@ -1017,6 +936,7 @@ def _capture_screenshot(screenshot_path: str) -> tuple[bool, str]:
 def _analyze_screenshot_ocr(query: str, ocr_text: str, on_token=None) -> str | None:
     try:
         import ollama
+        from clients.ollama_client import DEFAULT_MODEL as _OCR_MODEL
         if not ocr_text.strip():
             return "Couldn't read any text on the screen clearly — try again or move the window."
         prompt = (
@@ -1033,7 +953,7 @@ def _analyze_screenshot_ocr(query: str, ocr_text: str, on_token=None) -> str | N
         full = ""
         eval_n = 0
         for chunk in ollama.chat(
-            model="gemma4:12b-mlx",
+            model=_OCR_MODEL,
             messages=[{"role": "user", "content": prompt}],
             keep_alive=-1,
             options={"temperature": 0.1, "num_predict": 220},
@@ -1508,7 +1428,6 @@ def main():
     app.add_handler(CommandHandler("tts", cmd_tts))
     app.add_handler(CommandHandler("agent", cmd_agent))
     app.add_handler(CommandHandler("tutor", cmd_tutor))
-    app.add_handler(CommandHandler("learn", cmd_learn))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

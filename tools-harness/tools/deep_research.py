@@ -20,10 +20,23 @@ from tools.fetch_url import execute as _fetch_url
 
 _log = logging.getLogger("deep_research")
 
-# Model configuration matching clixen defaults
-_PRIMARY_MODEL = "deepseek/deepseek-v4-flash"
-_FALLBACK_MODEL = "openrouter/anthropic/claude-haiku-4.5"
-_LOCAL_MODEL = "gemma4:12b-mlx"
+# Model configuration matching clixen defaults — resolved lazily (importing
+# cloud_client/ollama_client at module level here creates an import cycle:
+# ollama_client -> tools.registry -> deep_research -> cloud_client ->
+# tools.registry (partial)).
+def _cloud_default() -> str:
+    from clients.cloud_client import DEFAULT_CLOUD_MODEL
+    return DEFAULT_CLOUD_MODEL
+
+
+def _cloud_fallback() -> str:
+    from clients.cloud_client import CLOUD_FALLBACK_MODEL
+    return CLOUD_FALLBACK_MODEL
+
+
+def _local_default() -> str:
+    from clients.ollama_client import DEFAULT_MODEL
+    return DEFAULT_MODEL
 
 _BLOCKED_DOMAINS = {
     "youtube.com", "youtu.be", "facebook.com", "instagram.com",
@@ -65,7 +78,9 @@ SCHEMA = {
 }
 
 
-def _call_llm(prompt: str, model: str = _PRIMARY_MODEL, system: str = None) -> str:
+def _call_llm(prompt: str, model: str = None, system: str = None) -> str:
+    if model is None:
+        model = _cloud_default()
     """Helper to route completions through cloud_client or fall back to local gemma4."""
     from clients import cloud_client
     if cloud_client.is_cloud_model(model):
@@ -78,11 +93,11 @@ def _call_llm(prompt: str, model: str = _PRIMARY_MODEL, system: str = None) -> s
             )
         except Exception as e:
             _log.warning("Cloud client call failed on %s: %s. Falling back to local/fallback.", model, e)
-            if model != _FALLBACK_MODEL:
+            if model != _cloud_fallback():
                 try:
                     return cloud_client.chat(
                         user_message=prompt,
-                        model=_FALLBACK_MODEL,
+                        model=_cloud_fallback(),
                         system_prompt=system,
                         tools=[],
                     )
@@ -96,7 +111,7 @@ def _call_llm(prompt: str, model: str = _PRIMARY_MODEL, system: str = None) -> s
     messages.append({"role": "user", "content": prompt})
     try:
         resp = ollama.chat(
-            model=_LOCAL_MODEL,
+            model=_local_default(),
             messages=messages,
             options={"temperature": 0.2, "num_ctx": 16384, "think": False},
         )
@@ -338,7 +353,7 @@ def _critique_and_revise(query: str, draft: str, sources: List[Dict[str, Any]], 
         critique_result = _call_llm(prompt, model, system=_critique_system)
         data = None
         # Parse JSON, retry with fallback model on parse failure
-        for attempt_model in [model, _FALLBACK_MODEL]:
+        for attempt_model in [model, _cloud_fallback()]:
             try:
                 json_str = critique_result.strip()
                 if json_str.startswith("```"):
@@ -351,11 +366,11 @@ def _critique_and_revise(query: str, draft: str, sources: List[Dict[str, Any]], 
                 data = json.loads(json_str)
                 break
             except (json.JSONDecodeError, ValueError):
-                if attempt_model != _FALLBACK_MODEL:
+                if attempt_model != _cloud_fallback():
                     _log.info("Critique JSON parse failed on %s, retrying with fallback", attempt_model)
-                    critique_result = _call_llm(prompt, _FALLBACK_MODEL, system=_critique_system)
+                    critique_result = _call_llm(prompt, _cloud_fallback(), system=_critique_system)
                 else:
-                    _log.warning("Retry JSON parse also failed on %s", _FALLBACK_MODEL)
+                    _log.warning("Retry JSON parse also failed on %s", _cloud_fallback())
                     break
 
         if data is None:

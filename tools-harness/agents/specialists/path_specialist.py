@@ -20,6 +20,7 @@ import re
 import time
 from pathlib import Path
 
+from clients.ollama_client import DEFAULT_MODEL
 import ollama
 from pydantic import BaseModel, Field
 
@@ -377,7 +378,7 @@ def _run_tool(name: str, args: dict) -> str:
 
 def run_path_specialist(
     query: str,
-    model: str = "gemma4:12b-mlx",
+    model: str = DEFAULT_MODEL,
     cwd: str | None = None,
     max_steps: int = 8,   # API compat; effective fallback cap is 3
 ) -> PathResult:
