@@ -762,8 +762,6 @@ class LsStep(PipelineStep):
 STEP_REGISTRY = {
     "gmail_search": GmailSearchStep,
     "ai_summarize": AiSummarizeStep,
-    "calendar_check": CalendarCheckStep,
-    "tasks_check": TasksCheckStep,
     "imessage_send": iMessageSendStep,
     "telegram_send": TelegramSendStep,
     "ai_classify": AiClassifyStep,

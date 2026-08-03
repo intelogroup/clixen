@@ -289,6 +289,7 @@ def _absence_unchecked_sources(answer: str, query: str, run_id: str, intent: str
     try:
         trace = trace_store.get_trace(run_id) or []
     except Exception:
+        _log.debug("trace_store.get_trace failed, returning empty set", exc_info=True)
         return set()
     called = {t.get("tool") for t in trace} & _COMMITMENT_SOURCES
     # 2026-08-01: count-only >=2 threshold let the orchestrator satisfy
@@ -317,6 +318,7 @@ def _needs_claim_check(query: str, run_id: str, intent: str = "") -> list[dict]:
     try:
         trace = trace_store.get_trace(run_id) or []
     except Exception:
+        _log.debug("trace_store.get_trace failed, returning empty list", exc_info=True)
         return []
     return [t for t in trace if t.get("tool")]
 

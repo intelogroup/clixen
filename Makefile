@@ -8,7 +8,7 @@ lint-python:
 	ruff check $(PYTHON_LINT_TARGETS)
 
 lint-js:
-	npm --prefix gmail-mcp run lint
+	npm --prefix google-mcp run lint
 
 .PHONY: eval eval-live
 

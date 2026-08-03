@@ -4,7 +4,7 @@
 
 **The main agent now defaults to a cloud model, not gemma4.** gemma4:12b-mlx was proving
 unreliable past 2-3 chained tool calls (CSS-selector probing loops, hallucinated content,
-empty `content=''` responses — see "qwen3:8b Agentic Behavior" in the root CLAUDE.md, same failure class).
+empty `content=''` responses — known failure class for small local models under long tool-calling chains).
 Both the web-UI/Telegram/WhatsApp path (`harness.py`) and the LangGraph local-agent
 (`agents/local_agent_graph.py`) now default to OpenRouter's DeepSeek, with GPT-4o-mini
 as an automatic fallback.

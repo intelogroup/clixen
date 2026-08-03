@@ -2,7 +2,7 @@
 Ingest zl_master_board OCR chunks → raw.db + knowledge.lance.
 
 Reads all rows from zl_docs_en and zl_docs_fr (5730 total), re-embeds with
-nomic-embed-text (768-dim) and stores into gemma4llama's own KB.
+nomic-embed-text (768-dim) and stores into clixen's own KB.
 
 The source DBs use 1024-dim mxbai vectors — we read only the text fields.
 

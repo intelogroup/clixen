@@ -1,4 +1,4 @@
-# Gemma4Llama
+# Clixen
 
 Local LLM tools harness and chat application optimized for Apple Silicon (Apple M4, 24 GB unified memory). Runs entirely on-device with zero API costs, featuring a vanilla HTML/JS web dashboard, a launchd-managed Telegram bot, and a WhatsApp assistant bridge.
 
@@ -155,7 +155,7 @@ clixen/
 │   │   ├── create_watcher.py   # File watcher creation
 │   │   ├── deep_research.py / report_generator.py
 │   │   ├── diagram_render.py   # Mermaid diagram rendering
-│   │   ├── security_utils.py   # Path sanitization
+│   │   ├── path_policy.py       # Path sanitization
 │   │   ├── peakaboo.py         # Quick file peek
 │   │   ├── discovery_sources.py# Search source discovery
 │   │   ├── followup.py         # Follow-up suggestion
@@ -237,7 +237,6 @@ clixen/
 │   └── superpowers/plans/      # Design docs
 │
 ├── cloudflare-worker/          # Cloudflare Workers (DDG proxy, Telegram proxy, ReliefWeb)
-├── gmail-mcp/                  # Gmail MCP credentials (token storage)
 ├── google-mcp/                 # Google APIs MCP server (Node.js)
 │   ├── server.js / auth.js
 │   └── download-attachments.mjs / download-to-repo.mjs
@@ -361,10 +360,7 @@ those patches working — judged higher risk than the size win. Same reasoning a
 
 ## Documentation
 
-- **Temporal Queries Fix**: [docs/TEMPORAL_FIX.md](file:///Users/kalinovdameus/Developer/clixen/docs/TEMPORAL_FIX.md)
-- **Technical Assumptions & Constraints**: [docs/ASSUMPTIONS.md](file:///Users/kalinovdameus/Developer/clixen/docs/ASSUMPTIONS.md)
-
-### Agent Internals (`docs/agents/`)
+- **Agent Internals**: [docs/agents/](docs/agents/)
 
 Deeper reference docs for how the agent stack actually works, split out of `CLAUDE.md` to keep that file focused on day-to-day gotchas:
 

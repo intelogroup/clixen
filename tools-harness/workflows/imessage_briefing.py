@@ -9,8 +9,6 @@ Step 6: Telegram with full detail
 """
 
 from workflows.pipeline import (
-    CalendarCheckStep,
-    TasksCheckStep,
     GmailSearchStep,
     AiSummarizeStep,
     iMessageSendStep,
@@ -101,8 +99,6 @@ def execute(imessage_recipient: str, gmail_query: str = "is:unread newer_than:1d
             max_emails: int = 5, calendar_days: int = 1) -> dict:
     """Run the 6-step briefing pipeline directly."""
     steps = [
-        CalendarCheckStep(days_ahead=calendar_days),
-        TasksCheckStep(max_results=10),
         GmailSearchStep(query=gmail_query, max_results=max_emails),
         AiSummarizeStep(
             input_key="gmail_raw",

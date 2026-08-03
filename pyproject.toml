@@ -100,7 +100,7 @@ markers = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/g4l", "tools-harness"]
+packages = ["tools-harness"]
 
 [tool.ruff]
 target-version = "py312"

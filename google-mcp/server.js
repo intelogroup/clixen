@@ -5,8 +5,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { google } from 'googleapis';
 
 async function getGmail() {
-  const credPath = process.env.GMAIL_CREDENTIALS_PATH || '/Users/kalinovdameus/developer/zl_master_board/gmail-mcp/credentials.json';
-  const tokenPath = process.env.GMAIL_TOKEN_PATH || '/Users/kalinovdameus/developer/zl_master_board/gmail-mcp/token.json';
+  const credPath = process.env.GMAIL_CREDENTIALS_PATH || '/Users/kalinovdameus/Developer/clixen/google-mcp/credentials.json';
+  const tokenPath = process.env.GMAIL_TOKEN_PATH || '/Users/kalinovdameus/Developer/clixen/google-mcp/token.json';
   const { readFileSync } = await import('fs');
   const creds = JSON.parse(readFileSync(credPath, 'utf8'));
   const token = JSON.parse(readFileSync(tokenPath, 'utf8'));

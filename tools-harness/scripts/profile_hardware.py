@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hardware Profiler for Clixen (Gemma4Llama).
+Hardware Profiler for Clixen.
 Detects CPU, RAM, and GPU/VRAM to recommend optimal local model configurations.
 """
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sidecar Model Downloader and Server manager for Clixen (Gemma4Llama).
+Sidecar Model Downloader and Server manager for Clixen.
 Helps download GGUF models from Hugging Face and serve them via llama.cpp server.
 """
 

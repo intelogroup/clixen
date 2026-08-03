@@ -163,6 +163,8 @@ def _tutor_worker(chat_id: str, bot):
     session_id = None
     _tutor_spoken.clear()
 
+    try:
+
     while not _tutor_stop.is_set():
         try:
             if session_id is None:
@@ -222,7 +224,8 @@ def _tutor_worker(chat_id: str, bot):
         except Exception as e:
             log.warning("Tutor worker error: %s", e)
             time.sleep(2)
-    conn.close()
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1002,6 +1005,7 @@ def _capture_screenshot(screenshot_path: str) -> tuple[bool, str]:
                  native[0], native[1], img.size[0], img.size[1], kb, len(ocr_text))
         return True, ocr_text
     except Exception:
+        log.warning("[screenshot] Pillow processing failed", exc_info=True)
         import shutil
         try:
             shutil.copy(png_path, screenshot_path)

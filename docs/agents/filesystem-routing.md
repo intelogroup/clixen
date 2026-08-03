@@ -1,11 +1,10 @@
-# Filesystem Intent Routing (4 tiers)
+# Filesystem Intent Routing (3 tiers)
 
-`harness.py:run()` resolves `intent="filesystem"` through 4 dispatch tiers:
+`harness.py:run()` resolves `intent="filesystem"` through 3 dispatch tiers:
 
 1. **Regex fast path** — `parse_local_fs_action()` matches clear commands ("delete file X", "create folder Y") → direct tool execution, no LLM
 2. **Specialist dispatch** — `agents/specialists/dispatch.py` classifies query into 10 specialists (transport/form/video/audio/scraper/data/write/research/read/path), runs the matching specialist, returns result. Added to harness.py at line ~997.
-3. **smolagents v2** — opt-in via `G4L_LOCAL_AGENT_V2=1` env var
-4. **LangGraph ReAct agent** — `agents/local_agent_graph.py` with full tool-calling loop (fallback for ambiguous requests)
+3. **LangGraph ReAct agent** — `agents/local_agent_graph.py` with full tool-calling loop (fallback for ambiguous requests)
 
 Specialist priority chain: `form > video > audio > transport > scraper > data > write > research > read > path`
 

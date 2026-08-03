@@ -9,8 +9,6 @@ Step 6: If no meeting: send status update via Telegram only
 """
 
 from workflows.pipeline import (
-    CalendarCheckStep,
-    TasksCheckStep,
     GmailSearchStep,
     AiSummarizeStep,
     ConditionStep,
@@ -101,8 +99,6 @@ def execute(imessage_recipient: str, lookahead_hours: int = 2,
     end = now + timedelta(hours=lookahead_hours)
 
     steps = [
-        CalendarCheckStep(days_ahead=1),
-        TasksCheckStep(max_results=10),
         ExtractAttendeesStep(input_key="calendar_events", output_key="attendees"),
     ]
     # Add dynamic Gmail search per attendee

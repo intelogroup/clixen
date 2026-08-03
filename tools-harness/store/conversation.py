@@ -85,8 +85,8 @@ def _load_from_disk(cid: str) -> list[dict]:
             data = json.loads(p.read_text(encoding="utf-8"))
             if isinstance(data, list):
                 return data
-    except Exception as e:
-        log.warning("Failed to load session %s from disk: %s", cid, e)
+    except Exception:
+        log.warning("Failed to load session %s from disk", cid, exc_info=True)
     return []
 
 
