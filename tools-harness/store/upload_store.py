@@ -20,11 +20,14 @@ delete(file_id)                 — remove DB row + file from disk
 """
 
 import json
+import logging
 import sqlite3
 import os
 from store import dbclose
 from datetime import date
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _HERE = Path(__file__).parent
 DB_PATH = _HERE / "uploads.db"
@@ -188,11 +191,10 @@ def init() -> None:
 
     with _conn() as c:
         c.execute(_CREATE)
-        # Add 'bucket' column to existing DBs that predate this change
         try:
             c.execute(_MIGRATE_BUCKET_COL)
         except Exception:
-            pass  # column already exists
+            log.debug("column migration assumed already applied (expected if column exists)", exc_info=True)
 
 
 def bucket_dir(mime: str = "", ext: str = "") -> Path:
@@ -268,6 +270,6 @@ def delete(file_id: str) -> None:
     try:
         Path(rec["stored_path"]).unlink(missing_ok=True)
     except Exception:
-        pass
+        log.debug("file unlink failed for %s", rec.get("stored_path", "?"), exc_info=True)
     with _conn() as c:
         c.execute("DELETE FROM files WHERE id=?", (file_id,))

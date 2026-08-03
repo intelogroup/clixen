@@ -12,12 +12,15 @@ Lessons applied from malaria_thesis + zl_master_board/polo-ingest:
   8. is_cached() uses max_distance=0.65 (tuned from live distance observations)
 """
 import hashlib
+import logging
 import time
 from pathlib import Path
 from typing import Optional
 
 import lancedb
 import numpy as np
+
+log = logging.getLogger(__name__)
 import pyarrow as pa
 import requests
 
@@ -82,7 +85,7 @@ def _embed(text: str) -> list[float]:
             EMBED_BACKEND = "openai"
             return _normalize(vec)
         except Exception:
-            pass  # fall through to local Ollama
+            log.debug("OpenAI embedding failed, falling back to local Ollama", exc_info=True)
 
     r = requests.post(
         f"{OLLAMA_BASE}/v1/embeddings",

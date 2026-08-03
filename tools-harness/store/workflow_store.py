@@ -97,6 +97,7 @@ def _json_load(raw: str, fallback):
     try:
         return json.loads(raw)
     except Exception:
+        _log.debug("JSON parse failed in _json_load", exc_info=True)
         return fallback
 
 
@@ -585,8 +586,7 @@ def _user_timezone() -> str:
             if name and _is_valid_timezone(name):
                 return name
     except Exception:
-        pass
-
+        _log.debug("timezone detection failed", exc_info=True)
     return "America/New_York"
 
 
@@ -846,6 +846,7 @@ def _compute_next_cron_run(
     try:
         trigger = CronTrigger.from_crontab(cron, timezone=timezone_name or "UTC")
     except Exception:
+        _log.warning("CronTrigger from_crontab failed for '%s' in %s", cron, timezone_name, exc_info=True)
         return None
     next_fire = trigger.get_next_fire_time(previous_fire_time, now)
     if next_fire is None:

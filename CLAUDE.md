@@ -68,7 +68,7 @@ One launchd job (`com.clixen.messaging.plist`) runs `messaging_supervisor.sh`, w
 Not yet built. See `.claude/skills/tauri-migration-plan/SKILL.md`.
 
 ## Automations & Task Worker
-`jobs/worker.py` (in `core.py`'s `task_worker` thread) polls every 10s: one-shot `job_queue` and scheduled `workflow_store`. 7 builtin automations seeded idempotently on startup. User/LLM-created automations share `automation_id="user.automation"` → generic handler reads `action_type`/`config` (telegram/notification/webhook/email/tool_call/imessage/workflow-with-branching). Full detail + bug history: `docs/agents/automations.md`.
+`jobs/worker.py` (in `core.py`'s `task_worker` thread) polls every 10s: one-shot `job_queue` and scheduled `workflow_store`. 14 builtin automations seeded idempotently on startup. User/LLM-created automations share `automation_id="user.automation"` → generic handler reads `action_type`/`config` (telegram/notification/webhook/email/tool_call/imessage/workflow-with-branching). Full detail + bug history: `docs/agents/automations.md`.
 
 ## Agent Reliability Infra
 Landed after a live failure where a subagent silently skipped a source and confidently answered "nothing found." Now: reliable prefix-anchored error detection, tool-schema guidance over prompt keyword-branches, fan-out routing for commitment questions, structured subagent trace envelopes (`[subagent ... status=ok/degraded]`), a verify-on-absence retry, and a nightly golden-query regression suite. Full detail: `docs/agents/orchestrator.md`.

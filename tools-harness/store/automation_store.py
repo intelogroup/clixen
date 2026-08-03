@@ -8,9 +8,12 @@ browser reloads and app restarts.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from store import dbclose
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent / "automation_presets.db"
 
@@ -45,6 +48,7 @@ def get_preset(automation_id: str) -> dict:
         try:
             return json.loads(row["params_json"])
         except Exception:
+            log.debug("JSON parse failed for load_preset(%s)", automation_id, exc_info=True)
             return {}
 
 
@@ -70,5 +74,6 @@ def list_presets() -> dict[str, dict]:
             try:
                 result[row["automation_id"]] = json.loads(row["params_json"])
             except Exception:
+                log.debug("JSON parse failed for load_all_presets key=%s", row["automation_id"], exc_info=True)
                 result[row["automation_id"]] = {}
         return result

@@ -7,10 +7,13 @@ This module gives it READ access to any DB it can find.
 Known DBs are registered manually (fast). Discovery scan finds new ones.
 Results are normalized to a common format before returning.
 """
+import logging
 import os
 from pathlib import Path
 from typing import Optional
 import requests
+
+log = logging.getLogger(__name__)
 
 OLLAMA_BASE = "http://localhost:11434"
 EMBED_MODEL = "nomic-embed-text"
@@ -251,6 +254,7 @@ def search_sqlite_db(db_key: str, query: str, top_k: int = 5) -> list[dict]:
                 params + [top_k],
             ).fetchall()
         except Exception:
+            log.debug("SQL query failed for table=%s", cfg["table"], exc_info=True)
             rows = []
     finally:
         conn.close()

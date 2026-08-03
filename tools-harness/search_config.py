@@ -4,10 +4,13 @@ Loads unified config from search_config.yaml.
 Use this instead of hardcoded constants.
 """
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+log = logging.getLogger(__name__)
 
 # Find config file relative to this module
 _CONFIG_DIR = Path(__file__).parent
@@ -90,6 +93,7 @@ def is_junk_domain(url: str) -> bool:
         netloc = urlparse(url).netloc.lower()
         return any(bad in netloc for bad in get_junk_domains())
     except Exception:
+        log.debug("URL parse failed in is_junk_url for %s", url, exc_info=True)
         return False
 
 

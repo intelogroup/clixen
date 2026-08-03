@@ -8,9 +8,12 @@ name. See path_policy.py for the separate, unrelated concern of which
 filesystem *paths* a tool's arguments are allowed to touch.
 """
 import ast
+import logging
 import os
 import re
 import shlex
+
+log = logging.getLogger(__name__)
 
 # Dangerous CLI binaries forbidden in shell execution
 DANGEROUS_COMMANDS = {
@@ -77,6 +80,7 @@ def validate_command(command: str) -> None:
         cmd_clean = command.replace("&&", " ").replace("||", " ").replace("|", " ").replace(">", " ").replace("<", " ")
         tokens = shlex.split(cmd_clean)
     except Exception:
+        log.debug("shlex.split failed, falling back to str.split", exc_info=True)
         tokens = command.replace("&&", " ").replace("||", " ").replace("|", " ").split()
 
     for i, token in enumerate(tokens):

@@ -47,7 +47,9 @@ as an automatic fallback.
 stack (OCR/vision), the intent classifier, and reachable via manual override.
 **gemma4:e2b** (5.1B params, Q4_K_M, 7.2 GB) — warmed but not primary.
 **qwen3.5:4b** (3.4 GB) — was the Tier 2/3 automation fallback before the cloud-first
-revamp; still installed, no longer wired into `TASK_ROUTING` by default.
+revamp; still actively wired today for `tech_brief` intent (`clients/router.py:938`) plus
+query rewriting and conversation-fold/history compaction (`tools/websearch.py`,
+`store/conversation.py`) — not fully retired.
 
 **Why 12b-mlx over e2b:** τ2-bench agentic tool use 86.4% (vs e2b 29.4%) — 3x better at tool calling. Math 89.2%, code 80%, science 84.3%. Slower (~12.6s vs 4.7s for short answers) but worth it for quality.
 
