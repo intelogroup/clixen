@@ -123,13 +123,24 @@ def test_watched_senders_whitespace_only_entries_skipped():
         assert len(m.WATCHED_SENDERS) == 2
 
 
-def test_watched_senders_empty_env_uses_defaults():
-    """Empty WATCHED_SENDERS must fall back to the hardcoded default list."""
+def test_watched_senders_empty_env_returns_empty():
+    """Empty WATCHED_SENDERS must yield an empty list (no hardcoded personal
+    inboxes as silent defaults — a fresh user's monitor shouldn't watch the
+    author's mailboxes)."""
     with patch.dict(os.environ, {"WATCHED_SENDERS": ""}):
         import importlib
         import jobs.inbox_monitor_job as m
         importlib.reload(m)
-        assert len(m.WATCHED_SENDERS) > 0
+        assert m.WATCHED_SENDERS == []
+
+
+def test_watched_senders_env_parses_list():
+    """WATCHED_SENDERS env (comma-separated) populates the list."""
+    with patch.dict(os.environ, {"WATCHED_SENDERS": "a@x.com, b@y.com"}):
+        import importlib
+        import jobs.inbox_monitor_job as m
+        importlib.reload(m)
+        assert m.WATCHED_SENDERS == ["a@x.com", "b@y.com"]
 
 
 # ── summarize_text edge cases ────────────────────────────────────────────────────
