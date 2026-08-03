@@ -1,6 +1,7 @@
 .env
 .env.local
 *.env
+.env.stale-root-backup
 models/
 tools-harness/uploads/
 tools-harness/data/
@@ -10,9 +11,7 @@ tools-harness/data/
 *.out
 *.err.log
 
-# OAuth tokens / credentials
-gmail-mcp/credentials.json
-gmail-mcp/token.json
+# OAuth tokens / credentials (bare patterns catch google-mcp/ and gmail-mcp/)
 token.json
 credentials.json
 
@@ -60,4 +59,3 @@ tools-harness/scores_md.md
 tools-harness/screenshot.png
 tools-harness/world_cup_scores.*
 .claude/
-tools-harness/ringback/voice.docker.env
