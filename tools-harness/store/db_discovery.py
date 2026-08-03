@@ -21,6 +21,16 @@ EMBED_MODEL = "nomic-embed-text"
 # ── Known DB registry ─────────────────────────────────────────────────────────
 # Add any LanceDB or SQLite path you want the harness to be able to search.
 # schema_map: how to extract (text, source, url) from each table's row schema.
+#
+# clixen's own stores are always registered. The author's personal projects
+# (zl_master_board, malaria_thesis, qwen demo) were historically hardcoded here —
+# they're now registered only when CLIXEN_EXTRA_DBS=1 is set, so a fresh clone
+# doesn't carry someone else's ~/Developer paths. Any additional DBs can be
+# injected via CLIXEN_EXTRA_LANCE_DBS / CLIXEN_EXTRA_SQLITE_DBS (JSON dicts,
+# same schema as below).
+
+_EXTRA_LANCE_ENV = os.environ.get("CLIXEN_EXTRA_LANCE_DBS", "")
+_EXTRA_SQLITE_ENV = os.environ.get("CLIXEN_EXTRA_SQLITE_DBS", "")
 
 KNOWN_LANCE_DBS = {
     "clixen": {
@@ -34,62 +44,66 @@ KNOWN_LANCE_DBS = {
         "embed_dim":    768,
         "embed_model":  "nomic-embed-text",  # via Ollama
     },
-    "zl_master_board_en": {
-        "path":   str(Path.home() / "Developer/zl_master_board/polo-ingest/data/zl_vector_db"),
-        "tables": ["zl_docs_en"],
-        "text_field":   "text",
-        "source_field": "source",
-        "url_field":    None,
-        "owner":        "zl_master_board",
-        "writable":     False,
-        "embed_dim":    1024,
-        "embed_model":  "mixedbread-ai/mxbai-embed-large-v1",  # via fastembed
-    },
-    "zl_master_board_fr": {
-        "path":   str(Path.home() / "Developer/zl_master_board/polo-ingest/data/zl_vector_db"),
-        "tables": ["zl_docs_fr"],
-        "text_field":   "text",
-        "source_field": "source",
-        "url_field":    None,
-        "owner":        "zl_master_board",
-        "writable":     False,
-        "embed_dim":    1024,
-        "embed_model":  "intfloat/multilingual-e5-large",  # via fastembed
-    },
-    "malaria_thesis_en": {
-        "path":   str(Path.home() / "Developer/malaria_thesis/data/vector_db"),
-        "tables": ["malaria_thesis_docs"],
-        "text_field":   "text",
-        "source_field": "source",
-        "url_field":    None,
-        "owner":        "malaria_thesis",
-        "writable":     False,
-        "embed_dim":    1024,
-        "embed_model":  "mixedbread-ai/mxbai-embed-large-v1",
-    },
-    "malaria_thesis_fr": {
-        "path":   str(Path.home() / "Developer/malaria_thesis/data/vector_db"),
-        "tables": ["malaria_thesis_docs_fr"],
-        "text_field":   "text",
-        "source_field": "source",
-        "url_field":    None,
-        "owner":        "malaria_thesis",
-        "writable":     False,
-        "embed_dim":    1024,
-        "embed_model":  "intfloat/multilingual-e5-large",
-    },
-    "qwen_lancedb_demo": {
-        "path":   str(Path.home() / "Developer/qwen-opensrc-lancedb-demo/lancedb_data"),
-        "tables": ["zod_chunks"],
-        "text_field":   "text",
-        "source_field": "file_path",
-        "url_field":    None,
-        "owner":        "qwen-opensrc-lancedb-demo",
-        "writable":     False,
-        "embed_dim":    768,
-        "embed_model":  "nomic-embed-text",
-    },
 }
+
+if os.environ.get("CLIXEN_EXTRA_DBS") == "1":
+    KNOWN_LANCE_DBS.update({
+        "zl_master_board_en": {
+            "path":   str(Path.home() / "Developer/zl_master_board/polo-ingest/data/zl_vector_db"),
+            "tables": ["zl_docs_en"],
+            "text_field":   "text",
+            "source_field": "source",
+            "url_field":    None,
+            "owner":        "zl_master_board",
+            "writable":     False,
+            "embed_dim":    1024,
+            "embed_model":  "mixedbread-ai/mxbai-embed-large-v1",  # via fastembed
+        },
+        "zl_master_board_fr": {
+            "path":   str(Path.home() / "Developer/zl_master_board/polo-ingest/data/zl_vector_db"),
+            "tables": ["zl_docs_fr"],
+            "text_field":   "text",
+            "source_field": "source",
+            "url_field":    None,
+            "owner":        "zl_master_board",
+            "writable":     False,
+            "embed_dim":    1024,
+            "embed_model":  "intfloat/multilingual-e5-large",  # via fastembed
+        },
+        "malaria_thesis_en": {
+            "path":   str(Path.home() / "Developer/malaria_thesis/data/vector_db"),
+            "tables": ["malaria_thesis_docs"],
+            "text_field":   "text",
+            "source_field": "source",
+            "url_field":    None,
+            "owner":        "malaria_thesis",
+            "writable":     False,
+            "embed_dim":    1024,
+            "embed_model":  "mixedbread-ai/mxbai-embed-large-v1",
+        },
+        "malaria_thesis_fr": {
+            "path":   str(Path.home() / "Developer/malaria_thesis/data/vector_db"),
+            "tables": ["malaria_thesis_docs_fr"],
+            "text_field":   "text",
+            "source_field": "source",
+            "url_field":    None,
+            "owner":        "malaria_thesis",
+            "writable":     False,
+            "embed_dim":    1024,
+            "embed_model":  "intfloat/multilingual-e5-large",
+        },
+        "qwen_lancedb_demo": {
+            "path":   str(Path.home() / "Developer/qwen-opensrc-lancedb-demo/lancedb_data"),
+            "tables": ["zod_chunks"],
+            "text_field":   "text",
+            "source_field": "file_path",
+            "url_field":    None,
+            "owner":        "qwen-opensrc-lancedb-demo",
+            "writable":     False,
+            "embed_dim":    768,
+            "embed_model":  "nomic-embed-text",
+        },
+    })
 
 KNOWN_SQLITE_DBS = {
     "clixen_raw": {
@@ -100,15 +114,34 @@ KNOWN_SQLITE_DBS = {
         "owner":    "clixen",
         "writable": True,
     },
-    "zl_queue": {
+}
+
+if os.environ.get("CLIXEN_EXTRA_DBS") == "1":
+    KNOWN_SQLITE_DBS["zl_queue"] = {
         "path":     str(Path.home() / "Developer/zl_master_board/polo-ingest/queue.db"),
         "table":    "chunks",
         "text_field":   "text",
         "source_field": "source",
         "owner":    "zl_master_board",
         "writable": False,
-    },
-}
+    }
+
+
+def _json_extra(raw: str) -> dict:
+    """Parse a CLIXEN_EXTRA_*_DBS env JSON blob into a dict, best-effort."""
+    if not raw.strip():
+        return {}
+    try:
+        import json
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        log.warning("Invalid CLIXEN_EXTRA_*_DBS JSON — ignoring")
+        return {}
+
+
+KNOWN_LANCE_DBS.update(_json_extra(_EXTRA_LANCE_ENV))
+KNOWN_SQLITE_DBS.update(_json_extra(_EXTRA_SQLITE_ENV))
 
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
@@ -308,12 +341,24 @@ def search_all(
 
 # ── Discovery ─────────────────────────────────────────────────────────────────
 
-def discover_lance_dbs(root: str = str(Path.home() / "Developer")) -> list[str]:
+def _discovery_root() -> str:
+    """Where the discovery scan searches. Default: the repo's own data dir
+    (safe, zero surprise). Opt into scanning ~/Developer (or any root) via
+    CLIXEN_DISCOVERY_ROOT — scanning a whole home/Developer tree recursively
+    is slow and may surface unrelated private DBs."""
+    env_root = os.environ.get("CLIXEN_DISCOVERY_ROOT", "").strip()
+    if env_root:
+        return env_root
+    return str(Path(__file__).resolve().parent.parent / "data")
+
+
+def discover_lance_dbs(root: str | None = None) -> list[str]:
     """
     Scan for top-level LanceDB directories under root.
     A valid LanceDB root is a *.lance directory whose parent does NOT end in .lance
     (excludes internal shard files which are nested .lance dirs inside the DB).
     """
+    root = root or _discovery_root()
     known_paths = {cfg["path"] for cfg in KNOWN_LANCE_DBS.values()}
     found = []
     skip = {".venv", "node_modules", "miniforge3", ".git", "__pycache__"}
@@ -331,8 +376,9 @@ def discover_lance_dbs(root: str = str(Path.home() / "Developer")) -> list[str]:
     return found
 
 
-def discover_sqlite_dbs(root: str = str(Path.home() / "Developer")) -> list[str]:
+def discover_sqlite_dbs(root: str | None = None) -> list[str]:
     """Scan for .db / .sqlite files under root not already registered."""
+    root = root or _discovery_root()
     known_paths = {cfg["path"] for cfg in KNOWN_SQLITE_DBS.values()}
     found = []
     for p in Path(root).rglob("*.db"):

@@ -37,12 +37,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
 ]
 
-# Paths to the existing gmail-mcp credentials (already authenticated)
-_DEFAULT_CREDENTIALS = os.path.expanduser(
-    "~/Developer/gmail-mcp/credentials.json"
+# Paths to the Google OAuth credentials (already authenticated). Defaults to the
+# in-repo google-mcp/ dir — same pattern as tools/google_auth.py. Override via
+# GOOGLE_CREDENTIALS_PATH / GOOGLE_TOKEN_PATH in .env.
+_DEFAULT_CREDENTIALS = str(
+    Path(__file__).resolve().parent.parent.parent / "google-mcp" / "credentials.json"
 )
-_DEFAULT_TOKEN = os.path.expanduser(
-    "~/Developer/gmail-mcp/token.json"
+_DEFAULT_TOKEN = str(
+    Path(__file__).resolve().parent.parent.parent / "google-mcp" / "token.json"
 )
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import path from 'path';
 
 const CREDENTIALS_PATH = './credentials.json';
 const TOKEN_PATH = './token.json';
-const BASE_DIR = '/Users/kalinovdameus/Downloads/maxi-attachments';
+const BASE_DIR = process.env.ATTACHMENT_DOWNLOAD_DIR || path.join(process.env.HOME || '.', 'Downloads', 'clixen-attachments');
 
 const creds = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf8'));
 const { client_id, client_secret } = creds.web;
