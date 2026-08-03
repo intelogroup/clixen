@@ -303,42 +303,41 @@ def test_calendar_free_with_malformed_datetime_fails_closed(monkeypatch):
     ) is False
 
 
-def test_nested_boolean_conditions_not_supported_fails_closed():
-    # eval_condition only reads top-level 'all'/'any' — a rule nested inside
-    # another 'all'/'any' has no 'op' key, so eval_rule's op lookup returns
-    # None and it fails closed. This is a real limitation (no AND-of-ORs),
-    # pinned here rather than left as a silent surprise for a future author
-    # who tries to nest conditions.
+def test_nested_boolean_conditions_supported():
+    # eval_rule recurses into a nested {'all'/'any': [...]} block (gate_rules
+    # line 44) — lets an LLM-authored condition express "(A and B) or (C and D)"
+    # as one condition instead of needing an extra workflow step. Pinned here so
+    # a future refactor doesn't silently break AND-of-ORs.
     nested = {"any": [
         {"all": [{"field": "x", "op": "eq", "value": 1}]},
         {"field": "y", "op": "eq", "value": 2},
     ]}
     results = {"x": 1, "y": 2}
-    # The first branch of the 'any' (the nested 'all' dict) evaluates to
-    # False (no 'op' key), but the second branch (a real flat rule) is
-    # True, so eval_condition still returns True via that second branch —
-    # NOT because nesting worked, but because 'any' short-circuits on ANY
-    # passing rule and one of the two happens to be flat.
+    # 'any' short-circuits on the flat branch even if the nested branch is False...
     assert gate_rules.eval_condition(nested, results) is True
-    # Prove the nested branch itself is inert (not silently "working"):
-    assert gate_rules.eval_rule(nested["any"][0], results) is False
+    # ...and the nested branch itself evaluates correctly (NOT inert).
+    assert gate_rules.eval_rule(nested["any"][0], results) is True
+    # Fail-closed when no branch matches.
+    assert gate_rules.eval_condition({"any": [
+        {"all": [{"field": "x", "op": "eq", "value": 99}]},
+    ]}, results) is False
 
 
-def test_nested_boolean_misuse_logs_a_distinct_warning(caplog):
-    # Fixed 2026-07-16: nested-boolean misuse and a genuinely unknown op
-    # both still fail closed (never raise — eval_condition is called
-    # unguarded in the engine), but they now log distinguishably so a
-    # server operator can tell "someone tried to nest conditions" apart
-    # from "someone typo'd an op name" instead of both being silent.
-    with caplog.at_level("WARNING", logger="jobs.gate_rules"):
-        gate_rules.eval_rule({"all": [{"field": "x", "op": "eq", "value": 1}]}, {"x": 1})
-    assert any("nested boolean condition" in r.message for r in caplog.records)
-
-    caplog.clear()
+def test_unknown_op_logs_a_distinct_warning(caplog):
+    # A genuinely unknown op still fails closed (never raises — eval_condition
+    # is called unguarded in the engine) but logs a distinct warning so an
+    # operator can tell "typo'd op name" apart from any other failure. Nested
+    # boolean blocks are a supported feature (see the test above) and must NOT
+    # log the unknown-op warning.
     with caplog.at_level("WARNING", logger="jobs.gate_rules"):
         gate_rules.eval_rule({"field": "x", "op": "made_up_op", "value": 1}, {"x": 1})
     assert any("unknown condition op" in r.message for r in caplog.records)
     assert not any("nested boolean condition" in r.message for r in caplog.records)
+
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="jobs.gate_rules"):
+        gate_rules.eval_rule({"all": [{"field": "x", "op": "eq", "value": 1}]}, {"x": 1})
+    assert not any("unknown condition op" in r.message for r in caplog.records)
 
 
 def test_interpolation_and_condition_coexist_on_the_same_results_dict(monkeypatch):
@@ -411,6 +410,6 @@ if __name__ == "__main__":
     test_condition_without_jump_targets_falls_through_linearly(None)
     test_forgotten_terminal_goto_falls_through_to_next_declared_step(None)
     test_calendar_free_with_malformed_datetime_fails_closed(None)
-    test_nested_boolean_conditions_not_supported_fails_closed()
+    test_nested_boolean_conditions_supported()
     test_tool_call_step_failure_now_engages_failure_mode(None)
     print("branching edge-case tests (non-monkeypatch subset) passed — run via pytest for full coverage")
