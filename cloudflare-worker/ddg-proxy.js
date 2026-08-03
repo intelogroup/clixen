@@ -1,12 +1,19 @@
 export default {
   async fetch(request) {
+    // Narrow CORS: only allow the local Clixen app (localhost:9234) and localhost
+    // dev origins, instead of the previous wildcard that let any website scrape
+    // through this worker.
+    const origin = request.headers.get('Origin') || '';
+    const corsHeader = (origin === 'http://localhost:9234' || origin.startsWith('http://localhost:'))
+      ? { 'Access-Control-Allow-Origin': origin }
+      : {};
     try {
       const url = new URL(request.url);
       const query = url.searchParams.get('q') || '';
       if (!query) {
         return new Response(JSON.stringify({ error: 'Missing ?q= parameter' }), {
           status: 400,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          headers: { 'Content-Type': 'application/json', ...corsHeader },
         });
       }
 
@@ -45,12 +52,12 @@ export default {
       }
 
       return new Response(JSON.stringify({ query, results, total: results.length }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        headers: { 'Content-Type': 'application/json', ...corsHeader },
       });
     } catch (err) {
       return new Response(JSON.stringify({ error: err.message }), {
         status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        headers: { 'Content-Type': 'application/json', ...corsHeader },
       });
     }
   },
