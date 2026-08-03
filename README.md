@@ -404,14 +404,31 @@ The only local-only carve-out is the `ocr` intent (no multimodal support in the 
 
 ## Quick Start
 
-### 1. Requirements
-Ensure you have Docker running (for SearXNG) and Ollama installed.
+### 1. One-shot setup (fresh clone)
+
+```bash
+./setup.sh                 # submodules + venv + npm + model guidance + .env
+# optionally: ./setup.sh --use-uv  (uv sync instead of pip)
+#             ./setup.sh --no-models (code-only, skip model pulls)
+```
+
+This initializes the `ringback` submodule, installs Python + Node deps, guides
+model downloads, and creates `tools-harness/.env` from `.env.example`. Then:
+
+```bash
+# 2. edit tools-harness/.env with your API keys (see .env.example for where to get them)
+# 3. health check:
+cd tools-harness && python doctor.py
+# 4. run the web UI (no keys needed for basic chat — cloud-first with local fallback):
+python chat_ui.py
+```
 
 ### 2. Production: consolidated core service
 `core.py` runs `chat_ui` + `telegram_bot` + `email_watch` + `task_worker` (background job
 queue + scheduled automations) as threads in **one** process — this is what's actually
 running day-to-day, managed by launchd:
 ```bash
+tools-harness/launchd/install-launchd.sh   # generate + install services for THIS machine
 launchctl load ~/Library/LaunchAgents/com.clixen.core.plist
 # after editing any code core.py imports, restart the whole process (threads share it —
 # a file edit needs a full process restart, not just a thread respawn):
@@ -443,3 +460,50 @@ launchctl load ~/Library/LaunchAgents/com.brabble.agent.plist
 ```
 Wake word → `brabble_hook.py` (cold subprocess, POSTs to the already-warm `chat_ui.py`
 server rather than cold-importing the harness) → streamed reply spoken sentence-by-sentence.
+
+---
+
+## Prerequisites & API Keys
+
+Zero API keys are required for basic local chat (cloud-first with local Ollama fallback).
+Each feature needs its own key — see `tools-harness/.env.example` for the full list with
+"where to get" links:
+
+| Feature | Keys | Needed for |
+|---------|------|-----------|
+| Main agent | `DEEPSEEK_API_KEY` (primary), `OPENROUTER_API_KEY` (fallback/vision) | chat + agentic tool use |
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID` | Telegram bot + scheduled message automations |
+| Web search | `SEARXNG_URL` (self-hosted), optional `TAVILY_API_KEY`/`EXA_API_KEY`/`BRAVE_SEARCH_API_KEY` | search pipeline |
+| Gmail/Calendar/Docs | `GOOGLE_CREDENTIALS_PATH`, `GOOGLE_TOKEN_PATH` | Google tools + email automations |
+| TTS/STT | `KOKORO_ONNX_PATH`, `KOKORO_VOICES_PATH`, `WHISPER_MODEL_PATH` | voice replies (defaults to `<repo>/models/`) |
+| WhatsApp | `WHATSAPP_BOT_TOKEN` (optional hardening) | WhatsApp bridge + bot |
+
+Other required software: **Ollama** (https://ollama.com), **Docker** (for SearXNG).
+
+## Ports
+
+| Port | Service | Bind |
+|------|---------|------|
+| 9234 | Web UI (`chat_ui.py`) | 127.0.0.1 |
+| 9235 | WhatsApp bridge (Baileys) | 127.0.0.1 |
+| 9236 | WhatsApp bot | 127.0.0.1 |
+| 9237 | Kokoro TTS daemon | 0.0.0.0 (ringback docker needs it; `KOKORO_BIND_HOST` to override) |
+| 9238 | Voiceprint daemon | 127.0.0.1 |
+| 11434 | Ollama | localhost |
+| 8888 | SearXNG | localhost |
+| 3100 | Autopilot Mail (optional) | localhost |
+
+All services bind loopback by default. The only non-loopback socket is the Kokoro TTS
+daemon (deliberate — the ringback docker container reaches it via `host.docker.internal`);
+set `KOKORO_AUTH_TOKEN` to gate it.
+
+## Auth & Multi-User Notes
+
+- The web UI is a **single-owner local account** model. Requests from `127.0.0.1`
+  auto-authenticate as the owner (loopback = trusted); non-local requests require a
+  session cookie.
+- `G4L_DEV_MODE=1` is **off by default** and skips auth on `/chat/local-agent/*`
+  (full filesystem read/write/exec) — only enable it for local development.
+- If the app is ever exposed beyond loopback (tunnel/port-forward), set `DEV_EMAIL` +
+  `DEV_PASSWORD` in `.env` to lock down the owner account, and require auth on the
+  network-facing routes (they already check `_require_auth`).
