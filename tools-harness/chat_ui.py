@@ -28,6 +28,7 @@ import subprocess
 import queue as queue_mod
 import tempfile
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -93,6 +94,7 @@ class LocalLoginRequest(BaseModel):
 
 class LocalResetPasswordRequest(BaseModel):
     email: str
+    current_password: str
     password: str
 
 
@@ -332,6 +334,7 @@ def _now_iso() -> str:
 def _default_workspace_state() -> dict:
     return {
         "session_secret": secrets.token_hex(32),
+        "auth_version": 1,
         "account": {
             "email": "owner@local.dev",
             "display_name": "Owner",
@@ -388,6 +391,8 @@ def _load_workspace_state() -> dict:
         if state.get("session_secret") == _LEAKED_SESSION_SECRET:
             _log.warning("Rotating compromised session_secret from git history")
         state["session_secret"] = secrets.token_hex(32)
+    if not state.get("auth_version"):
+        state["auth_version"] = 1
     return state
 
 
@@ -441,6 +446,8 @@ def _unsign_session(token: str) -> dict | None:
         payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
         if payload.get("exp", 0) < int(datetime.now(timezone.utc).timestamp()):
             return None
+        if payload.get("ver", 1) != _workspace_state.get("auth_version", 1):
+            return None
         return payload
     except Exception:
         return None
@@ -450,6 +457,7 @@ def _set_session_cookie(response: Response, email: str) -> None:
     token = _sign_session(
         {
             "email": email,
+            "ver": _workspace_state.get("auth_version", 1),
             "exp": int(datetime.now(timezone.utc).timestamp()) + SESSION_TTL_SEC,
         }
     )
@@ -468,7 +476,14 @@ def _clear_session_cookie(response: Response) -> None:
 
 
 def _dev_auto_auth_setup() -> None:
-    """In dev mode, auto-sync the account with DEV_EMAIL / DEV_PASSWORD env vars."""
+    """Dev-only bootstrap: create the account from CLIXEN_DEV_MODE env vars.
+
+    Never overwrites an existing account's password — an operator who sets a
+    real password in the UI keeps it across restarts. Run only when
+    CLIXEN_DEV_MODE=1 so production services never touch the account.
+    """
+    if os.environ.get("CLIXEN_DEV_MODE") != "1":
+        return
     dev_email = os.environ.get("DEV_EMAIL", "").strip()
     dev_password = os.environ.get("DEV_PASSWORD", "")
     if not dev_email or not dev_password:
@@ -476,7 +491,7 @@ def _dev_auto_auth_setup() -> None:
     dev_email = dev_email.lower()
     with _workspace_lock:
         account = _workspace_state.get("account")
-        if not account:
+        if not account or not account.get("email") or not account.get("password_hash"):
             salt_hex, password_hash = _hash_password(dev_password)
             _workspace_state["account"] = {
                 "email": dev_email,
@@ -489,11 +504,7 @@ def _dev_auto_auth_setup() -> None:
                 "created_at": _now_iso(),
                 "last_login_at": _now_iso(),
             }
-            _persist_workspace_state()
-        elif not _verify_password(dev_password, account["password_salt"], account["password_hash"]):
-            salt_hex, password_hash = _hash_password(dev_password)
-            account["password_salt"] = salt_hex
-            account["password_hash"] = password_hash
+            _workspace_state["auth_version"] = int(_workspace_state.get("auth_version", 1)) + 1
             _persist_workspace_state()
 
 
@@ -528,6 +539,44 @@ def _require_auth(request: Request) -> dict:
     if not account:
         raise HTTPException(status_code=401, detail="authentication required")
     return account
+
+
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+_LOGIN_ATTEMPTS_LOCK = threading.Lock()
+_LOGIN_MAX_ATTEMPTS = 10
+_LOGIN_WINDOW_SEC = 300
+
+
+def _login_throttled(request: Request) -> bool:
+    """Return True if the client has exceeded the failed-login rate limit.
+
+    In-memory windowed counter keyed by client IP. 10 failed attempts in 5
+    minutes -> lockout. Successful login clears the counter.
+    """
+    client_host = request.client.host if request.client else "unknown"
+    now = time.time()
+    with _LOGIN_ATTEMPTS_LOCK:
+        window = [t for t in _LOGIN_ATTEMPTS.get(client_host, []) if now - t < _LOGIN_WINDOW_SEC]
+        if len(window) >= _LOGIN_MAX_ATTEMPTS:
+            _LOGIN_ATTEMPTS[client_host] = window
+            return True
+        _LOGIN_ATTEMPTS[client_host] = window
+        return False
+
+
+def _login_attempt_failed(request: Request) -> None:
+    client_host = request.client.host if request.client else "unknown"
+    now = time.time()
+    with _LOGIN_ATTEMPTS_LOCK:
+        window = [t for t in _LOGIN_ATTEMPTS.get(client_host, []) if now - t < _LOGIN_WINDOW_SEC]
+        window.append(now)
+        _LOGIN_ATTEMPTS[client_host] = window
+
+
+def _login_attempt_cleared(request: Request) -> None:
+    client_host = request.client.host if request.client else "unknown"
+    with _LOGIN_ATTEMPTS_LOCK:
+        _LOGIN_ATTEMPTS.pop(client_host, None)
 
 
 def _public_user(account: dict | None, authenticated: bool) -> dict:
@@ -849,7 +898,7 @@ async def webhook_trigger(workflow_id: str, request: Request, secret: str = ""):
 
 @app.post("/api/auth/register")
 def auth_register(req: LocalRegisterRequest, response: Response):
-    if req.password and len(req.password) < 8:
+    if len(req.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     with _workspace_lock:
         email = req.email.strip().lower()
@@ -857,23 +906,16 @@ def auth_register(req: LocalRegisterRequest, response: Response):
             raise HTTPException(400, "Email is required")
         existing = _workspace_state.get("account")
         # Account takedown guard: once an account is configured (has a password
-        # hash), a different email cannot overwrite it via register. A fresh /
-        # unconfigured account (empty password_hash) can still be claimed by the
-        # first caller — that's the legitimate first-run setup path.
-        if (
-            existing
-            and existing.get("email")
-            and existing.get("password_hash")
-            and existing["email"].lower() != email
-        ):
+        # hash), register is locked out for ANY email — same-email re-register
+        # must not silently reset the password. Only a fresh/unconfigured
+        # account (empty password_hash) can be claimed by the first caller —
+        # that's the legitimate first-run setup path.
+        if existing and existing.get("password_hash"):
             raise HTTPException(409, "An account already exists for this workspace")
         display_name = req.display_name.strip() or "Local User"
         workspace_name = req.workspace_name.strip() or "Local Workspace"
         role = req.role.strip() or "Owner"
-        if req.password:
-            salt_hex, password_hash = _hash_password(req.password)
-        else:
-            salt_hex, password_hash = "", ""
+        salt_hex, password_hash = _hash_password(req.password)
         _workspace_state["account"] = {
             "email": email,
             "display_name": display_name,
@@ -885,6 +927,7 @@ def auth_register(req: LocalRegisterRequest, response: Response):
             "created_at": _now_iso(),
             "last_login_at": _now_iso(),
         }
+        _workspace_state["auth_version"] = int(_workspace_state.get("auth_version", 1)) + 1
         _persist_workspace_state()
         account = deepcopy(_workspace_state["account"])
     _set_session_cookie(response, email)
@@ -892,23 +935,29 @@ def auth_register(req: LocalRegisterRequest, response: Response):
 
 
 @app.post("/api/auth/login")
-def auth_login(req: LocalLoginRequest, response: Response):
+def auth_login(req: LocalLoginRequest, request: Request, response: Response):
+    if _login_throttled(request):
+        raise HTTPException(429, "Too many failed login attempts — try again later")
     with _workspace_lock:
         account = deepcopy(_workspace_state.get("account"))
         if not account:
             raise HTTPException(404, "No local account configured")
         email = req.email.strip().lower()
         if email != account["email"].lower():
+            _login_attempt_failed(request)
             raise HTTPException(401, "Invalid email or password")
         if not account.get("password_hash"):
             # No password configured — require explicit setup via DEV_PASSWORD /
             # register instead of silently accepting any password.
+            _login_attempt_failed(request)
             raise HTTPException(401, "No password configured for this account")
         if not _verify_password(req.password, account["password_salt"], account["password_hash"]):
+            _login_attempt_failed(request)
             raise HTTPException(401, "Invalid email or password")
         _workspace_state["account"]["last_login_at"] = _now_iso()
         _persist_workspace_state()
         account = deepcopy(_workspace_state["account"])
+    _login_attempt_cleared(request)
     _set_session_cookie(response, account["email"])
     return _build_workspace_payload(account)
 
@@ -924,10 +973,17 @@ def auth_reset_password(req: LocalResetPasswordRequest, response: Response):
         email = req.email.strip().lower()
         if email != account["email"].lower():
             raise HTTPException(401, "Email does not match local account")
+        if not account.get("password_hash"):
+            raise HTTPException(401, "No password configured for this account")
+        # Require the current password so a leaked email alone can't reset the
+        # account (was email-only before — trivial account takeover).
+        if not _verify_password(req.current_password, account["password_salt"], account["password_hash"]):
+            raise HTTPException(401, "Current password is incorrect")
         salt_hex, password_hash = _hash_password(req.password)
         _workspace_state["account"]["password_salt"] = salt_hex
         _workspace_state["account"]["password_hash"] = password_hash
         _workspace_state["account"]["last_login_at"] = _now_iso()
+        _workspace_state["auth_version"] = int(_workspace_state.get("auth_version", 1)) + 1
         _persist_workspace_state()
         account = deepcopy(_workspace_state["account"])
     _set_session_cookie(response, account["email"])
@@ -2167,7 +2223,7 @@ async def chat_local_agent_stream(
 ):
     """Run a query through the LangGraph local-agent with SSE streaming."""
     import os as _os
-    if not _os.environ.get("G4L_DEV_MODE"):
+    if not _os.environ.get("CLIXEN_DEV_MODE"):
         _require_auth(request)
 
     if not message:
@@ -2240,7 +2296,7 @@ async def chat_local_agent_stream(
 async def local_agent_pending_confirmations(request: Request):
     """List bash_exec calls currently blocked awaiting human approve/deny."""
     import os as _os
-    if not _os.environ.get("G4L_DEV_MODE"):
+    if not _os.environ.get("CLIXEN_DEV_MODE"):
         _require_auth(request)
     from tools.confirmation import list_pending
     return {"pending": list_pending()}
@@ -2251,7 +2307,7 @@ async def local_agent_confirm(request: Request):
     """Approve or deny a pending bash_exec/github_* confirmation (tools/confirmation.py).
     Runs the real tool call synchronously on approval and returns its result."""
     import os as _os
-    if not _os.environ.get("G4L_DEV_MODE"):
+    if not _os.environ.get("CLIXEN_DEV_MODE"):
         _require_auth(request)
     body = await request.json()
     token = body.get("token", "")
