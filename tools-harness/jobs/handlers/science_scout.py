@@ -54,7 +54,14 @@ PAPERQA_TIMEOUT_S = 20
 
 # ponytail: same model the rest of the harness uses for cloud calls — keeps
 # paper-qa off its OpenAI default without adding a second provider to manage.
-_PAPERQA_LLM = "openrouter/deepseek/deepseek-v4-flash"
+# NOTE: was "openrouter/deepseek/deepseek-v4-flash" — the openrouter/ prefix
+# routes DeepSeek through OpenRouter, which 404s on the account's
+# provider-restricted OpenRouter key (allowed: anthropic/cloudflare/
+# google-ai-studio), so every paper-qa extraction silently degraded to
+# snippet-only decisions. The harness default (deepseek/… without the
+# openrouter/ prefix) hits DeepSeek's direct API instead.
+from clients.cloud_client import DEFAULT_CLOUD_MODEL as _HARNESS_DEFAULT_MODEL
+_PAPERQA_LLM = _HARNESS_DEFAULT_MODEL
 _PAPERQA_EMBEDDING = "openai/text-embedding-3-small"
 
 
