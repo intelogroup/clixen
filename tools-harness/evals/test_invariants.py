@@ -217,11 +217,13 @@ def test_budget_raises_only_at_the_cap(monkeypatch):
         cost_guard.check_budget()
 
 
-def test_budget_default_is_the_stale_1m_when_env_absent():
-    """Documents a real trap: a standalone script importing cost_guard without
-    load_dotenv() sees 1T, not whatever .env says."""
+def test_budget_default_is_sane_when_env_absent():
+    """The default budget must be a REAL cap, not a no-op. The old 1e12-token
+    default (≈ unlimited cloud spend) only became a real guard once
+    CLOUD_DAILY_TOKEN_BUDGET was set. Now 5M/day by default so a standalone
+    script importing cost_guard without load_dotenv() is still protected."""
     src = (_HARNESS / "clients/cost_guard.py").read_text()
-    assert 'os.environ.get("CLOUD_DAILY_TOKEN_BUDGET", 1_000_000_000_000)' in src
+    assert 'os.environ.get("CLOUD_DAILY_TOKEN_BUDGET", 5_000_000)' in src
 
 
 # ------------------------------------------------------------------ misc claims
