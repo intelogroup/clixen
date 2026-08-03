@@ -8,6 +8,7 @@ workflow_instance row, so one handler reads that and acts.
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
 import threading
