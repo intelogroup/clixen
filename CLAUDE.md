@@ -5,7 +5,7 @@ Local LLM harness + chat app, on-device (Apple M4, 24 GB unified memory).
 - **Web UI**: http://localhost:9234 — vanilla HTML/JS, FastAPI, SSE streaming
 - **Telegram + WhatsApp bots**: one launchd job supervising both
 - **Voice**: Brabble (wake-word) + ringback (real SIP phone calls)
-- **Repo vs package name**: repo dir is `clixen`; package/README/launchd prefix (`com.gemma4llama.*`) still say **gemma4llama**
+- **Repo vs package name**: repo dir is `clixen`; launchd label prefix renamed to `com.clixen.*` (2026-08-03); package name/README still say gemma4llama
 - **`AGENTS.md`**: deeper agent-dev reference — tool inventory, specialist dispatch, browser automation, connectors, voice. Points into `docs/agents/*.md` for full depth.
 - **Standalone script runs**: use `~/Developer/clixen/.venv/bin/python`, not system python — it has `mcp` and all deps; system python is too old/missing packages for some modules.
 
