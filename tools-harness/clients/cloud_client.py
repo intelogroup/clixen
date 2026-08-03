@@ -29,6 +29,7 @@ import random
 import re
 import threading
 import time
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as _FutureTimeoutError
 from pathlib import Path
@@ -282,6 +283,12 @@ OPENAI_FALLBACK_MODEL = "openai/gpt-4o-mini"
 # OCR reads, not agentic chains.
 CLOUD_VISION_MODEL = "openrouter/google/gemini-3.1-flash-lite"
 MAX_ROUNDS = 25
+
+# Hard cap on a single tool-execution round inside the cloud tool loop (same
+# rationale as ollama_client._TOOL_ROUND_TIMEOUT_S): a tool with no internal
+# timeout must not freeze the agent round forever. Override via
+# CLOUD_TOOL_TIMEOUT (seconds).
+_CLOUD_TOOL_TIMEOUT_S = float(os.environ.get("CLOUD_TOOL_TIMEOUT", "120"))
 
 _clients: dict[str, OpenAI] = {}
 _dead_providers: dict[str, float] = {}  # prefix -> timestamp when marked dead
@@ -768,7 +775,8 @@ def _run_tool_loop(
         # third-party loggers like googleapiclient) — see log_config.py's RunIdFilter.
         # Each submitted call needs its OWN copy — a Context object isn't reentrant, so
         # sharing one across concurrently-running workers throws "already entered".
-        with ThreadPoolExecutor(max_workers=min(len(tool_calls), 4)) as executor:
+        executor = ThreadPoolExecutor(max_workers=min(len(tool_calls), 4))
+        try:
             futures = {}
             for tc in tool_calls:
                 try:
@@ -783,10 +791,18 @@ def _run_tool_loop(
                 else:
                     futures[executor.submit(_ctx.run, execute_tool, tc.function.name, args)] = tc
 
+            # 2026-08-03: plain future.result() had NO timeout — a hung tool
+            # (stuck subprocess, dead socket) froze the whole agent round forever.
+            # Bound each wait; a timeout becomes a per-tool error. Explicit
+            # shutdown(wait=False) so a straggler can't block the round (the
+            # old `with` block's __exit__ did shutdown(wait=True)).
+            tool_timeout = round_timeout or _CLOUD_TOOL_TIMEOUT_S
             for future, tc in futures.items():
                 _t0 = time.time()
                 try:
-                    result = future.result()
+                    result = future.result(timeout=tool_timeout)
+                except concurrent.futures.TimeoutError:
+                    result = f"[error] tool execution timed out after {tool_timeout}s: {tc.function.name}"
                 except Exception as exc:
                     result = f"[error] tool execution failed: {exc}"
                 is_error = is_error_result(result)
@@ -810,6 +826,8 @@ def _run_tool_loop(
                 result = wrap_external_output(tc.function.name, result)
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
                 _inject_screenshot_image(messages, tc.function.name, result, model)
+        finally:
+            executor.shutdown(wait=False)
 
         if consecutive_errors >= 3 and not escalated and fallback_model and fallback_model != model:
             _log.warning(
@@ -974,6 +992,12 @@ def chat(
         _log.info("[cloud_client] %s's provider is dead, using fallback %s", model, CLOUD_FALLBACK_MODEL)
         model = CLOUD_FALLBACK_MODEL
         fallback_model = OPENAI_FALLBACK_MODEL
+        if _is_dead(model):
+            # CLOUD_FALLBACK_MODEL's own provider is also dead (e.g. OpenRouter
+            # out of credits) — skip its guaranteed-402 round trip too, straight
+            # to OpenAI last resort.
+            _log.info("[cloud_client] fallback %s's provider is also dead, using %s directly", model, OPENAI_FALLBACK_MODEL)
+            model = OPENAI_FALLBACK_MODEL
     if images and model != CLOUD_VISION_MODEL:
         # Only CLOUD_VISION_MODEL is verified to accept image_url content blocks —
         # DeepSeek 400s on them outright ("unknown variant image_url, expected

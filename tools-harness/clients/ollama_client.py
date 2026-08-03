@@ -7,6 +7,8 @@ import logging
 import os
 import re
 import time
+import concurrent.futures
+import contextvars
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import lru_cache
@@ -93,6 +95,17 @@ _TOOL_PROGRESS_LABELS: dict[str, str] = {
 
 _CLIENT = None
 
+# Ollama client requests previously had NO timeout (ollama lib defaults to
+# httpx Timeout(None) = infinite). A hung daemon / stuck model load / dead
+# host would block the calling thread forever. Set a bounded per-request
+# timeout; override via OLLAMA_TIMEOUT (seconds).
+_OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "300"))
+
+# Hard cap on a single tool-execution round inside the local tool loop. A tool
+# with no internal timeout (ffmpeg, yt-dlp, a stuck socket) must not freeze the
+# round forever. Default 120s — generous for real work, finite enough to unblock.
+_TOOL_ROUND_TIMEOUT_S = float(os.environ.get("OLLAMA_TOOL_TIMEOUT", "120"))
+
 
 def _get_client() -> ollama.Client:
     global _CLIENT
@@ -100,9 +113,9 @@ def _get_client() -> ollama.Client:
         return _CLIENT
     host = os.environ.get("OLLAMA_HOST") or os.environ.get("OLLAMA_BASE_URL")
     if host:
-        _CLIENT = ollama.Client(host=host)
+        _CLIENT = ollama.Client(host=host, timeout=_OLLAMA_TIMEOUT)
     else:
-        _CLIENT = ollama.Client()
+        _CLIENT = ollama.Client(timeout=_OLLAMA_TIMEOUT)
     return _CLIENT
 
 
@@ -548,22 +561,35 @@ def chat(
 
         # Parallelize tool execution for this round. Cap the pool so fast IO tools still
         # overlap, but model-invoking tools are serialized via the semaphore in _run_tool_gated.
+        # NOTE: plain ThreadPoolExecutor + future.result() has NO timeout — a hung tool
+        # (stuck subprocess, dead socket) would freeze the whole round forever. Bound
+        # each wait (tool round timeout) and never block pool shutdown on stragglers.
         check_aborted()
-        with ThreadPoolExecutor(max_workers=min(len(tool_calls), 4)) as executor:
-            future_to_call = {
-                executor.submit(_run_tool_gated, call.function.name, call.function.arguments): (
-                    i,
-                    call,
-                )
-                for i, call in enumerate(tool_calls)
-            }
+        tool_timeout = _TOOL_ROUND_TIMEOUT_S
+        executor = ThreadPoolExecutor(max_workers=min(len(tool_calls), 4))
+        try:
+            future_to_idx: dict = {}
+            for i, call in enumerate(tool_calls):
+                # copy_context() snapshots per-request contextvars (project root,
+                # run-id) from this thread; executor workers start with a fresh
+                # default context otherwise, which would drop the project root.
+                _ctx = contextvars.copy_context()
+                future_to_idx[
+                    executor.submit(_ctx.run, _run_tool_gated, call.function.name, call.function.arguments)
+                ] = i
             results_map = {}
-            for future in future_to_call:
-                idx, call = future_to_call[future]
+            for future, idx in future_to_idx.items():
                 try:
-                    results_map[idx] = future.result()
+                    results_map[idx] = future.result(timeout=tool_timeout)
+                except concurrent.futures.TimeoutError:
+                    results_map[idx] = (
+                        f"[error] tool execution timed out after {tool_timeout}s: "
+                        f"{tool_calls[idx].function.name}"
+                    )
                 except Exception as exc:
                     results_map[idx] = f"[error] tool execution failed: {exc}"
+        finally:
+            executor.shutdown(wait=False)
 
         for i, call in enumerate(tool_calls):
             fn_name = call.function.name
