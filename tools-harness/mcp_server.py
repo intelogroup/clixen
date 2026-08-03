@@ -16,8 +16,8 @@ Run:
 Or add to ~/.claude/settings.json mcpServers:
     {
       "clixen": {
-        "command": "/Users/kalinovdameus/Developer/clixen/.venv/bin/python3",
-        "args": ["/Users/kalinovdameus/Developer/clixen/tools-harness/mcp_server.py"]
+        "command": "<repo>/.venv/bin/python3",
+        "args": ["<repo>/tools-harness/mcp_server.py"]
       }
     }
 """

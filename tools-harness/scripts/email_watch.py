@@ -149,8 +149,8 @@ def _summarize(email_text: str, model: str) -> dict:
 
 def _self_test_emails() -> List[str]:
     return [
-        "From: jayveedz19@gmail.com\nSubject: Vendor update\nDate: Today\n\nPlease review the attached vendor contract and confirm by Friday.",
-        "From: jayveedz19@gmail.com\nSubject: Meeting follow-up\nDate: Today\n\nAction items: 1) Send the deck to the team. 2) Schedule a 30-min check-in next week.",
+        "From: watched@example.com\nSubject: Vendor update\nDate: Today\n\nPlease review the attached vendor contract and confirm by Friday.",
+        "From: watched@example.com\nSubject: Meeting follow-up\nDate: Today\n\nAction items: 1) Send the deck to the team. 2) Schedule a 30-min check-in next week.",
     ]
 
 

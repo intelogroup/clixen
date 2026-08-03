@@ -386,12 +386,19 @@ from tools.local_vision import local_vision_snap, local_vision_highlight
 from tools.session_browser import SCHEMAS as SESSION_SCHEMAS
 from tools.session_browser import session_login, session_check
 
+def watched_senders() -> list[str]:
+    """Sender emails the inbox/PDF-watch tools target — from WATCHED_SENDERS
+    env (comma-separated), empty by default (no hardcoded personal inboxes)."""
+    raw = os.environ.get("WATCHED_SENDERS", "").strip()
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
 LIST_ATTACHMENTS_SCHEMA = {
     "type": "function",
     "function": {
         "name": "list_pdf_attachments",
         "description": (
-            "List recent emails from watched senders (jayveedz19@gmail.com, kalinovjim@gmail.com) "
+            "List recent emails from watched senders (configured via WATCHED_SENDERS) "
             "that contain PDF attachments. Returns sender, subject, date, and attachment filenames."
         ),
         "parameters": {
@@ -401,7 +408,7 @@ LIST_ATTACHMENTS_SCHEMA = {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "List of sender email addresses to filter by",
-                    "default": ["jayveedz19@gmail.com", "kalinovjim@gmail.com"],
+                    "default": watched_senders(),
                 },
             },
             "required": [],
@@ -415,7 +422,7 @@ RUN_INBOX_MONITOR_SCHEMA = {
         "name": "run_inbox_monitor",
         "description": (
             "Run one full inbox monitor cycle: check Gmail for new PDF attachments from "
-            "jayveedz19@gmail.com and kalinovjim@gmail.com, download each PDF, convert to Markdown, "
+            "the configured watched senders (WATCHED_SENDERS env), download each PDF, convert to Markdown, "
             "extract images, summarize with AI, send a Telegram notification, create Google Tasks "
             "for action items, and log everything to the Excel tracker. "
             "Use this to trigger the full automated pipeline in one step."

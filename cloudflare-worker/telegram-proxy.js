@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker — Telegram API reverse proxy
- * Deploy at: https://telegram-api-proxy.jimkalinov.workers.dev/
+ * Deploy at: <your-worker>.workers.dev
  *
  * Forwards only Telegram *bot* API calls (path must start with /bot<token>/) to
  * api.telegram.org, bypassing network-level blocks. Open-relay abuse is closed

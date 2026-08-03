@@ -45,7 +45,7 @@ SUMMARY_MODEL     = os.environ.get("BRIEFING_MODEL", DEFAULT_CLOUD_MODEL)
 def _load_watched_senders() -> list[str]:
     raw = os.environ.get("WATCHED_SENDERS", "").strip()
     if not raw:
-        return ["jayveedz19@gmail.com", "kalinovjim@gmail.com"]
+        return []
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 

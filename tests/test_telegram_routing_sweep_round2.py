@@ -42,7 +42,7 @@ def test_git_tools_preserved_for_telegram_style_call():
     tool_names = _run_with_captured_tools(
         query="what's the git status of the repo at ~/Developer/clixen",
         model="gemma4:12b-mlx",
-        chat_id="8538224711",
+        chat_id="123456789",
     )
     assert "git_status" in tool_names
 

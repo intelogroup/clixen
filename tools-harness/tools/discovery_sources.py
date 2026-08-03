@@ -1,10 +1,12 @@
+import os
 import time
 import requests
 from urllib.parse import quote
 
-_UA = {"User-Agent": "clixen-agent/1.0 (mailto:jimkalinov@gmail.com)"}
+_CONTACT_EMAIL = os.environ.get("CLIXEN_CONTACT_EMAIL", "clixen@localhost")
+_UA = {"User-Agent": f"clixen-agent/1.0 (mailto:{_CONTACT_EMAIL})"}
 _TIMEOUT = 12
-_MAILTO = "jimkalinov@gmail.com"
+_MAILTO = _CONTACT_EMAIL
 
 
 def _get_retry(url: str, headers: dict, retries: int = 3) -> requests.Response:

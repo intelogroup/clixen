@@ -669,7 +669,7 @@ _BUILTIN_WORKFLOWS = [
         "trigger_type":  "schedule",
         "action_type":   "telegram",
         "schedule":      _cron_schedule("0 7,18 * * *"),
-        "config":        {"email": "jimkalinov@gmail.com"},
+        "config":        {"email": os.environ.get("CLIXEN_EMAIL", "owner@local.dev")},
         "dedupe_key":    "tech_brief",
     },
     {

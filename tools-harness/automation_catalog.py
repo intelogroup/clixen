@@ -9,6 +9,7 @@ Each automation is intentionally lightweight:
 
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 
 
@@ -178,7 +179,7 @@ AUTOMATIONS: list[dict] = [
         "title": "Tech news briefing",
         "summary": "AI, tech, and startup news delivered at 7AM and 6PM daily.",
         "task_name": "tech_brief",
-        "params": {"email": "jimkalinov@gmail.com"},
+        "params": {"email": os.environ.get("CLIXEN_EMAIL", "owner@local.dev")},
         "icon": "radar",
         "category": "Monitoring",
         "approval": "notify-only",
@@ -186,7 +187,7 @@ AUTOMATIONS: list[dict] = [
         "primary_field": {
             "key": "email",
             "label": "Email",
-            "placeholder": "jimkalinov@gmail.com",
+            "placeholder": os.environ.get("CLIXEN_EMAIL", "owner@local.dev"),
         },
     },
 ]

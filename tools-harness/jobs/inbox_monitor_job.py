@@ -47,9 +47,7 @@ from jobs import job_queue
 
 _SUPPRESS_TELEGRAM = False
 
-_DEFAULT_SENDERS = [
-    "kalinovjim@gmail.com",
-]
+_DEFAULT_SENDERS: list[str] = []
 
 def _load_watched_senders() -> list[str]:
     """

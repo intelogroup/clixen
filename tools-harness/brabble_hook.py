@@ -11,7 +11,7 @@ Features:
 To enable, add to ~/.config/brabble/config.toml:
 
     [hook]
-    command = "/Users/kalinovdameus/Developer/clixen/tools-harness/brabble_hook.py"
+    command = "<repo>/tools-harness/brabble_hook.py"
 """
 from __future__ import annotations
 

@@ -3,10 +3,14 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { google } from 'googleapis';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function getGmail() {
-  const credPath = process.env.GMAIL_CREDENTIALS_PATH || '/Users/kalinovdameus/Developer/clixen/google-mcp/credentials.json';
-  const tokenPath = process.env.GMAIL_TOKEN_PATH || '/Users/kalinovdameus/Developer/clixen/google-mcp/token.json';
+  const credPath = process.env.GMAIL_CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
+  const tokenPath = process.env.GMAIL_TOKEN_PATH || path.join(__dirname, 'token.json');
   const { readFileSync } = await import('fs');
   const creds = JSON.parse(readFileSync(credPath, 'utf8'));
   const token = JSON.parse(readFileSync(tokenPath, 'utf8'));

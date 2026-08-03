@@ -36,7 +36,7 @@ TEST_CASES = [
     {
         "category": "Filesystem",
         "name": "find_files",
-        "query": "find all files with extension .pdf in the folder /Users/kalinovdameus",
+        "query": "find all files with extension .pdf in the folder $HOME/Downloads",
         "expected": ["find_files"],
     },
     {

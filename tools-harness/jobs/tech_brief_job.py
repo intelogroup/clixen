@@ -3,7 +3,7 @@ Tech Briefing Job
 =================
 Fetches HN + TechCrunch headlines via Exa -> Tavily -> SearXNG(Brave/DDG)
 fallback chain (no browser), compiles plain-text tech briefing via the cloud
-default model, emails to jimkalinov@gmail.com. Runs 7AM/6PM via scheduler.
+default model, emails to the configured TECH_BRIEF_EMAIL. Runs 7AM/6PM via scheduler.
 
 Run manually:
     cd tools-harness && python -m jobs.tech_brief_job
@@ -23,7 +23,7 @@ from tools.registry import EXECUTORS
 from tools.searxng_search import execute as _searxng_execute
 from store import tech_brief_store
 
-TARGET_EMAIL = "jimkalinov@gmail.com"
+TARGET_EMAIL = os.environ.get("TECH_BRIEF_EMAIL", "").strip() or os.environ.get("CLIXEN_EMAIL", "")
 
 
 def _headlines_via_exa(query: str) -> list[str]:

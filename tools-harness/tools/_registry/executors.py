@@ -413,7 +413,7 @@ EXECUTORS = {
     ),
     "list_pdf_attachments": lambda args: __import__("json").dumps(
         list_emails_with_attachments(
-            senders=args.get("senders", ["jayveedz19@gmail.com", "kalinovjim@gmail.com"]),
+            senders=args.get("senders") or _ri.watched_senders(),
             seen_ids=set(),
         ),
         default=str,

@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Convert a Markdown research report to a styled PDF using markdown + weasyprint."""
+"""Convert a Markdown research report to a styled PDF using markdown + weasyprint.
+
+Usage: python generate_pdf.py <input.md> [output.pdf]
+"""
 
 import markdown
 import weasyprint
 import os
+import sys
 
 # Read the markdown file
-md_path = "/Users/kalinovdameus/Developer/clixen/tools-harness/data/research_reports/research_Comprehensive_research_on_expe_20260709_103403.md"
+md_path = sys.argv[1] if len(sys.argv) > 1 else os.environ.get(
+    "GENERATE_PDF_INPUT", "data/research_reports/report.md"
+)
 with open(md_path, "r", encoding="utf-8") as f:
     md_content = f.read()
 
@@ -157,7 +163,9 @@ styled_html = """<!DOCTYPE html>
 </html>"""
 
 # Generate PDF
-output_path = "/Users/kalinovdameus/Desktop/AI_Predictions_2030_Report.pdf"
+output_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
+    os.path.expanduser("~"), "AI_Predictions_2030_Report.pdf"
+)
 weasyprint.HTML(string=styled_html).write_pdf(output_path)
 
 size_kb = os.path.getsize(output_path) / 1024

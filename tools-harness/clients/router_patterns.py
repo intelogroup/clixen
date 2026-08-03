@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 
 def _tok(text: str) -> int:
@@ -477,11 +478,24 @@ _DOC_AUTOMATION_RE = re.compile(
 
 # Inbox monitor / PDF attachment pipeline.
 # Matches queries asking to check Gmail for PDF attachments from specific senders.
+# Sender local-parts are pulled from WATCHED_SENDERS (no hardcoded inboxes).
+def _inbox_sender_alt() -> str:
+    raw = os.environ.get("WATCHED_SENDERS", "").strip()
+    parts = []
+    for s in raw.split(","):
+        local = s.strip().split("@")[0].strip()
+        if local:
+            parts.append(re.escape(local))
+    if parts:
+        return "(" + "|".join(parts) + ")"
+    return "[a-z0-9_.-]+"  # generic fallback: any sender local-part
+
+
 _INBOX_PDF_RE = re.compile(
     r"(run_inbox_monitor|list_pdf_attachments|list.*pdf.*attach"
     r"|check.*inbox.*pdf|check.*gmail.*pdf|pdf.*email|email.*pdf"
     r"|attach.*from.*(gmail|inbox|sender)|check.*attach|new.*pdf.*from|convert_pdf"
-    r"|check.*email.*from.*(jayveedz|kalinovjim)|inbox.*monitor)",
+    r"|check.*email.*from.*" + _inbox_sender_alt() + r"|inbox.*monitor)",
     re.IGNORECASE,
 )
 

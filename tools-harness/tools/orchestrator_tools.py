@@ -49,7 +49,7 @@ ASK_READ_FILE_SCHEMA = {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Absolute path to the file to read (e.g. /Users/kalinovdameus/Documents/resume.pdf).",
+                    "description": "Absolute path to the file to read (e.g. $HOME/Documents/resume.pdf).",
                 }
             },
             "required": ["path"],

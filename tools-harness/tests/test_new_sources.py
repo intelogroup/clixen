@@ -9,9 +9,9 @@ import sys
 import time
 import requests
 
-_UA = {"User-Agent": "clixen-test/1.0 (mailto:jimkalinov@gmail.com)"}
+_UA = {"User-Agent": "clixen-test/1.0 (mailto:clixen@localhost)"}
 _TIMEOUT = 6
-_MAILTO = "jimkalinov@gmail.com"
+_MAILTO = "clixen@localhost"
 
 PASS = "\033[92mPASS\033[0m"
 FAIL = "\033[91mFAIL\033[0m"

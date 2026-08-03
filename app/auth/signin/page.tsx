@@ -81,8 +81,8 @@ export default function SignInPage() {
 
   const handleTestAccount = () => {
     setFormData({
-      email: "jimkalinov@gmail.com",
-      password: "Jimkali90#",
+      email: "demo@clixen.com",
+      password: "demo123",
       rememberMe: false
     })
   }
@@ -283,7 +283,7 @@ export default function SignInPage() {
                 <div>
                   <h3 className="text-sm font-medium text-green-900 mb-1">Test Account</h3>
                   <p className="text-xs text-green-700 mb-2">
-                    Use jimkalinov@gmail.com with password "Jimkali90#" for testing
+                    Use demo@clixen.com with password "demo123" for testing
                   </p>
                   <Button
                     size="sm"

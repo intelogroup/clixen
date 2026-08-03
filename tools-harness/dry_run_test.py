@@ -15,7 +15,7 @@ def dry_run_test():
         "delete file temp.txt",
         "rename old.txt to new.txt",
         "what is the biggest file in src",
-        "show tree of /Users/kalinovdameus/Developer/clixen",
+        "show tree of ~/Developer/clixen",
     ]
 
     print("=== Dry-Run: Deterministic Tool Parsing Test ===")
