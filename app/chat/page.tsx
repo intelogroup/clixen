@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot, User, History } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCurrentUser, useAuthActions } from "@/lib/auth-context";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
 import { MobileSidebar } from "@/components/ui/mobile-sidebar";
 
@@ -232,9 +233,10 @@ Could you tell me more about what specific automation you have in mind? The more
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex">
-      {/* Mobile Sidebar */}
-      <MobileSidebar onSignOut={handleSignOut} />
+    <RequireAuth>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex">
+        {/* Mobile Sidebar */}
+        <MobileSidebar onSignOut={handleSignOut} />
 
       {/* Desktop Sidebar - Hidden on mobile */}
       <div className="hidden md:block relative">
@@ -421,6 +423,7 @@ Could you tell me more about what specific automation you have in mind? The more
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </RequireAuth>
   );
 }
