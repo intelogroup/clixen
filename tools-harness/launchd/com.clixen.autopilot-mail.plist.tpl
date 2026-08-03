@@ -7,11 +7,11 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/kalinovdameus/.nvm/versions/node/v24.11.1/bin/autopilot</string>
+        <string>__AUTOPILOT_BIN__</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/data/autopilot</string>
+    <string>__HARNESS_DIR__/data/autopilot</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -20,19 +20,17 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/data/autopilot/autopilot_stdout.log</string>
+    <string>__HARNESS_DIR__/data/autopilot/autopilot_stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/data/autopilot/autopilot_stderr.log</string>
+    <string>__HARNESS_DIR__/data/autopilot/autopilot_stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Users/kalinovdameus/.nvm/versions/node/v24.11.1/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>NODE_PATH</key>
-        <string>/Users/kalinovdameus/.nvm/versions/node/v24.11.1/lib/node_modules</string>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
         <key>SQLITE_PATH</key>
-        <string>/Users/kalinovdameus/Developer/clixen/tools-harness/data/autopilot/autopilot.db</string>
+        <string>__HARNESS_DIR__/data/autopilot/autopilot.db</string>
         <key>API_KEYS</key>
         <string>clixen-test-key</string>
         <key>DOMAIN</key>

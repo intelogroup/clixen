@@ -7,12 +7,12 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/kalinovdameus/Developer/clixen/.venv/bin/python</string>
-        <string>/Users/kalinovdameus/Developer/clixen/tools-harness/jobs/health_writer.py</string>
+        <string>__PYTHON_BIN__</string>
+        <string>__HARNESS_DIR__/jobs/health_writer.py</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness</string>
+    <string>__HARNESS_DIR__</string>
 
     <key>EnvironmentVariables</key>
     <dict>
@@ -26,10 +26,10 @@
     <integer>300</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/health_writer_stdout.log</string>
+    <string>__HARNESS_DIR__/health_writer_stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/health_writer_stderr.log</string>
+    <string>__HARNESS_DIR__/health_writer_stderr.log</string>
 
     <key>RunAtLoad</key>
     <true/>

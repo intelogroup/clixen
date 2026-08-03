@@ -9,7 +9,7 @@
     <array>
         <string>/usr/bin/caffeinate</string>
         <string>-i</string>
-        <string>/opt/homebrew/bin/python3.12</string>
+        <string>__PYTHON_BIN__</string>
         <string>-m</string>
         <string>jobs.worker</string>
         <string>--poll-interval</string>
@@ -17,7 +17,7 @@
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness</string>
+    <string>__HARNESS_DIR__</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -32,10 +32,10 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/task_worker.log</string>
+    <string>__HARNESS_DIR__/task_worker.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/task_worker.err.log</string>
+    <string>__HARNESS_DIR__/task_worker.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

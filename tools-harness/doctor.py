@@ -16,14 +16,17 @@ from dotenv import load_dotenv
 
 _HERE = Path(__file__).parent
 _ENV_FILE = _HERE / ".env"
-_LANCEDB_DIR = _HERE / "store" / "lancedb"
+_LANCEDB_DIR = _HERE / "data" / "knowledge.lance"
 _SESSIONS_DIR = _HERE / "store" / "sessions"
 
 _OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-_WARM_MODELS = ["gemma4:12b-mlx", "mistral-nemo"]
+_WARM_MODELS = [
+    os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:12b-mlx"),
+    "nomic-embed-text",
+]
 _ENV_GROUPS = {
     "Cloud LLM": {
-        "keys": ["OPENROUTER_API_KEY"],
+        "keys": ["OPENROUTER_API_KEY", "DEEPSEEK_API_KEY"],
         "critical": True,
     },
     "Telegram": {
@@ -31,7 +34,7 @@ _ENV_GROUPS = {
         "critical": True,
     },
     "Web Search": {
-        "keys": ["TAVILY_API_KEY", "SEARXNG_URL", "EXA_API_KEY", "BRAVE_SEARCH_API_KEY"],
+        "keys": ["TAVILY_API_KEY", "SEARXNG_URL", "EXA_API_KEY", "BRAVE_SEARCH_API_KEY", "FIRECRAWL_API_KEY"],
         "critical": False,
     },
     "STT / TTS": {
@@ -52,10 +55,23 @@ _ENV_GROUPS = {
     },
 }
 _PLISTS = [
-    "com.clixen.core",
+    "com.clixen.autopilot-mail",
+    "com.clixen.daily_email_summary",
+    "com.clixen.email_watch_benouchecapierre",
+    "com.clixen.email_watch_jayveedz19",
+    "com.clixen.email_watch_raymonvillemaxi",
+    "com.clixen.health_writer",
     "com.clixen.task_worker",
-    "com.clixen.messaging",
 ]
+# Plists that only exist in ~/Library/LaunchAgents (generated/installed
+# locally, not committed to the repo) — check them but don't treat absence as
+# a failure for a fresh clone.
+_LOCAL_ONLY_PLISTS = [
+    "com.clixen.core",
+    "com.clixen.messaging",
+    "com.clixen.crash_watchdog",
+]
+_PLISTS = _PLISTS + _LOCAL_ONLY_PLISTS
 
 _GREEN = "\033[32m"
 _RED = "\033[31m"
@@ -140,6 +156,7 @@ def check_env() -> None:
 
 def check_plists() -> None:
     for label in _PLISTS:
+        is_local_only = label in _LOCAL_ONLY_PLISTS
         try:
             result = subprocess.run(
                 ["launchctl", "list", label],
@@ -147,6 +164,8 @@ def check_plists() -> None:
             )
             if result.returncode == 0:
                 _ok(f"launchd service loaded: {label}")
+            elif is_local_only:
+                _ok(f"launchd service not loaded: {label}", "expected — install via tools-harness/launchd/install-launchd.sh")
             else:
                 _warn(f"launchd service not loaded: {label}", "run: launchctl load ~/Library/LaunchAgents/<name>.plist")
         except Exception as e:

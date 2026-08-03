@@ -7,12 +7,12 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/kalinovdameus/Developer/clixen/.venv/bin/python3</string>
-        <string>/Users/kalinovdameus/Developer/clixen/tools-harness/scripts/daily_email_summary.py</string>
+        <string>__PYTHON_BIN__</string>
+        <string>__HARNESS_DIR__/scripts/daily_email_summary.py</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness</string>
+    <string>__HARNESS_DIR__</string>
 
     <key>EnvironmentVariables</key>
     <dict>
@@ -20,10 +20,6 @@
         <string>1</string>
         <key>EMAIL_SUMMARY_EMAIL_LIMIT</key>
         <string>3</string>
-        <key>EMAIL_SUMMARY_STAGE1_MODEL</key>
-        <string>deepseek/deepseek-v4-flash</string>
-        <key>EMAIL_SUMMARY_STAGE2_MODEL</key>
-        <string>deepseek/deepseek-v4-flash</string>
     </dict>
 
     <key>StartCalendarInterval</key>
@@ -35,8 +31,8 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/email_summary.log</string>
+    <string>__HARNESS_DIR__/email_summary.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/email_summary.err.log</string>
+    <string>__HARNESS_DIR__/email_summary.err.log</string>
 </dict>
 </plist>
