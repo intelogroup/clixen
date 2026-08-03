@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "--yes",
+        "@upstash/context7-mcp"
+      ]
+    },
+    "clixen": {
+      "command": "/Users/kalinovdameus/miniforge3/bin/python",
+      "args": [
+        "/Users/kalinovdameus/Developer/clixen/tools-harness/mcp_server.py"
+      ]
+    },
+    "browseros": {
+      "type": "http",
+      "url": "http://127.0.0.1:9000/mcp"
+    }
+  }
+}

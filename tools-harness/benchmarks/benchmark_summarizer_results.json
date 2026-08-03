@@ -1,0 +1,179 @@
+{
+  "candidates": [
+    "qwen3.5:2b",
+    "qwen3.5:4b",
+    "qwen3.5:9b",
+    "gemma4"
+  ],
+  "cases": [
+    "ucl_quarters_multi_match",
+    "la_liga_top_scorer",
+    "epl_table_top4",
+    "transfer_news_synthesis",
+    "weak_contradictory_sources"
+  ],
+  "results": {
+    "qwen3.5:2b": {
+      "total": 47,
+      "cases": [
+        {
+          "id": "ucl_quarters_multi_match",
+          "score": 13,
+          "elapsed": 11.6,
+          "answer": "The UEFA Champions League quarter-final results for April 2026 were not found in the evidence. The evidence provides results for Real Madrid beating Arsenal 3-1, Barcelona beating Borussia Dortmund 4-2, and Bayern Munich beating Inter Milan 2-0.",
+          "notes": []
+        },
+        {
+          "id": "la_liga_top_scorer",
+          "score": 6,
+          "elapsed": 3.7,
+          "answer": "Robert Lewandowski leads La Liga with 28 goals in the 2025-26 season, ahead of Vinicius Jr with 22 goals and Morata with 19 goals.",
+          "notes": []
+        },
+        {
+          "id": "epl_table_top4",
+          "score": 13,
+          "elapsed": 8.3,
+          "answer": "| Position | Team | Points | | :---: | :---: | :---: | | 1 | Arsenal | 76 | | 2 | Liverpool | 74 | | 3 | Manchester City | 68 | | 4 | Chelsea | 63 |",
+          "notes": []
+        },
+        {
+          "id": "transfer_news_synthesis",
+          "score": 8,
+          "elapsed": 7.5,
+          "answer": "Real Madrid is targeting Trent Alexander-Arnold, whose contract expires in June 2026, and is also monitoring Florian Wirtz, whom Bayer Leverkusen values at \u20ac150m. Additionally, Endrick is expected to take on a bigger role at Real Madrid next season.",
+          "notes": []
+        },
+        {
+          "id": "weak_contradictory_sources",
+          "score": 7,
+          "elapsed": 4.0,
+          "answer": "Athletic Club beat Real Betis 2-1 in the Copa del Rey final at Estadio La Cartuja.",
+          "notes": []
+        }
+      ]
+    },
+    "qwen3.5:4b": {
+      "total": 44,
+      "cases": [
+        {
+          "id": "ucl_quarters_multi_match",
+          "score": 10,
+          "elapsed": 2.9,
+          "answer": "The UEFA Champions League quarter-final results mentioned are Real Madrid 3 - 1 Arsenal, Barcelona 4 - 2 Borussia Dortmund, and Bayern Munich 2 - 0 Inter Milan; no results for April 2026 were found.",
+          "notes": []
+        },
+        {
+          "id": "la_liga_top_scorer",
+          "score": 6,
+          "elapsed": 2.5,
+          "answer": "Robert Lewandowski leads La Liga with 28 goals in the 2025-26 season, ahead of Vinicius Jr with 22 goals and Morata with 19 goals.",
+          "notes": []
+        },
+        {
+          "id": "epl_table_top4",
+          "score": 13,
+          "elapsed": 4.3,
+          "answer": "| Position | Team | Points | | :---: | :---: | :---: | | 1 | Arsenal | 76 | | 2 | Liverpool | 74 | | 3 | Manchester City | 68 | | 4 | Chelsea | 63 |",
+          "notes": []
+        },
+        {
+          "id": "transfer_news_synthesis",
+          "score": 8,
+          "elapsed": 10.2,
+          "answer": "Real Madrid is targeting Trent Alexander-Arnold, whose contract expires in June 2026, and they are also monitoring Florian Wirtz, whom Bayer Leverkusen values at \u20ac150m. Additionally, Endrick is expected to take on a bigger role at Real Madrid next season.",
+          "notes": []
+        },
+        {
+          "id": "weak_contradictory_sources",
+          "score": 7,
+          "elapsed": 2.6,
+          "answer": "Athletic Club beat Real Betis 2-1 in the Copa del Rey final at Estadio La Cartuja.",
+          "notes": []
+        }
+      ]
+    },
+    "qwen3.5:9b": {
+      "total": 44,
+      "cases": [
+        {
+          "id": "ucl_quarters_multi_match",
+          "score": 10,
+          "elapsed": 2.6,
+          "answer": "The UEFA Champions League quarter-final results for April 2026 were not found in the evidence. The evidence provides results for matches involving Real Madrid vs Arsenal, Barcelona vs Borussia Dortmund, and Bayern Munich vs Inter Milan.",
+          "notes": []
+        },
+        {
+          "id": "la_liga_top_scorer",
+          "score": 6,
+          "elapsed": 2.4,
+          "answer": "Robert Lewandowski leads La Liga with 28 goals in the 2025-26 season, ahead of Vinicius Jr with 22 goals and Morata with 19 goals.",
+          "notes": []
+        },
+        {
+          "id": "epl_table_top4",
+          "score": 13,
+          "elapsed": 4.4,
+          "answer": "| Position | Team | Points | | :---: | :---: | :---: | | 1 | Arsenal | 76 | | 2 | Liverpool | 74 | | 3 | Manchester City | 68 | | 4 | Chelsea | 63 |",
+          "notes": []
+        },
+        {
+          "id": "transfer_news_synthesis",
+          "score": 8,
+          "elapsed": 3.9,
+          "answer": "Real Madrid is targeting Trent Alexander-Arnold for the summer transfer window, and they are also monitoring Florian Wirtz as a potential long-term midfield addition, with Bayer Leverkusen valuing the German at \u20ac150m.",
+          "notes": [
+            "MISSING must_have: 'endrick'"
+          ]
+        },
+        {
+          "id": "weak_contradictory_sources",
+          "score": 7,
+          "elapsed": 2.3,
+          "answer": "Athletic Club beat Real Betis 2-1 in the Copa del Rey final at Estadio La Cartuja.",
+          "notes": []
+        }
+      ]
+    },
+    "gemma4": {
+      "total": 47,
+      "cases": [
+        {
+          "id": "ucl_quarters_multi_match",
+          "score": 13,
+          "elapsed": 3.2,
+          "answer": "The UEFA Champions League quarter-final results for April 2026 were not found in the evidence. The evidence provided shows results from Real Madrid beating Arsenal 3-1, Barcelona beating Borussia Dortmund 4-2, and Bayern Munich beating Inter Milan 2-0.",
+          "notes": []
+        },
+        {
+          "id": "la_liga_top_scorer",
+          "score": 6,
+          "elapsed": 2.3,
+          "answer": "Robert Lewandowski leads La Liga with 28 goals in the 2025-26 season, ahead of Vinicius Jr (22) and Morata (19).",
+          "notes": []
+        },
+        {
+          "id": "epl_table_top4",
+          "score": 13,
+          "elapsed": 5.0,
+          "answer": "| Position | Team | Points | | :---: | :---: | :---: | | 1 | Arsenal | 76 | | 2 | Liverpool | 74 | | 3 | Manchester City | 68 | | 4 | Chelsea | 63 |",
+          "notes": []
+        },
+        {
+          "id": "transfer_news_synthesis",
+          "score": 8,
+          "elapsed": 5.2,
+          "answer": "Real Madrid is targeting Trent Alexander-Arnold, whose contract expires in June 2026, and they are also monitoring Florian Wirtz, whom Bayer Leverkusen values at \u20ac150m. Additionally, Endrick is expected to take on a bigger role at Real Madrid next season.",
+          "notes": []
+        },
+        {
+          "id": "weak_contradictory_sources",
+          "score": 7,
+          "elapsed": 2.4,
+          "answer": "Athletic Club beat Real Betis 2-1 in the Copa del Rey final at Estadio La Cartuja.",
+          "notes": []
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "gemma4llama-whatsapp",
+  "version": "1.0.0",
+  "description": "WhatsApp bridge and bot for Gemma4Llama",
+  "type": "module",
+  "scripts": {
+    "start:bridge": "tsx whatsapp_bridge.ts",
+    "start:bot": "python whatsapp_bot.py",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "baileys": "github:WhiskeySockets/Baileys",
+    "better-sqlite3": "^12.11.1",
+    "express": "^5.2.1",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2"
+  }
+}

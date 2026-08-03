@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.clixen.email_watch_jayveedz19</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/kalinovdameus/Developer/clixen/.venv/bin/python3</string>
+        <string>/Users/kalinovdameus/Developer/clixen/tools-harness/scripts/email_watch.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/kalinovdameus/Developer/clixen/tools-harness</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>EMAIL_WATCH_LOOP</key>
+        <string>1</string>
+        <key>EMAIL_WATCH_POLL_SECONDS</key>
+        <string>60</string>
+        <key>EMAIL_WATCH_SENDER</key>
+        <string>jayveedz19@gmail.com</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/email_watch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/kalinovdameus/Developer/clixen/tools-harness/email_watch.err.log</string>
+</dict>
+</plist>

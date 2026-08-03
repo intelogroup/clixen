@@ -1,0 +1,88 @@
+<h2>Deterministic Search Graph Flow</h2>
+<p class="subtitle">A high-precision retrieval pipeline for live web answers</p>
+
+<div class="mockup">
+  <div class="mockup-header">Execution Pipeline</div>
+  <div class="mockup-body">
+    <div style="padding: 20px;">
+      <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+        <strong style="color: #2563eb;">1. Guard & Decompose</strong>
+        <p style="font-size: 0.9rem; color: #4b5563; margin: 5px 0 0;">Safety checks + Multi-hop sub-query resolution.</p>
+      </div>
+      <div style="text-align: center; color: #cbd5e1; margin: 5px 0;">↓</div>
+      <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+        <strong style="color: #2563eb;">2. Rewrite</strong>
+        <p style="font-size: 0.9rem; color: #4b5563; margin: 5px 0 0;">Generates 2-3 targeted search variants (verbatim, condensed, temporal).</p>
+      </div>
+      <div style="text-align: center; color: #cbd5e1; margin: 5px 0;">↓</div>
+      <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+        <div style="flex: 1; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 15px;">
+          <strong style="color: #1d4ed8;">3a. Discovery (Fetch)</strong>
+          <p style="font-size: 0.85rem; color: #64748b; margin: 5px 0 0;">Wikipedia / RSS retrieval.</p>
+        </div>
+        <div style="flex: 1; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 15px;">
+          <strong style="color: #1d4ed8;">3b. DDG Search</strong>
+          <p style="font-size: 0.85rem; color: #64748b; margin: 5px 0 0;">Live web snippets (No-API).</p>
+        </div>
+      </div>
+      <div style="text-align: center; color: #cbd5e1; margin: 5px 0;">↓</div>
+      <div style="background: #fefce8; border: 1px solid #fde047; border-radius: 50px; padding: 10px 20px; text-align: center; margin-bottom: 10px;">
+        <strong>4. Merge & Fallback</strong>
+        <p style="font-size: 0.85rem; color: #854d0e; margin: 2px 0 0;">Deduplication. Triggers Exa/Brave if primary fails.</p>
+      </div>
+      <div style="text-align: center; color: #cbd5e1; margin: 5px 0;">↓</div>
+      <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+        <strong style="color: #2563eb;">5. Refinement (Normalize → Rerank)</strong>
+        <p style="font-size: 0.9rem; color: #4b5563; margin: 5px 0 0;">Cross-encoder scoring (top 3) + Reddit augmentation.</p>
+      </div>
+      <div style="text-align: center; color: #cbd5e1; margin: 5px 0;">↓</div>
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+        <strong style="color: #166534;">6. Summarize & Verify</strong>
+        <p style="font-size: 0.9rem; color: #166534; margin: 5px 0 0;">LLM-driven grounded answer generation + Hallucination checks.</p>
+      </div>
+      <div style="text-align: center; color: #cbd5e1; margin: 5px 0;">↓</div>
+      <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+        <strong style="color: #2563eb;">7. Finalize</strong>
+        <p style="font-size: 0.9rem; color: #4b5563; margin: 5px 0 0;">Citation formatting + Staleness caveats.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 30px;">
+  <h3>Mind Map (Key Components)</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+      <h4 style="margin: 0 0 10px 0; color: #1e293b;">Query Logic</h4>
+      <ul style="font-size: 0.9rem; color: #4b5563; padding-left: 20px;">
+        <li>Deterministic Rewrites</li>
+        <li>Temporal Awareness</li>
+        <li>Multi-hop Decomp</li>
+      </ul>
+    </div>
+    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+      <h4 style="margin: 0 0 10px 0; color: #1e293b;">Backend Mix</h4>
+      <ul style="font-size: 0.9rem; color: #4b5563; padding-left: 20px;">
+        <li>Discovery (Wiki/RSS)</li>
+        <li>DDG / Brave / Exa</li>
+        <li>Reddit Augmentation</li>
+      </ul>
+    </div>
+    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+      <h4 style="margin: 0 0 10px 0; color: #1e293b;">Validation</h4>
+      <ul style="font-size: 0.9rem; color: #4b5563; padding-left: 20px;">
+        <li>Premise Checks</li>
+        <li>Source Quality Thresholds</li>
+        <li>Evidence Coverage Maps</li>
+      </ul>
+    </div>
+    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+      <h4 style="margin: 0 0 10px 0; color: #1e293b;">Output</h4>
+      <ul style="font-size: 0.9rem; color: #4b5563; padding-left: 20px;">
+        <li>Citation Bundling</li>
+        <li>Staleness Caveats</li>
+        <li>Deterministic Fallbacks</li>
+      </ul>
+    </div>
+  </div>
+</div>

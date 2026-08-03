@@ -1,0 +1,1352 @@
+[
+  {
+    "id": "live_finance_btc_usd",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.75,
+    "latency_ms": 2647,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "live_finance_nvda_move",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1061,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "sports_score_specific",
+    "category": "sports",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1519,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "sports_ambiguous_guard",
+    "category": "sports",
+    "ok": false,
+    "must_pass": false,
+    "should_score": 0.0,
+    "latency_ms": 0,
+    "error": "",
+    "skipped": true
+  },
+  {
+    "id": "news_breaking_entity_disambiguation",
+    "category": "news",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1138,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_conflict_resolution",
+    "category": "news",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.75,
+    "latency_ms": 1132,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "tech_latest_python_release",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 954,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "tech_fastapi_background_task",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1130,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "tech_ollama_latest_change",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1553,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "historical_stable_fact",
+    "category": "historical",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 500,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "historical_multi_hop",
+    "category": "historical",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 993,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "product_specs_realme",
+    "category": "product",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.2,
+    "latency_ms": 2399,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "weather_city_week",
+    "category": "weather",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1311,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "entity_ambiguous_jaguar",
+    "category": "ambiguity",
+    "ok": false,
+    "must_pass": false,
+    "should_score": 0.0,
+    "latency_ms": 0,
+    "error": "",
+    "skipped": true
+  },
+  {
+    "id": "company_person_latest_ceo",
+    "category": "company",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1662,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "multi_hop_movie_nonexistence",
+    "category": "nonexistence",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 984,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "local_recommendation_search",
+    "category": "local",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 3525,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "release_date_mixed_signal",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1400,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "financial_macro_conflict",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.25,
+    "latency_ms": 1651,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_date_precision",
+    "category": "news",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.75,
+    "latency_ms": 1493,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "sports_fixture_future",
+    "category": "sports",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1021,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "sports_fixture_today_schedule",
+    "category": "sports",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 1379,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "sports_is_team_playing_today",
+    "category": "sports",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.3333333333333333,
+    "latency_ms": 3838,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "compound_temporal_geo",
+    "category": "company",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1744,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "cross_domain_tech_finance",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 3927,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "negation_nonexistence",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.25,
+    "latency_ms": 1313,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "comparative_live",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1814,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "recency_conflict",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.8333333333333334,
+    "latency_ms": 1149,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "local_ambiguous_city",
+    "category": "weather",
+    "ok": false,
+    "must_pass": false,
+    "should_score": 0.0,
+    "latency_ms": 0,
+    "error": "",
+    "skipped": true
+  },
+  {
+    "id": "sports_cross_league",
+    "category": "sports",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1881,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "multi_hop_historical",
+    "category": "historical",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1294,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "medical_contested",
+    "category": "health",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 3079,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "seo_noise_heavy",
+    "category": "product",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 2429,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "crypto_regulatory_sec",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1218,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "pharma_drug_interaction",
+    "category": "health",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.3333333333333333,
+    "latency_ms": 1861,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "devops_kubernetes_security",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1198,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "academic_ml_transformer",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.75,
+    "latency_ms": 3567,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "legal_contract_liability",
+    "category": "legal",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1960,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "quantum_computing_error",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1260,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "climate_carbon_accounting",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1295,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "database_optimization_indexing",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.3333333333333333,
+    "latency_ms": 2720,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "security_zero_trust_architecture",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 2090,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "ai_hallucination_mitigation",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1566,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "networking_bgp_routing",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1196,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "systems_design_scalability",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1621,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "mobile_app_performance",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1453,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "compliance_gdpr_cookie",
+    "category": "legal",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1251,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "finance_defi_protocol",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1666,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "biology_crispr_therapy",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 2826,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "supply_chain_semiconductor",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.75,
+    "latency_ms": 2005,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "economics_yield_curve",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 3316,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "physics_quantum_entanglement",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1466,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "ml_causal_inference",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.75,
+    "latency_ms": 1459,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "neuroscience_connectome",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 2729,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "math_category_theory",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1234,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "crypto_zero_knowledge",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 3970,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "distributed_consensus",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.75,
+    "latency_ms": 1373,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "compiler_llvm_optimization",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1228,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "formal_verification",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1920,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "cv_3d_reconstruction",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1529,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "nlp_interpretability",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1469,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "rl_multi_agent",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1953,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "synthetic_biology",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1976,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "materials_science_graphene",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1597,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "behavioral_econ_mechanism_design",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1928,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "topology_manifolds",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1971,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "robotics_motion_planning",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1298,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "sdn_network_slicing",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.3333333333333333,
+    "latency_ms": 1923,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "database_acid_distributed",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1315,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "statistical_bayesian_nonparametric",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1302,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "philosophy_ai_consciousness",
+    "category": "general",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1943,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "quantum_algorithms_shor",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1272,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "vlsi_design_automation",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1250,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "genomics_variant_interpretation",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1767,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "complexity_p_vs_np",
+    "category": "tech",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1558,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "astronomy_gravitational_waves",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.3333333333333333,
+    "latency_ms": 1311,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "disambiguation_santiago_weather",
+    "category": "ambiguity",
+    "ok": false,
+    "must_pass": false,
+    "should_score": 0.0,
+    "latency_ms": 0,
+    "error": "",
+    "skipped": true
+  },
+  {
+    "id": "science_everest_boiling_point",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1167,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "general_colombia_flag_colors",
+    "category": "general",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.75,
+    "latency_ms": 1176,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "legal_seattle_fence_height",
+    "category": "local",
+    "ok": true,
+    "must_pass": false,
+    "should_score": 0.5,
+    "latency_ms": 4814,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "live_reykjavik_sunset",
+    "category": "weather",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1132,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "political_ny14_representative",
+    "category": "general",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1229,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "historical_beat_it_guitar",
+    "category": "historical",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 1.0,
+    "latency_ms": 1536,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "historical_hp_isbn_uk_first",
+    "category": "historical",
+    "ok": true,
+    "must_pass": false,
+    "should_score": 1.0,
+    "latency_ms": 1555,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "legal_25th_amendment_section4",
+    "category": "legal",
+    "ok": true,
+    "must_pass": false,
+    "should_score": 0.3333333333333333,
+    "latency_ms": 1560,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "sports_f1_2023_championship_gap",
+    "category": "sports",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.25,
+    "latency_ms": 1564,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "live_la_county_fire_warnings",
+    "category": "emergency",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1254,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "live_death_rumor_verification",
+    "category": "misinformation",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.25,
+    "latency_ms": 1454,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "recent_cpsc_recall_lookup",
+    "category": "regulatory",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1470,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "travel_green_card_mexico_visa",
+    "category": "travel",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1238,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "real_estate_actual_sale_price",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.3333333333333333,
+    "latency_ms": 4429,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "earnings_call_cloud_division",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.8,
+    "latency_ms": 1304,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "tech_rtx4090_pci_ids",
+    "category": "technical",
+    "ok": true,
+    "must_pass": false,
+    "should_score": 0.8,
+    "latency_ms": 2690,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "live_nba_playoff_magic_number",
+    "category": "sports",
+    "ok": true,
+    "must_pass": false,
+    "should_score": 0.2,
+    "latency_ms": 3138,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "recent_openai_tos_output_ownership",
+    "category": "policy",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6,
+    "latency_ms": 1156,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "tax_deadline_california_2024_year",
+    "category": "regulatory",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.4,
+    "latency_ms": 2586,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "live_transit_nyc_q_train_eta",
+    "category": "live",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.2,
+    "latency_ms": 1455,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "bridge_clearance_durham_canopener",
+    "category": "technical",
+    "ok": true,
+    "must_pass": false,
+    "should_score": 0.2857142857142857,
+    "latency_ms": 3200,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "ingredient_change_red_dye_40",
+    "category": "consumer",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.2,
+    "latency_ms": 3609,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "coin_w_mint_mark_2019_quarter",
+    "category": "numismatics",
+    "ok": true,
+    "must_pass": false,
+    "should_score": 0.16666666666666666,
+    "latency_ms": 1400,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "ubuntu_2404_sha256_checksum",
+    "category": "security",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6,
+    "latency_ms": 2537,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "live_gold_price_eur_gram",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1342,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_jwst_little_red_dot",
+    "category": "astronomy",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.2857142857142857,
+    "latency_ms": 1396,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_royal_caribbean_labadee",
+    "category": "travel",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.16666666666666666,
+    "latency_ms": 1631,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "knowledge_faa_drone_weight",
+    "category": "regulation",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.16666666666666666,
+    "latency_ms": 1735,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "knowledge_ca_fast_food_wage",
+    "category": "labor",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.2,
+    "latency_ms": 1490,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_artemis_ii_tli_burn",
+    "category": "space",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.2857142857142857,
+    "latency_ms": 1252,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "knowledge_rust_stable_version",
+    "category": "technology",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.2,
+    "latency_ms": 1810,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "knowledge_estadio_azteca_capacity",
+    "category": "sports",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1510,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "knowledge_iceland_pm",
+    "category": "politics",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.16666666666666666,
+    "latency_ms": 1155,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "knowledge_ncl_prima_class",
+    "category": "travel",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.375,
+    "latency_ms": 1461,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_false_premise_napoleon_poison",
+    "category": "history",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.125,
+    "latency_ms": 2854,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_false_premise_paris_agreement",
+    "category": "politics",
+    "ok": true,
+    "must_pass": false,
+    "should_score": 0.14285714285714285,
+    "latency_ms": 1582,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_false_premise_hawaii_coffee",
+    "category": "geography",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 1866,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_precision_speed_of_light",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.25,
+    "latency_ms": 1787,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_precision_moon_distance",
+    "category": "science",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.16666666666666666,
+    "latency_ms": 1388,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_precision_eiffel_feet",
+    "category": "engineering",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 1314,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_negation_nato_article5",
+    "category": "geopolitics",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 3234,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_comparison_who_troops_europe",
+    "category": "geopolitics",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1324,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_temporal_russia_timezones",
+    "category": "geography",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5,
+    "latency_ms": 1348,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_temporal_cia_social_media",
+    "category": "intelligence",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.1,
+    "latency_ms": 1251,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_multi_hop_cia_farsi_recruit",
+    "category": "intelligence",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 2685,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_entity_disambiguation_paris_france_vs_tx",
+    "category": "geography",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 1561,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_acronym_arms_cia",
+    "category": "intelligence",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.16666666666666666,
+    "latency_ms": 1249,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_omission_king_james_only_bible",
+    "category": "religion",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 1548,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_starship_flight12_launch_window",
+    "category": "space",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.4,
+    "latency_ms": 1580,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_legal_finality_ftc_activision",
+    "category": "legal",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 1541,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_global_health_h5n1_wpro",
+    "category": "health",
+    "ok": false,
+    "must_pass": false,
+    "should_score": 0.0,
+    "latency_ms": 3412,
+    "error": "No results",
+    "skipped": false
+  },
+  {
+    "id": "news_sovereign_credit_sp_uk",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 3836,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_state_agriculture_hpai_arkansas",
+    "category": "agriculture",
+    "ok": false,
+    "must_pass": false,
+    "should_score": 0.0,
+    "latency_ms": 5836,
+    "error": "No results",
+    "skipped": false
+  },
+  {
+    "id": "news_vaccine_policy_h5n1_dairy",
+    "category": "health",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.5714285714285714,
+    "latency_ms": 1594,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "news_geopolitical_credit_se_asia",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 2134,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_market_cap_nvidia_rd",
+    "category": "finance",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.0,
+    "latency_ms": 1567,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_upcoming_hardware_apple_iphone",
+    "category": "technology",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.2857142857142857,
+    "latency_ms": 2515,
+    "error": "",
+    "skipped": false
+  },
+  {
+    "id": "trick_electoral_leadership_uk_labour",
+    "category": "politics",
+    "ok": true,
+    "must_pass": true,
+    "should_score": 0.6666666666666666,
+    "latency_ms": 1423,
+    "error": "",
+    "skipped": false
+  }
+]

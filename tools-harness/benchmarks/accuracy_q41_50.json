@@ -1,0 +1,296 @@
+[
+  {
+    "id": "disambiguation_santiago_weather",
+    "question": "What is the current weather in Santiago?",
+    "intent": "live",
+    "domain": "general",
+    "search_s": 10.98,
+    "evidence_count": 2,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "Current temperature in Santiago is 15\u00b0C with light rain expected later today.",
+        "elapsed_s": 1.54,
+        "pass": false,
+        "matched": [],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "Current weather reports for Santiago are available from The Weather Network and meteoblue.",
+        "elapsed_s": 8.71,
+        "pass": false,
+        "matched": [],
+        "blocked": []
+      }
+    }
+  },
+  {
+    "id": "science_everest_boiling_point",
+    "question": "At what temperature does water boil at the summit of Mount Everest?",
+    "intent": "historical",
+    "domain": "general",
+    "search_s": 13.24,
+    "evidence_count": 3,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "Water boils at approximately 72\u00b0C (161\u00b0F) at the summit of Mount Everest.",
+        "elapsed_s": 2.1,
+        "pass": true,
+        "matched": [
+          "72"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "Pure water boils at about 68\u00b0C (154\u00b0F) at the lower atmospheric pressure on the top of Mount Everest, while other sources suggest temperatures around 71\u00b0C (160\u00b0F) or approximately 72\u00b0C (161.5\u00b0F).",
+        "elapsed_s": 11.31,
+        "pass": true,
+        "matched": [
+          "68",
+          "71",
+          "72",
+          "154",
+          "160"
+        ],
+        "blocked": []
+      }
+    }
+  },
+  {
+    "id": "general_colombia_flag_colors",
+    "question": "What are the official PANTONE or Hex color codes for the flag of Colombia according to their government standards?",
+    "intent": "historical",
+    "domain": "general",
+    "search_s": 15.46,
+    "evidence_count": 3,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "The official PANTONE color codes for Colombia's flag are Red C (PANTONE 186), Yellow C (PANTONE 1235) and Blue C (PANTONE 2945).",
+        "elapsed_s": 3.76,
+        "pass": true,
+        "matched": [
+          "pantone"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "The provided evidence does not contain the official PANTONE or Hex color codes for the flag of Colombia.",
+        "elapsed_s": 11.08,
+        "pass": true,
+        "matched": [
+          "pantone"
+        ],
+        "blocked": []
+      }
+    }
+  },
+  {
+    "id": "legal_seattle_fence_height",
+    "question": "What is the maximum allowed height for a fence in a residential front yard according to the Seattle Municipal Code?",
+    "intent": "historical",
+    "domain": "general",
+    "search_s": 12.87,
+    "evidence_count": 3,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "The maximum allowed height for a fence in the front yard of a Seattle residential property is six feet.",
+        "elapsed_s": 1.82,
+        "pass": false,
+        "matched": [],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "In neighborhood residential zones, the fence height is limited to 6 feet, with an additional 2 feet allowed for architectural features like trellises, or it can be 8 feet high on a sloping site.",
+        "elapsed_s": 10.05,
+        "pass": false,
+        "matched": [],
+        "blocked": [
+          "6 feet"
+        ]
+      }
+    }
+  },
+  {
+    "id": "live_reykjavik_sunset",
+    "question": "What exact time does the sun set in Reykjavik, Iceland, today?",
+    "intent": "live",
+    "domain": "general",
+    "search_s": 10.44,
+    "evidence_count": 2,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "Sun sets at 23:59 in Reykjavik today.",
+        "elapsed_s": 1.4,
+        "pass": true,
+        "matched": [
+          "reykjavik",
+          ":"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "The evidence indicates that sunrise and sunset times for Reykjavik, Iceland, for April 2026 are available, but it does not state the exact sunset time for today, April 15, 2026.",
+        "elapsed_s": 9.58,
+        "pass": true,
+        "matched": [
+          "reykjavik"
+        ],
+        "blocked": []
+      }
+    }
+  },
+  {
+    "id": "political_ny14_representative",
+    "question": "Who is the current U.S. Representative for New York's 14th Congressional District?",
+    "intent": "recent",
+    "domain": "general",
+    "search_s": 9.64,
+    "evidence_count": 2,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "Alexandria Ocasio-Cortez",
+        "elapsed_s": 0.91,
+        "pass": true,
+        "matched": [
+          "ocasio-cortez",
+          "alexandria"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "Alexandria Ocasio-Cortez is the U.S. representative for New York's 14th congressional district.",
+        "elapsed_s": 8.16,
+        "pass": true,
+        "matched": [
+          "ocasio-cortez",
+          "alexandria"
+        ],
+        "blocked": []
+      }
+    }
+  },
+  {
+    "id": "historical_beat_it_guitar",
+    "question": "Who played the guitar solo on Michael Jackson's 'Beat It'?",
+    "intent": "historical",
+    "domain": "general",
+    "search_s": 10.9,
+    "evidence_count": 3,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "Eddie Van Halen",
+        "elapsed_s": 0.7,
+        "pass": true,
+        "matched": [
+          "eddie van halen",
+          "van halen",
+          "eddie"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "Eddie Van Halen played the guitar solo on Michael Jackson's \"Beat It.\"",
+        "elapsed_s": 7.99,
+        "pass": true,
+        "matched": [
+          "eddie van halen",
+          "van halen",
+          "eddie"
+        ],
+        "blocked": []
+      }
+    }
+  },
+  {
+    "id": "historical_hp_isbn_uk_first",
+    "question": "What is the ISBN-10 for the original UK first edition hardcover of 'Harry Potter and the Philosopher's Stone'?",
+    "intent": "historical",
+    "domain": "general",
+    "search_s": 15.09,
+    "evidence_count": 3,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "The ISBN-10 for the original UK first edition hardcover of 'Harry Potter and the Philosopher's Stone' is 0-7475-3269-9.",
+        "elapsed_s": 3.28,
+        "pass": true,
+        "matched": [
+          "0-7475-3269-9"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "The ISBN listed for the Original UK Hardback Edition is -7475-3269-9.",
+        "elapsed_s": 11.59,
+        "pass": false,
+        "matched": [],
+        "blocked": []
+      }
+    }
+  },
+  {
+    "id": "legal_25th_amendment_section4",
+    "question": "According to Section 4 of the 25th Amendment to the US Constitution, who must join the Vice President to declare the President unable to discharge duties?",
+    "intent": "historical",
+    "domain": "general",
+    "search_s": 13.27,
+    "evidence_count": 3,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "The Vice President must join with a majority of principal officers of the executive departments.",
+        "elapsed_s": 1.55,
+        "pass": true,
+        "matched": [
+          "principal officers",
+          "executive departments",
+          "majority"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "The vice president, a majority of the cabinet secretaries, and two-thirds of Congress must agree for the president to be declared unable to discharge duties.",
+        "elapsed_s": 9.26,
+        "pass": true,
+        "matched": [
+          "cabinet",
+          "majority"
+        ],
+        "blocked": []
+      }
+    }
+  },
+  {
+    "id": "sports_f1_2023_championship_gap",
+    "question": "Who won the 2023 Formula 1 Drivers' Championship, and what was the exact points gap between first and second place?",
+    "intent": "historical",
+    "domain": "sports",
+    "search_s": 14.24,
+    "evidence_count": 3,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "Max Verstappen won the 2023 Formula 1 Drivers' Championship with a points gap of 25 to second place Lewis Hamilton.",
+        "elapsed_s": 5.43,
+        "pass": true,
+        "matched": [
+          "verstappen"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "The evidence confirms that the 2023 FIA Formula One World Championship took place, but it does not state who won or the exact points gap between first and second place.",
+        "elapsed_s": 13.74,
+        "pass": false,
+        "matched": [],
+        "blocked": []
+      }
+    }
+  }
+]

@@ -1,0 +1,65 @@
+[
+  {
+    "id": "science_everest_boiling_point",
+    "question": "At what temperature does water boil at the summit of Mount Everest?",
+    "intent": "historical",
+    "domain": "general",
+    "search_s": 6.68,
+    "evidence_count": 3,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "Water boils at 72\u00b0C (162\u00b0F) at the summit of Mount Everest.",
+        "elapsed_s": 2.05,
+        "pass": true,
+        "matched": [
+          "72",
+          "162"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "Water boils at a lower temperature of 72\u00b0C at the summit of Mount Everest, compared to 100\u00b0C at sea level.",
+        "elapsed_s": 10.13,
+        "pass": false,
+        "matched": [
+          "72"
+        ],
+        "blocked": [
+          "100\u00b0c"
+        ]
+      }
+    }
+  },
+  {
+    "id": "political_ny14_representative",
+    "question": "Who is the current U.S. Representative for New York's 14th Congressional District?",
+    "intent": "recent",
+    "domain": "general",
+    "search_s": 10.54,
+    "evidence_count": 2,
+    "skipped": false,
+    "models": {
+      "mistral-nemo": {
+        "answer": "Alexandria Ocasio-Cortez",
+        "elapsed_s": 0.91,
+        "pass": true,
+        "matched": [
+          "ocasio-cortez",
+          "alexandria"
+        ],
+        "blocked": []
+      },
+      "gemma4": {
+        "answer": "Alexandria Ocasio-Cortez is the U.S. representative for New York's 14th congressional district.",
+        "elapsed_s": 8.43,
+        "pass": true,
+        "matched": [
+          "ocasio-cortez",
+          "alexandria"
+        ],
+        "blocked": []
+      }
+    }
+  }
+]

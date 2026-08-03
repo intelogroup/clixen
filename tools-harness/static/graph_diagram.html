@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Graph Structure</title>
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #fdfdfd;
+            margin: 0;
+            padding: 40px;
+            color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+        }
+        .graph-container {
+            max-width: 1000px;
+            width: 100%;
+        }
+        .node {
+            background: #fff;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 10px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+            position: relative;
+            transition: transform 0.2s;
+        }
+        .node:hover {
+            transform: translateY(-2px);
+            border-color: #3b82f6;
+            box-shadow: 0 8px 12px rgba(59, 130, 246, 0.1);
+        }
+        .node h3 {
+            margin: 0 0 8px 0;
+            font-size: 1.1rem;
+            color: #2563eb;
+        }
+        .node p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #4b5563;
+            line-height: 1.4;
+        }
+        .arrow {
+            text-align: center;
+            font-size: 24px;
+            color: #cbd5e1;
+            margin: 4px 0;
+        }
+        .parallel-group {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .parallel-node {
+            flex: 1;
+            background: #f8fafc;
+            border: 2px dashed #cbd5e1;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .decision {
+            border-radius: 50px;
+            padding: 12px 24px;
+            background: #fefce8;
+            border-color: #fde047;
+            text-align: center;
+            font-weight: 500;
+        }
+        .fallback {
+            background: #fff1f2;
+            border-color: #fecaca;
+        }
+        .output {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+        }
+    </style>
+</head>
+<body>
+    <div class="graph-container">
+        <h1 style="text-align: center; margin-bottom: 40px;">Deterministic Search Graph Flow</h1>
+
+        <div class="node">
+            <span class="badge">ENTRY</span>
+            <h3>START / GUARD</h3>
+            <p>Input validation, safety checks, and clarification routing.</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node">
+            <h3>DECOMPOSE</h3>
+            <p>Handles multi-hop queries. Executes hop-1 inline to resolve entities for hop-2.</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node">
+            <h3>REWRITE</h3>
+            <p>Query expansion. Generates 2-3 variants (verbatim, condensed, temporal).</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="parallel-group">
+            <div class="node parallel-node">
+                <span class="badge">PARALLEL</span>
+                <h3>DISCOVERY (FETCH)</h3>
+                <p>Wiki, RSS, and domain-specific knowledge retrieval.</p>
+            </div>
+            <div class="node parallel-node">
+                <span class="badge">PARALLEL</span>
+                <h3>DDG SEARCH</h3>
+                <p>Live web search for fresh snippets (No-API fallback).</p>
+            </div>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node decision">
+            <h3>MERGE RESULTS</h3>
+            <p>Deduplication and authority-weighted ranking of parallel branches.</p>
+        </div>
+
+        <div class="parallel-group">
+            <div style="flex: 2;">
+                <div class="arrow">↓ (Success)</div>
+                <div class="node">
+                    <h3>NORMALIZE + DEDUPE</h3>
+                    <p>Clean raw results and strip duplicate URLs.</p>
+                </div>
+            </div>
+            <div style="flex: 1;">
+                <div class="arrow">↓ (Fail)</div>
+                <div class="node fallback">
+                    <span class="badge">FALLBACK</span>
+                    <h3>EXA + BRAVE</h3>
+                    <p>Secondary search backends for high-recall retrieval.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node">
+            <h3>REDDIT AUGMENT</h3>
+            <p>Injects Reddit threads if snippets are "thin" or low-recall.</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node">
+            <h3>RERANK (LLM)</h3>
+            <p>Cross-encoder scoring to select the top 3 evidence bundles.</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node">
+            <h3>EVIDENCE PACK</h3>
+            <p>Bundles metadata (trust scores, dates) into the prompt context.</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node output">
+            <span class="badge">OUTPUT</span>
+            <h3>SUMMARIZE (LLM)</h3>
+            <p>Model-driven answer generation with source-grounded reasoning.</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node decision">
+            <h3>VERIFY</h3>
+            <p>Checks for premise mismatches and stale temporal data.</p>
+        </div>
+
+        <div class="arrow">↓</div>
+
+        <div class="node">
+            <span class="badge">EXIT</span>
+            <h3>FINALIZE</h3>
+            <p>Citation formatting, staleness caveats, and final response emission.</p>
+        </div>
+    </div>
+</body>
+</html>

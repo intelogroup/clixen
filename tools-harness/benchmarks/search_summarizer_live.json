@@ -1,0 +1,54 @@
+{
+  "gemma4": [
+    {
+      "model": "gemma4",
+      "summarizer": "gemma4",
+      "query": "best VPN 2026",
+      "intent": "recommendation",
+      "answer": "(empty)",
+      "latency_sec": 17.63
+    },
+    {
+      "model": "gemma4",
+      "summarizer": "gemma4",
+      "query": "bitcoin price today",
+      "intent": "live_data",
+      "answer": "(empty)",
+      "latency_sec": 7.99
+    },
+    {
+      "model": "gemma4",
+      "summarizer": "gemma4",
+      "query": "python best practices",
+      "intent": "informational",
+      "answer": "(empty)",
+      "latency_sec": 3.98
+    }
+  ],
+  "mistral-nemo": [
+    {
+      "model": "mistral-nemo",
+      "summarizer": "mistral-nemo",
+      "query": "best VPN 2026",
+      "intent": "recommendation",
+      "answer": "(empty)",
+      "latency_sec": 4.21
+    },
+    {
+      "model": "mistral-nemo",
+      "summarizer": "mistral-nemo",
+      "query": "bitcoin price today",
+      "intent": "live_data",
+      "answer": "(empty)",
+      "latency_sec": 4.09
+    },
+    {
+      "model": "mistral-nemo",
+      "summarizer": "mistral-nemo",
+      "query": "python best practices",
+      "intent": "informational",
+      "answer": "(empty)",
+      "latency_sec": 2.7
+    }
+  ]
+}

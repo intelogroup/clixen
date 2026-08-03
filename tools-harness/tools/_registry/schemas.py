@@ -1,0 +1,268 @@
+"""Registry: ALL_TOOLS / AGENT_TOOLS / PLAN_TOOLS schema lists. See tools/registry.py."""
+
+from __future__ import annotations
+
+from tools._registry import imports as _ri
+globals().update({k: v for k, v in vars(_ri).items() if not k.startswith("__")})
+
+ALL_TOOLS = [
+    *WORKFLOW_JOB_SCHEMAS,
+    WEB_SEARCH_SCHEMA,
+    SEARXNG_SCHEMA,
+    LOCAL_SCHEMA,
+    # Scrapling (lightweight public-page HTTP fetcher + adaptive parser)
+    SCRAPLING_FETCH_SCHEMA,
+    SCRAPLING_STEALTHY_SCHEMA,
+    SCRAPLING_EXTRACT_SCHEMA,
+    SCRAPLING_FETCH_AND_EXTRACT_SCHEMA,
+    # Media
+    AUDIO_SCHEMA,
+    CONVERT_AUDIO_SCHEMA,
+    OCR_SCHEMA,
+    SURYA_OCR_SCHEMA,
+    PEEKABOO_SCHEMA,
+    PEEKABOO_LIST_WINDOWS_SCHEMA,
+    # Slack archive (slacrawl)
+    SLACK_SEARCH_SCHEMA,
+    SLACK_STATUS_SCHEMA,
+    # iMessage archive (~/Library/Messages/chat.db) + Messages.app send
+    IMESSAGE_SEARCH_SCHEMA,
+    IMESSAGE_STATUS_SCHEMA,
+    IMESSAGE_SEND_SCHEMA,
+    # macOS Contacts -> iMessage handle resolution
+    CONTACTS_RESOLVE_SCHEMA,
+    # Deterministic OpenCode model switch (bypasses looping automation agent)
+    SET_OPENCODE_MODEL_SCHEMA,
+    # Document parsing (docling) + archive grep (ripgrep-all)
+    DOCLING_SCHEMA,
+    RGA_SCHEMA,
+    # Email file parsing (.eml/.msg via unstructured)
+    EMAIL_PARSE_SCHEMA,
+    # WhatsApp archive (~/.clixen/whatsapp.db, written by bridge)
+    WHATSAPP_SEARCH_SCHEMA,
+    WHATSAPP_STATUS_SCHEMA,
+    # Native macOS surfaces
+    SPOTLIGHT_SCHEMA,
+    FIND_RECENT_SCHEMA,
+    CLIPBOARD_READ_SCHEMA,
+    CLIPBOARD_WRITE_SCHEMA,
+    SAFARI_TABS_SCHEMA,
+    NOTES_LIST_SCHEMA,
+    NOTES_CREATE_SCHEMA,
+    APPLESCRIPT_SCHEMA,
+    LIST_REMINDERS_SCHEMA,
+    CREATE_REMINDER_SCHEMA,
+    LIST_CAL_SCHEMA,
+    SYSTEM_STATUS_SCHEMA,
+    # Filesystem — read
+    READ_FILE_SCHEMA,
+    GREP_FILES_SCHEMA,
+    FIND_FILES_SCHEMA,
+    LIST_DIR_SCHEMA,
+    FILE_TREE_SCHEMA,
+    READ_MANY_SCHEMA,
+    FILE_INFO_SCHEMA,
+    FIND_LARGEST_SCHEMA,
+    # Fast search (fd, ripgrep, glob)
+    GLOB_SCHEMA,
+    FD_SCHEMA,
+    RG_SCHEMA,
+    # Filesystem — write/manage
+    RENAME_FILE_SCHEMA,
+    DELETE_FILE_SCHEMA,
+    CREATE_DIRECTORY_SCHEMA,
+    COPY_FILE_SCHEMA,
+    # Structured parsing
+    READ_DOCUMENT_SCHEMA,
+    PARSE_FILE_SCHEMA,
+    READ_PDF_SCHEMA,
+    PARSE_CODE_SCHEMA,
+    # Document creation
+    MARKDOWN_TO_DOCX_SCHEMA,
+    MARKDOWN_TO_PDF_SCHEMA,
+    CREATE_PDF_SCHEMA,
+    JSON_TO_DOCX_SCHEMA,
+    DATA_TO_XLSX_SCHEMA,
+    MARKDOWN_TO_PPTX_SCHEMA,
+    RENDER_DIAGRAM_SCHEMA,
+    EDIT_IMAGE_SCHEMA,
+    GITHUB_SEARCH_SCHEMA,
+    GITHUB_LIST_PRS_SCHEMA,
+    GITHUB_CREATE_ISSUE_SCHEMA,
+    GITHUB_CREATE_PR_SCHEMA,
+    TEXT_TO_FILE_SCHEMA,
+    HTML_TO_FILE_SCHEMA,
+    # Semantic search
+    INDEX_DIR_SCHEMA,
+    SEMANTIC_SEARCH_SCHEMA,
+    LIST_EMAIL_ATTACHMENTS_SCHEMA,
+    # Docs
+    CONTEXT7_SCHEMA,
+    # Git
+    GIT_STATUS_SCHEMA,
+    GIT_DIFF_SCHEMA,
+    GIT_LOG_SCHEMA,
+    GIT_ADD_SCHEMA,
+    GIT_COMMIT_SCHEMA,
+    GIT_CHECKOUT_SCHEMA,
+    GIT_WORKTREE_SCHEMA,
+    # Python REPL
+    RUN_PYTHON_SCHEMA,
+    RESET_KERNEL_SCHEMA,
+    LIST_VARS_SCHEMA,
+    # Time
+    GET_CURRENT_TIME_SCHEMA,
+    BUS_ETA_SCHEMA,
+    # Reminders
+    SET_REMINDER_SCHEMA,
+    # Telegram
+    SEND_TELEGRAM_SCHEMA,
+    # Google auth
+    REFRESH_TOKEN_SCHEMA,
+    # Image Generation
+    GENERATE_LOCAL_IMAGE_SCHEMA,
+    # Chinese web search (agent-reach)
+    SEARCH_CHINESE_WEB_SCHEMA,
+    # Gmail
+    GET_LATEST_EMAIL_SCHEMA,
+    LIST_EMAILS_SCHEMA,
+    READ_EMAIL_SCHEMA,
+    SEND_EMAIL_SCHEMA,
+    DOWNLOAD_GMAIL_ATTACHMENT_SCHEMA,
+    LIST_GMAIL_ATTACHMENTS_SCHEMA,
+    LIST_ATTACHMENTS_SCHEMA,
+    CONVERT_PDF_SCHEMA,
+    DETECT_PDF_FORM_SCHEMA,
+    FILL_PDF_FORM_SCHEMA,
+    DETECT_FORM_SCHEMA,
+    FILL_FORM_SCHEMA,
+    UPDATE_FORM_SCHEMA,
+    VISION_DETECT_FORM_SCHEMA,
+    VISION_FILL_FORM_SCHEMA,
+    VISION_UPDATE_FORM_SCHEMA,
+    DETECT_FLAT_PDF_SCHEMA,
+    FILL_FLAT_PDF_SCHEMA,
+    RUN_INBOX_MONITOR_SCHEMA,
+    # Google Calendar
+    LIST_EVENTS_SCHEMA,
+    CREATE_EVENT_SCHEMA,
+    DELETE_EVENT_SCHEMA,
+    # Google Tasks
+    LIST_TASKS_SCHEMA,
+    CREATE_TASK_SCHEMA,
+    COMPLETE_TASK_SCHEMA,
+    DELETE_TASK_SCHEMA,
+    # Shell / agent
+    BASH_EXEC_SCHEMA,
+    WRITE_FILE_SCHEMA,
+    EDIT_FILE_SCHEMA,
+    EDIT_FILE_FUZZY_SCHEMA,
+    APPEND_FILE_SCHEMA,
+    UNDO_LAST_EDIT_SCHEMA,
+    DOWNLOAD_URL_SCHEMA,
+    # Browser automation
+    *ALL_BROWSER_SCHEMAS,
+    # Automation management
+    *AUTOMATION_TOOLS_SCHEMAS,
+    # Skills hub
+    *SKILLS_HUB_SCHEMAS,
+    ARXIV_SCHEMA,
+    PUBMED_SCHEMA,
+    # Discovery Sources
+    WIKIDATA_SCHEMA,
+    WIKIPEDIA_SCHEMA,
+    OPENALEX_SCHEMA,
+    CROSSREF_SCHEMA,
+    OPENCORPORATES_SCHEMA,
+    SEC_EDGAR_SCHEMA,
+    GEOCODE_ADDRESS_SCHEMA,
+    GDELT_NEWS_SCHEMA,
+    # YouTube
+    YT_SEARCH_SCHEMA,
+    YT_TRANSCRIPT_SCHEMA,
+    # Video processing
+    YTDLP_SCHEMA,
+    FFMPEG_SCHEMA,
+    # WhatsApp
+    WHATSAPP_SCHEMA,
+    # Google Docs
+    *GDOCS_SCHEMAS,
+    # Google Sheets
+    *GSHEETS_SCHEMAS,
+    # Clutter fixer
+    *CLUTTER_SCHEMAS,
+    # Research report
+    COMPILE_REPORT_SCHEMA,
+    *API_SCHEMAS,
+    *VAULT_SCHEMAS,
+    *DOORDASH_SCHEMAS,
+    *UBER_SCHEMAS,
+    *RINGBACK_SCHEMAS,
+    *SOFASCORE_SCHEMAS,
+    *SESSION_SCHEMAS,
+    *LOCAL_VISION_SCHEMAS,
+    DEEP_RESEARCH_SCHEMA,
+    # X (Twitter) via twscrape
+    X_BIRD_SEARCH_SCHEMA,
+    X_BIRD_READ_SCHEMA,
+    X_BIRD_USER_SCHEMA,
+    # Persistent cross-session memory
+    *MEMORY_SCHEMAS,
+    # Mid-task plan/todo scratchpad
+    *PLAN_TASK_SCHEMAS,
+    ASK_LOCAL_AGENT_SCHEMA,
+    ASK_WEB_SEARCH_SCHEMA,
+    ASK_BROWSER_AGENT_SCHEMA,
+    ASK_MACOS_NATIVE_SCHEMA,
+    ASK_EMAIL_AGENT_SCHEMA,
+    ASK_TASKS_AGENT_SCHEMA,
+    ASK_CALENDAR_AGENT_SCHEMA,
+    ASK_DOCS_AGENT_SCHEMA,
+    ASK_SHEETS_AGENT_SCHEMA,
+    ASK_DEEP_RESEARCH_SCHEMA,
+    ASK_READ_FILE_SCHEMA,
+    ASK_WRITE_FILE_SCHEMA,
+    ASK_DELETE_FILE_SCHEMA,
+    ASK_RENAME_FILE_SCHEMA,
+    ASK_RUN_COMMAND_SCHEMA,
+    ASK_FETCH_URL_SCHEMA,
+    ASK_AUTOMATION_AGENT_SCHEMA,
+    ASK_DEV_AGENT_SCHEMA,
+    ASK_MESSAGING_AGENT_SCHEMA,
+    ASK_RESEARCH_AGENT_SCHEMA,
+    ASK_VISION_AGENT_SCHEMA,
+    ASK_UTILITY_AGENT_SCHEMA,
+    ASK_TRANSPORT_AGENT_SCHEMA,
+    ASK_YOUTUBE_AGENT_SCHEMA,
+    ASK_X_AGENT_SCHEMA,
+    ASK_OPENCODE_SCHEMA,
+    ASK_REDDIT_AGENT_SCHEMA,
+    ASK_SCIENCE_SCOUT_AGENT_SCHEMA,
+    ASK_SEND_MESSAGE_SCHEMA,
+    MAKE_PHONE_CALL_SCHEMA,
+    QUERY_RECENT_TRACES_SCHEMA,
+]
+
+# All tools available to the agent (superset — includes shell tools)
+AGENT_TOOLS = ALL_TOOLS
+
+# Plan mode tools — read-only subset for analysis mode
+PLAN_TOOLS = [
+    # Filesystem — read only
+    READ_FILE_SCHEMA,
+    READ_DOCUMENT_SCHEMA,
+    GREP_FILES_SCHEMA,
+    FIND_FILES_SCHEMA,
+    LIST_DIR_SCHEMA,
+    FILE_TREE_SCHEMA,
+    FILE_INFO_SCHEMA,
+    FIND_LARGEST_SCHEMA,
+    # Git — read only
+    GIT_STATUS_SCHEMA,
+    GIT_DIFF_SCHEMA,
+    GIT_LOG_SCHEMA,
+    # Time
+    GET_CURRENT_TIME_SCHEMA,
+]
+
+# Plan mode flag — set to True when in plan mode

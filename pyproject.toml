@@ -1,0 +1,120 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clixen"
+version = "0.1.0"
+description = "Local LLM tools harness, chat UI, and deterministic search agent."
+requires-python = ">=3.12"
+dependencies = [
+  "apscheduler>=3.10,<4",
+  "beautifulsoup4>=4.14,<5",
+  "ddgs>=9,<10",
+  "exa-py>=2,<3",
+  "fastapi>=0.124,<1",
+  "httpx>=0.28,<1",
+  "jsonschema>=4.23,<5",
+  "langgraph>=1.1,<2",
+  "langgraph-checkpoint>=4,<5",
+  "langgraph-checkpoint-sqlite>=3,<4",
+  "ollama>=0.6,<1",
+  "tavily-python",
+  "pydantic>=2.12,<3",
+  "requests>=2.33,<3",
+  "trafilatura>=2.0,<3",
+  "transformers>=5,<6",
+  "uvicorn>=0.33,<1",
+  "pymupdf>=1.23",
+  "python-docx>=1,<2",
+  "openpyxl>=3.1,<4",
+  "pdfplumber",
+  "markdown>=3.7,<4",
+  "lancedb",
+  "python-multipart",
+  "python-telegram-bot",
+  "faster-whisper",
+  "kokoro-onnx",
+  "onnxruntime",
+  "sqlalchemy",
+  "google-auth",
+  "google-auth-oauthlib",
+  "google-auth-httplib2",
+  "google-api-python-client",
+  "twscrape>=0.19.2",
+  "resemblyzer>=0.1.4",
+  "setuptools<81",
+  "mcp>=2.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=9,<10",
+]
+dev = [
+  "ruff>=0.15,<0.16",
+]
+structured = [
+  "instructor>=1,<2",
+]
+ocr = [
+  "opencv-python-headless>=4.10",
+  "pytesseract>=0.3",
+  "paddlepaddle>=3.0",
+  "paddleocr>=3.0",
+]
+data = [
+  "pandas",
+  "numpy",
+  "polars",
+  "scipy",
+  "statsmodels",
+  "pingouin",
+  "matplotlib",
+  "seaborn",
+  "plotly",
+  "great-tables",
+  "duckdb",
+  "jupyter_client",
+  "ipykernel",
+  "kaleido",
+  "lifelines",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "src",
+  "tools-harness",
+]
+addopts = [
+  "--import-mode=importlib",
+]
+asyncio_mode = "auto"
+markers = [
+  "live: needs Ollama / network / external creds / a running server (auto-skipped when deps are down; run with `pytest -m live`)",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/g4l", "tools-harness"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [
+  "artifacts",
+  "cloudflare-worker",
+  "docs",
+  "gmail-mcp",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4",
+]
+
+[project.scripts]
+g4l = "g4l.orchestrator:run"

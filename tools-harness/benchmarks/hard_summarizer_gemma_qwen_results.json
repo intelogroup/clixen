@@ -1,0 +1,171 @@
+{
+  "candidates": [
+    "gemma4",
+    "qwen3.5:4b"
+  ],
+  "cases": [
+    "conflict_authoritative_release",
+    "math_excluding_penalties",
+    "missing_specific_value_refusal",
+    "noisy_seo_filter",
+    "stale_vs_current_price",
+    "multi_hop_acquisition",
+    "requested_csv_shape",
+    "temporal_before_constraint"
+  ],
+  "results": {
+    "gemma4": {
+      "total": 53,
+      "elapsed": 174.63586592674255,
+      "cases": [
+        {
+          "id": "conflict_authoritative_release",
+          "score": 7,
+          "elapsed": 13.96,
+          "answer": "The latest stable version of the AtlasDB Python client is 2.8.1, which was released on 2026-04-21.",
+          "notes": []
+        },
+        {
+          "id": "math_excluding_penalties",
+          "score": 3,
+          "elapsed": 18.91,
+          "answer": "Mina Costa scored 24 league goals from open play or set pieces in the 2025-26 season.",
+          "notes": [
+            "MISSING must_have: '31'",
+            "MISSING must_have: '7'"
+          ]
+        },
+        {
+          "id": "missing_specific_value_refusal",
+          "score": -3,
+          "elapsed": 60.01,
+          "answer": "",
+          "notes": [
+            "MISSING must_have: 'not found'",
+            "TOO TERSE (0 words)"
+          ]
+        },
+        {
+          "id": "noisy_seo_filter",
+          "score": 17,
+          "elapsed": 3.33,
+          "answer": "Adult RSV symptoms listed by Medline Health include runny nose, decrease in appetite, coughing, sneezing, fever, and wheezing, with severe cases potentially causing trouble breathing.",
+          "notes": []
+        },
+        {
+          "id": "stale_vs_current_price",
+          "score": 3,
+          "elapsed": 23.92,
+          "answer": "Current price: $649 (Launch price: $699). Winner: Information not found.",
+          "notes": [
+            "MISSING must_have: '$50'",
+            "FORBIDDEN: 'winner'"
+          ]
+        },
+        {
+          "id": "multi_hop_acquisition",
+          "score": 12,
+          "elapsed": 10.85,
+          "answer": "BrightSuite acquired VectorMail in 2023, and CloudNorth completed its acquisition of BrightSuite on March 4, 2026.",
+          "notes": []
+        },
+        {
+          "id": "requested_csv_shape",
+          "score": 4,
+          "elapsed": 28.1,
+          "answer": "Product,Monthly,Annual StreamLite,9,$9*12 ViewMax,14,$14*12",
+          "notes": [
+            "MISSING must_have: '108'",
+            "MISSING must_have: '168'",
+            "TOO TERSE (3 words)",
+            "BAD CSV HEADER: 'Product,Monthly,Annual StreamLite,9,$9*12 ViewMax,14,$14*12'"
+          ]
+        },
+        {
+          "id": "temporal_before_constraint",
+          "score": 10,
+          "elapsed": 15.56,
+          "answer": "In April 2026, AeroScoot reported intermittent battery swelling in humid conditions affecting model A7 packs.",
+          "notes": []
+        }
+      ]
+    },
+    "qwen3.5:4b": {
+      "total": 51,
+      "elapsed": 204.07761120796204,
+      "cases": [
+        {
+          "id": "conflict_authoritative_release",
+          "score": 7,
+          "elapsed": 27.39,
+          "answer": "The latest stable version is 2.8.1, released on 2026-04-21.",
+          "notes": []
+        },
+        {
+          "id": "math_excluding_penalties",
+          "score": 4,
+          "elapsed": 19.13,
+          "answer": "Mina Costa scored 24 league goals in the 2025-26 season excluding penalties.",
+          "notes": [
+            "MISSING must_have: '31'",
+            "MISSING must_have: '7'"
+          ]
+        },
+        {
+          "id": "missing_specific_value_refusal",
+          "score": 1,
+          "elapsed": 33.29,
+          "answer": "NovaGrid's Q4 2025 free cash flow was not disclosed in the press release.",
+          "notes": [
+            "MISSING must_have: 'not found'"
+          ]
+        },
+        {
+          "id": "noisy_seo_filter",
+          "score": 17,
+          "elapsed": 20.55,
+          "answer": "According to Medline Health, adult RSV symptoms include runny nose, decreased appetite, coughing, sneezing, fever, and wheezing, with severe cases causing trouble breathing.",
+          "notes": []
+        },
+        {
+          "id": "stale_vs_current_price",
+          "score": 2,
+          "elapsed": 45.11,
+          "answer": "HelioPad X2 Launch Price: $699 (January 2026) HelioPad X2 Current Price: $649 (April 2026) Price Change: $50 permanent price cut Annual Cost (Launch): $699 \u00d7 12 = $8,388 Annual Cost (Current): $649 \u00d7 12 = $7,788 Discounted Annual Cost (Current): $7,788 \u00d7 (1 - 0) = $7,788 (No discount applied) Winner: HelioPad X2 Current Price is cheaper by $600 per year.",
+          "notes": [
+            "FORBIDDEN: 'annual cost'",
+            "FORBIDDEN: 'winner'"
+          ]
+        },
+        {
+          "id": "multi_hop_acquisition",
+          "score": 0,
+          "elapsed": 17.6,
+          "answer": "VectorMail is currently owned by BrightSuite, which was acquired by CloudNorth on March 4, 2026.",
+          "notes": [
+            "FORBIDDEN: 'currently owned by brightsuite'",
+            "FORBIDDEN: 'vectormail is currently owned by brightsuite'"
+          ]
+        },
+        {
+          "id": "requested_csv_shape",
+          "score": 13,
+          "elapsed": 20.59,
+          "answer": "Product,Monthly,Annual for StreamLite and ViewMax annual costs StreamLite,9,108 ViewMax,14,168",
+          "notes": [
+            "BAD CSV HEADER: 'Product,Monthly,Annual for StreamLite and ViewMax annual costs StreamLite,9,108 ViewMax,14,168'"
+          ]
+        },
+        {
+          "id": "temporal_before_constraint",
+          "score": 7,
+          "elapsed": 20.42,
+          "answer": "AeroScoot reported intermittent battery swelling in humid conditions affecting model A7 packs.",
+          "notes": [
+            "MISSING must_have: 'april 2026'"
+          ]
+        }
+      ]
+    }
+  }
+}

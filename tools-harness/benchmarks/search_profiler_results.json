@@ -1,0 +1,112 @@
+{
+  "gemma4": [
+    {
+      "query": "best VPN 2026",
+      "summarizer": "gemma4",
+      "total_time": 12.32,
+      "stages": {
+        "guard": 0.0,
+        "rewrite": 0.0,
+        "parallel_discovery": 0.0,
+        "parallel_ddg": 0.54,
+        "parallel_discovery_ok": 0.98,
+        "parallel_ddg_ok": 0.0,
+        "merge_both_failed": 0.0,
+        "fallback_search": 0.91,
+        "fallback_search_ok": 0.0,
+        "normalize": 0.0,
+        "dedupe": 0.0,
+        "rerank": 0.0,
+        "evidence_pack": 0.0,
+        "summarize": 9.88,
+        "verify": 0.0
+      }
+    },
+    {
+      "query": "bitcoin price today",
+      "summarizer": "gemma4",
+      "total_time": 7.76,
+      "stages": {
+        "guard": 0.0,
+        "rewrite": 0.0,
+        "parallel_discovery": 0.0,
+        "parallel_ddg": 0.39,
+        "parallel_discovery_ok": 0.7,
+        "parallel_ddg_ok": 0.0,
+        "merge_both_failed": 0.0,
+        "fallback_search": 0.46,
+        "fallback_search_ok": 0.0,
+        "normalize": 0.0,
+        "dedupe": 0.0,
+        "rerank": 0.0,
+        "evidence_pack": 0.0,
+        "summarize": 6.2,
+        "verify": 0.0
+      }
+    },
+    {
+      "query": "python tutorial",
+      "summarizer": "gemma4",
+      "total_time": 0.0,
+      "stages": {
+        "guard": 0.0,
+        "clarify": 0.0
+      }
+    }
+  ],
+  "mistral-nemo": [
+    {
+      "query": "best VPN 2026",
+      "summarizer": "mistral-nemo",
+      "total_time": 7.23,
+      "stages": {
+        "guard": 0.0,
+        "rewrite": 0.0,
+        "parallel_discovery": 0.0,
+        "parallel_ddg": 0.43,
+        "parallel_discovery_ok": 1.11,
+        "parallel_ddg_ok": 0.0,
+        "merge_both_failed": 0.0,
+        "fallback_search": 0.48,
+        "fallback_search_ok": 0.0,
+        "normalize": 0.0,
+        "dedupe": 0.0,
+        "rerank": 0.0,
+        "evidence_pack": 0.0,
+        "summarize": 5.2,
+        "verify": 0.0
+      }
+    },
+    {
+      "query": "bitcoin price today",
+      "summarizer": "mistral-nemo",
+      "total_time": 7.98,
+      "stages": {
+        "guard": 0.0,
+        "rewrite": 0.0,
+        "parallel_discovery": 0.0,
+        "parallel_ddg": 0.41,
+        "parallel_discovery_ok": 0.8,
+        "parallel_ddg_ok": 0.0,
+        "merge_both_failed": 0.0,
+        "fallback_search": 0.47,
+        "fallback_search_ok": 0.0,
+        "normalize": 0.0,
+        "dedupe": 0.0,
+        "rerank": 0.0,
+        "evidence_pack": 0.0,
+        "summarize": 6.29,
+        "verify": 0.0
+      }
+    },
+    {
+      "query": "python tutorial",
+      "summarizer": "mistral-nemo",
+      "total_time": 0.07,
+      "stages": {
+        "guard": 0.0,
+        "clarify": 0.0
+      }
+    }
+  ]
+}
