@@ -14,8 +14,10 @@ export default function ForgotPasswordPage() {
   const router = useRouter()
   const { resetPassword } = useAuthActions()
   const [email, setEmail] = useState("")
+  const [currentPassword, setCurrentPassword] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
@@ -25,6 +27,12 @@ export default function ForgotPasswordPage() {
     e.preventDefault()
     setIsLoading(true)
     setError("")
+
+    if (currentPassword.length === 0) {
+      setError("Enter your current password to verify your identity.")
+      setIsLoading(false)
+      return
+    }
 
     if (password.length < 8) {
       setError("Password must be at least 8 characters.")
@@ -39,7 +47,7 @@ export default function ForgotPasswordPage() {
     }
 
     try {
-      await resetPassword(email, password)
+      await resetPassword(email, currentPassword, password)
       setIsSubmitted(true)
     } catch (err: any) {
       setError(err.message || "Failed to reset password. Please try again.")
@@ -113,7 +121,7 @@ export default function ForgotPasswordPage() {
           
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Reset your password</h1>
           <p className="text-gray-600">
-            Enter your account email and a new password to reset it locally.
+            Enter your account email, current password, and a new password to update it.
           </p>
         </div>
 
@@ -143,6 +151,37 @@ export default function ForgotPasswordPage() {
                   placeholder="john@company.com"
                   disabled={isLoading}
                 />
+              </div>
+
+              <div>
+                <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                  Current password
+                </label>
+                <div className="relative">
+                  <Input
+                    id="currentPassword"
+                    name="currentPassword"
+                    type={showCurrentPassword ? "text" : "password"}
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="h-11 pr-10"
+                    placeholder="Your current password"
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    disabled={isLoading}
+                  >
+                    {showCurrentPassword ? (
+                      <EyeOff className="h-4 w-4 text-gray-400" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-gray-400" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div>
