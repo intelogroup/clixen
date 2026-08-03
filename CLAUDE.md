@@ -38,10 +38,11 @@ Cloud-first (2026-07): main agent defaults to cloud via OpenRouter — local gem
 |-------|-------|------|
 | `deepseek/deepseek-v4-flash` | Cloud | **Default** — chat + agentic tool use |
 | `openrouter/anthropic/claude-haiku-4.5` | Cloud | Fallback on error / 3 consecutive tool errors |
-| `gemma4:12b-mlx` | Local | OCR/vision (only multimodal model), intent classifier, manual override |
+| `openrouter/google/gemini-3.1-flash-lite` | Cloud | Primary vision (`harness.py` routes `vision` intent here via `CLOUD_VISION_MODEL`) |
+| `gemma4:12b-mlx` | Local | OCR intent only (narrower than vision), intent classifier, manual override, IDE-mode fallback |
 | `qwen3.5:4b` | Local | Query rewriting, history compaction |
-| `qwen3-vl:8b`/`4b` | Local | Vision (OCR, screenshots) |
-| `bge-reranker-v2-m3` / `nomic-embed-text` | Local | Search reranker / embeddings |
+| `tools/local_vision.py` | Local | Replaces qwen3-vl for most screenshot analysis tasks |
+| `nomic-embed-text` | Local | Embeddings (`tools/semantic_files.py`, `store/knowledge_base.py`) |
 
 `OPENROUTER_API_KEY` lives in `tools-harness/.env` (not project root). `clients/cost_guard.py` enforces a daily token budget (`CLOUD_DAILY_TOKEN_BUDGET`). See `docs/agents/models.md` for routing internals, thinking-mode gotchas, warmup/KV-cache detail.
 
@@ -91,7 +92,7 @@ Task-scoped toolset (`document`/`code`/`full`) in `agents/local_agent_tools.py`.
 - Repo dir renamed gemma4llama→clixen; package name, README, launchd label prefix `com.clixen.*` (renamed 2026-08-03). Watch for hardcoded `/gemma4llama` paths (`tools/path_policy.py` WORKSPACE_ROOT must derive from `__file__`).
 - Messaging is ONE launchd job `com.clixen.messaging.plist` → `messaging_supervisor.sh` (telegram_bot + whatsapp_bot:9236 + whatsapp_bridge:9235). Logs: `tools-harness/messaging_std{err,out}.log`. Restart via `launchctl unload/load` (KeepAlive=true).
 - `src/g4l/` is a frozen phase-1 prototype; only `core/models.py` + `core/utils.py` are imported by production `chat_ui.py`. `tools-harness/` is the real runtime.
-- Router `classify()`/`classify_telegram()`: every branch returns cloud (`CLOUD_MODEL`) except `ocr`, which stays `gemma4:12b-mlx` (only multimodal model) — flipped cloud-first 2026-07, this line was stale (used to say every branch returns gemma4:12b-mlx). `harness.py`'s post-classify if/elif still re-overrides some intents back to local, see CLAUDE.md → Routing.
+- Router `classify()`/`classify_telegram()`: every branch returns cloud (`CLOUD_MODEL`) except `ocr`, which stays `gemma4:12b-mlx` (narrow local OCR path) — flipped cloud-first 2026-07, this line was stale (used to say every branch returns gemma4:12b-mlx). `harness.py`'s post-classify if/elif still re-overrides some intents back to local; separately, `vision` intent routes to cloud `CLOUD_VISION_MODEL` (Gemini), not gemma4 — see CLAUDE.md → Routing.
 - Telegram document intent (`_run_doc_agent`): deterministic gather→one `chat(tools=[])` synthesis→convert; NO agent loop (old loop hung ~80s/round). `_content_query` strips format words before web search; converters return error STRINGS not raises (verify file on disk).
 - `local_agent_nodes.py` ollama calls use `ollama.Client(timeout=120)` — unbounded before, caused silent hangs on long prompts.
 - Doc formats: pdf/docx/xlsx work (openpyxl installed); pptx needs python-pptx.

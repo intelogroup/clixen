@@ -164,66 +164,65 @@ def _tutor_worker(chat_id: str, bot):
     _tutor_spoken.clear()
 
     try:
-
-    while not _tutor_stop.is_set():
-        try:
-            if session_id is None:
-                row = conn.execute(
-                    "SELECT session_id FROM message ORDER BY time_created DESC LIMIT 1"
-                ).fetchone()
-                session_id = row[0] if row else None
-                if session_id:
-                    rows = conn.execute(
-                        "SELECT id FROM message WHERE session_id=? AND json_extract(data,'$.role')='assistant'",
-                        (session_id,),
-                    ).fetchall()
-                    _tutor_spoken.update(mid for (mid,) in rows)
-                time.sleep(_TUTOR_POLL)
-                continue
-
-            rows = conn.execute(
-                """
-                SELECT m.id, p.data FROM message m
-                JOIN part p ON p.message_id = m.id
-                WHERE m.session_id=? AND json_extract(m.data,'$.role')='assistant'
-                AND json_extract(m.data,'$.finish')='stop'
-                ORDER BY m.id
-                """,
-                (session_id,),
-            ).fetchall()
-
-            for mid, data_json in rows:
-                if mid in _tutor_spoken:
+        while not _tutor_stop.is_set():
+            try:
+                if session_id is None:
+                    row = conn.execute(
+                        "SELECT session_id FROM message ORDER BY time_created DESC LIMIT 1"
+                    ).fetchone()
+                    session_id = row[0] if row else None
+                    if session_id:
+                        rows = conn.execute(
+                            "SELECT id FROM message WHERE session_id=? AND json_extract(data,'$.role')='assistant'",
+                            (session_id,),
+                        ).fetchall()
+                        _tutor_spoken.update(mid for (mid,) in rows)
+                    time.sleep(_TUTOR_POLL)
                     continue
-                part = json.loads(data_json)
-                if part.get("type") == "text":
-                    text = part.get("text", "").strip()
-                    if text:
-                        _tutor_spoken.add(mid)
-                        topic_keywords = " ".join(text.split()[:15])
-                        related = _search_ugent(topic_keywords, limit=2)
-                        extra = ""
-                        if related:
-                            bits = []
-                            for q in related:
-                                bits.append(
-                                    f"Q: {q.get('questionText','')[:250]}\n"
-                                    f"Ans: {q.get('correctAnswer','')}\n"
-                                    f"Exp: {q.get('explanation','')[:200]}"
-                                )
-                            extra = "\n\nRelated Q&A:\n" + "\n---\n".join(bits)
-                        msg = f"Tutor:\n{text[:2500]}{extra}"
-                        loop = asyncio.get_event_loop()
-                        asyncio.run_coroutine_threadsafe(
-                            bot.send_message(chat_id=chat_id, text=msg[:4000]),
-                            loop,
-                        )
-            time.sleep(_TUTOR_POLL)
-        except sqlite3.OperationalError:
-            time.sleep(_TUTOR_POLL)
-        except Exception as e:
-            log.warning("Tutor worker error: %s", e)
-            time.sleep(2)
+
+                rows = conn.execute(
+                    """
+                    SELECT m.id, p.data FROM message m
+                    JOIN part p ON p.message_id = m.id
+                    WHERE m.session_id=? AND json_extract(m.data,'$.role')='assistant'
+                    AND json_extract(m.data,'$.finish')='stop'
+                    ORDER BY m.id
+                    """,
+                    (session_id,),
+                ).fetchall()
+
+                for mid, data_json in rows:
+                    if mid in _tutor_spoken:
+                        continue
+                    part = json.loads(data_json)
+                    if part.get("type") == "text":
+                        text = part.get("text", "").strip()
+                        if text:
+                            _tutor_spoken.add(mid)
+                            topic_keywords = " ".join(text.split()[:15])
+                            related = _search_ugent(topic_keywords, limit=2)
+                            extra = ""
+                            if related:
+                                bits = []
+                                for q in related:
+                                    bits.append(
+                                        f"Q: {q.get('questionText','')[:250]}\n"
+                                        f"Ans: {q.get('correctAnswer','')}\n"
+                                        f"Exp: {q.get('explanation','')[:200]}"
+                                    )
+                                extra = "\n\nRelated Q&A:\n" + "\n---\n".join(bits)
+                            msg = f"Tutor:\n{text[:2500]}{extra}"
+                            loop = asyncio.get_event_loop()
+                            asyncio.run_coroutine_threadsafe(
+                                bot.send_message(chat_id=chat_id, text=msg[:4000]),
+                                loop,
+                            )
+                time.sleep(_TUTOR_POLL)
+            except sqlite3.OperationalError:
+                time.sleep(_TUTOR_POLL)
+            except Exception as e:
+                log.warning("Tutor worker error: %s", e)
+                time.sleep(2)
     finally:
         conn.close()
 

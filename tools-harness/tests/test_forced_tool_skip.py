@@ -82,7 +82,7 @@ def test_deepseek_thinking_gets_reasoning_content():
     try:
         msgs = [{"role": "user", "content": "weather in paris"}]
         cc._run_tool_loop(
-            "deepseek/deepseek-chat", msgs, tools=[{"x": 1}], on_token=None,
+            "deepseek/deepseek-v4-flash", msgs, tools=[{"x": 1}], on_token=None,
             max_rounds=8, run_id="rid790", force_tool_choice="ask_web_search",
         )
     finally:

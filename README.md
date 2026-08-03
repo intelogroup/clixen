@@ -239,7 +239,7 @@ clixen/
 ├── cloudflare-worker/          # Cloudflare Workers (DDG proxy, Telegram proxy, ReliefWeb)
 ├── google-mcp/                 # Google APIs MCP server (Node.js)
 │   ├── server.js / auth.js
-│   └── download-attachments.mjs / download-to-repo.mjs
+│   └── download-attachments.mjs
 │
 ├── models/                     # Local ML model weights
 │   ├── ggml-*.bin              # Whisper models (tiny → large-v3)

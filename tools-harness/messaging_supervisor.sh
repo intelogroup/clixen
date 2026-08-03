@@ -16,15 +16,15 @@ export NODE_ENV=production
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
 start_telegram() {
-    /Users/kalinovdameus/Developer/clixen/.venv/bin/python /Users/kalinovdameus/Developer/clixen/tools-harness/telegram_bot.py &
+    "$SCRIPT_DIR/../.venv/bin/python" "$SCRIPT_DIR/telegram_bot.py" &
     PID_TELEGRAM=$!
 }
 start_whatsapp_bot() {
-    /Users/kalinovdameus/Developer/clixen/.venv/bin/python /Users/kalinovdameus/Developer/clixen/tools-harness/whatsapp_bot.py &
+    "$SCRIPT_DIR/../.venv/bin/python" "$SCRIPT_DIR/whatsapp_bot.py" &
     PID_WHATSAPP_BOT=$!
 }
 start_whatsapp_bridge() {
-    /opt/homebrew/bin/node /Users/kalinovdameus/Developer/clixen/tools-harness/node_modules/tsx/dist/cli.mjs /Users/kalinovdameus/Developer/clixen/tools-harness/whatsapp_bridge.ts &
+    /opt/homebrew/bin/node "$SCRIPT_DIR/node_modules/tsx/dist/cli.mjs" "$SCRIPT_DIR/whatsapp_bridge.ts" &
     PID_WHATSAPP_BRIDGE=$!
 }
 

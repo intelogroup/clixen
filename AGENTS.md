@@ -6,7 +6,7 @@ for agent-development internals CLAUDE.md doesn't cover.
 
 ## Orchestrator & Routing
 - [docs/agents/orchestrator.md](docs/agents/orchestrator.md) — top-level Orchestrator Agent: 22 subagent tools, implementation files, latency bypasses.
-- [docs/agents/filesystem-routing.md](docs/agents/filesystem-routing.md) — 4-tier filesystem intent dispatch (regex → specialist → smolagents v2 → LangGraph), transport specialist.
+- [docs/agents/filesystem-routing.md](docs/agents/filesystem-routing.md) — 3-tier filesystem intent dispatch (regex → specialist → LangGraph; smolagents v2 tier removed), transport specialist.
 - [docs/agents/skills-hub.md](docs/agents/skills-hub.md) — `skills_hub.py` scoring signals, dispatch hierarchy.
 
 ## Models & Conversation

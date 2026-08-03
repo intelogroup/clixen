@@ -12,7 +12,7 @@ def get_vram_usage():
         # On macOS, ollama ps shows the memory usage of loaded models
         res = subprocess.run(["ollama", "ps"], capture_output=True, text=True)
         return res.stdout
-    except:
+    except Exception:
         return "N/A"
 
 def single_call(call_id):

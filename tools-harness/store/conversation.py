@@ -523,7 +523,7 @@ def _save_to_session_memory(cid: str, summary: str) -> None:
         from tools.memory_tools import save_session_summary
         save_session_summary(cid, summary)
     except Exception:
-        pass
+        log.debug("save_session_summary failed for %s", cid, exc_info=True)
 
 
 def clear(chat_id: str) -> None:
@@ -535,7 +535,7 @@ def clear(chat_id: str) -> None:
     try:
         p.unlink(missing_ok=True)
     except Exception:
-        pass
+        log.debug("session file unlink failed for %s", cid, exc_info=True)
 
 
 # Raw conversation history TTL. Sliding: a session file is deleted once its mtime

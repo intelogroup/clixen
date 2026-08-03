@@ -10,11 +10,14 @@ Rules:
 """
 import hashlib
 import json
+import logging
 import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent.parent / "data" / "raw.db"
 
@@ -58,6 +61,7 @@ def _file_hash(path: str) -> Optional[str]:
         with open(path, "rb") as f:
             return hashlib.sha256(f.read()).hexdigest()[:16]
     except Exception:
+        log.debug("_file_hash failed for %s", path, exc_info=True)
         return None
 
 
