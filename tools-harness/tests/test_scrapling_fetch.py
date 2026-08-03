@@ -14,9 +14,35 @@ import json
 import os
 import sys
 import unittest
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+
+@contextmanager
+def _fake_stealthy_fetcher(MockSF):
+    """Make the tool's lazy `from scrapling import StealthyFetcher` resolve to a mock.
+
+    Scrapling 0.4.12 hardcodes chromium_version=149 but the bundled
+    apify-fingerprint-datapoints only covers to 143, so importing the real
+    StealthyFetcher raises ValueError inside browserforge's header generator.
+    The fetch tool already degrades to an error string at runtime; these tests
+    only need to exercise the call path, so swap the module out instead of
+    triggering the broken import (patching scrapling.StealthyFetcher does trigger
+    it — the real module's __getattr__ runs during patch lookup).
+    """
+    import types
+    fake_mod = types.SimpleNamespace(StealthyFetcher=MockSF)
+    original = sys.modules.get("scrapling")
+    sys.modules["scrapling"] = fake_mod
+    try:
+        yield MockSF
+    finally:
+        if original is not None:
+            sys.modules["scrapling"] = original
+        else:
+            sys.modules.pop("scrapling", None)
 
 
 def _clean_scrapling_db():
@@ -131,8 +157,8 @@ class TestScraplingStealthyFetch(unittest.TestCase):
 
     def test_stealthy_success(self):
         page, _ = _fake_response()
-        # StealthyFetcher is imported lazily inside the function — patch the source module
-        with patch("scrapling.StealthyFetcher") as MockSF:
+        # StealthyFetcher is imported lazily inside the function — swap the module
+        with _fake_stealthy_fetcher(MagicMock()) as MockSF:
             MockSF.fetch.return_value = page
             result = json.loads(self.execute("https://bot-protected.com", solve_cloudflare=True))
         assert result["ok"] is True
@@ -303,7 +329,7 @@ class TestScraplingFetchAndExtract(unittest.TestCase):
 
     def test_stealth_flag_uses_stealthy_fetcher(self):
         page, elements = _fake_response()
-        with patch("scrapling.StealthyFetcher") as MockSF, \
+        with _fake_stealthy_fetcher(MagicMock()) as MockSF, \
              patch("tools.scrapling_fetch.Selector") as MockSel:
             MockSF.fetch.return_value = page
             MockSel.return_value = page
