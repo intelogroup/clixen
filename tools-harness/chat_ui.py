@@ -940,6 +940,28 @@ def auth_logout(response: Response):
     return _build_workspace_payload()
 
 
+@app.get("/api/auth/session")
+def auth_session(request: Request):
+    """Strict session check — validates the signed cookie token only.
+
+    Unlike _current_account (which auto-authenticates loopback requests as the
+    owner, by design for the single-user local UI), this endpoint returns the
+    real session state so server-side proxies (e.g. the Next.js demo app) can
+    distinguish a genuinely logged-in browser from an anonymous one.
+    """
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return {"authenticated": False, "user": None}
+    payload = _unsign_session(token)
+    if not payload:
+        return {"authenticated": False, "user": None}
+    with _workspace_lock:
+        account = deepcopy(_workspace_state.get("account"))
+    if not account or account.get("email", "").lower() != str(payload.get("email", "")).lower():
+        return {"authenticated": False, "user": None}
+    return {"authenticated": True, "user": _public_user(account, True)}
+
+
 @app.post("/api/mock/login")
 def workspace_login(req: MockLoginRequest, response: Response):
     raise HTTPException(410, "Use /api/auth/register or /api/auth/login")

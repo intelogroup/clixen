@@ -2,12 +2,10 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Bot, Eye, EyeOff, ArrowLeft, CheckCircle, Github, Chrome } from "lucide-react"
+import { Bot, Eye, EyeOff, ArrowLeft, CheckCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuthActions } from "@/lib/auth-context"
 import Link from "next/link"
@@ -40,24 +38,9 @@ export default function SignUpPage() {
         flow: "signUp",
       })
 
-      // Redirect to dashboard on successful signup
       router.push('/dashboard')
     } catch (err: any) {
       setError(err.message || "Failed to create account. Please try again.")
-      setIsLoading(false)
-    }
-  }
-
-  const handleSocialAuth = async (provider: "github" | "google") => {
-    setIsLoading(true)
-    setError("")
-
-    try {
-      await signIn(provider)
-      // Redirect to dashboard on successful social auth
-      router.push('/dashboard')
-    } catch (err: any) {
-      setError(err.message || `Failed to sign in with ${provider}`)
       setIsLoading(false)
     }
   }
@@ -104,36 +87,7 @@ export default function SignUpPage() {
         </div>
 
         <Card className="border-2 shadow-lg">
-          <CardHeader className="space-y-4">
-            {/* Social Auth Buttons */}
-            <div className="space-y-3">
-              <Button
-                variant="outline"
-                className="w-full h-11 border-2"
-                onClick={() => handleSocialAuth('google')}
-                disabled={isLoading}
-              >
-                <Chrome className="h-4 w-4 mr-2" />
-                Continue with Google
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full h-11 border-2"
-                onClick={() => handleSocialAuth('github')}
-                disabled={isLoading}
-              >
-                <Github className="h-4 w-4 mr-2" />
-                Continue with GitHub
-              </Button>
-            </div>
-
-            <div className="relative">
-              <Separator />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="bg-white px-4 text-sm text-gray-500">or continue with email</span>
-              </div>
-            </div>
-          </CardHeader>
+          <CardHeader className="space-y-4" />
 
           <CardContent>
             {error && (

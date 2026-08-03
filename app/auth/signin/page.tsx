@@ -1,18 +1,18 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Bot, Eye, EyeOff, ArrowLeft, Github, Chrome, Mail } from "lucide-react"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Bot, Eye, EyeOff, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuthActions } from "@/lib/auth-context"
 import Link from "next/link"
 
-export default function SignInPage() {
+function SignInForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { signIn } = useAuthActions()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -20,7 +20,6 @@ export default function SignInPage() {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
-    rememberMe: false
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,24 +34,9 @@ export default function SignInPage() {
         flow: "signIn",
       })
 
-      // Redirect to dashboard on successful signin
-      router.push('/dashboard')
+      router.push(searchParams.get("next") || "/dashboard")
     } catch (err: any) {
       setError(err.message || "Invalid email or password. Please try again.")
-      setIsLoading(false)
-    }
-  }
-
-  const handleSocialAuth = async (provider: "github" | "google") => {
-    setIsLoading(true)
-    setError("")
-
-    try {
-      await signIn(provider)
-      // Redirect to dashboard on successful social auth
-      router.push('/dashboard')
-    } catch (err: any) {
-      setError(err.message || `Failed to sign in with ${provider}`)
       setIsLoading(false)
     }
   }
@@ -62,29 +46,6 @@ export default function SignInPage() {
       ...prev,
       [e.target.name]: e.target.value
     }))
-  }
-
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      rememberMe: e.target.checked
-    }))
-  }
-
-  const handleDemoAccount = () => {
-    setFormData({
-      email: "demo@clixen.com",
-      password: "demo123",
-      rememberMe: false
-    })
-  }
-
-  const handleTestAccount = () => {
-    setFormData({
-      email: "demo@clixen.com",
-      password: "demo123",
-      rememberMe: false
-    })
   }
 
   return (
@@ -112,36 +73,7 @@ export default function SignInPage() {
         </div>
 
         <Card className="border-2 shadow-lg">
-          <CardHeader className="space-y-4">
-            {/* Social Auth Buttons */}
-            <div className="space-y-3">
-              <Button
-                variant="outline"
-                className="w-full h-11 border-2"
-                onClick={() => handleSocialAuth('google')}
-                disabled={isLoading}
-              >
-                <Chrome className="h-4 w-4 mr-2" />
-                Continue with Google
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full h-11 border-2"
-                onClick={() => handleSocialAuth('github')}
-                disabled={isLoading}
-              >
-                <Github className="h-4 w-4 mr-2" />
-                Continue with GitHub
-              </Button>
-            </div>
-
-            <div className="relative">
-              <Separator />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="bg-white px-4 text-sm text-gray-500">or continue with email</span>
-              </div>
-            </div>
-          </CardHeader>
+          <CardHeader className="space-y-4" />
 
           <CardContent>
             {error && (
@@ -203,22 +135,8 @@ export default function SignInPage() {
                 </div>
               </div>
 
-              {/* Remember Me & Forgot Password */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="rememberMe"
-                    name="rememberMe"
-                    checked={formData.rememberMe}
-                    onChange={handleCheckboxChange}
-                    className="rounded border-gray-300"
-                    disabled={isLoading}
-                  />
-                  <label htmlFor="rememberMe" className="text-sm text-gray-600">
-                    Remember me
-                  </label>
-                </div>
+              {/* Forgot Password */}
+              <div className="flex items-center justify-end">
                 <Link href="/auth/forgot-password" className="text-sm text-blue-600 hover:underline">
                   Forgot password?
                 </Link>
@@ -250,56 +168,15 @@ export default function SignInPage() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Test Accounts */}
-        <div className="mt-6 space-y-4">
-          <Card className="border border-blue-200 bg-blue-50">
-            <CardContent className="p-4">
-              <div className="flex items-start space-x-3">
-                <Mail className="h-5 w-5 text-blue-600 mt-0.5" />
-                <div>
-                  <h3 className="text-sm font-medium text-blue-900 mb-1">Demo Account</h3>
-                  <p className="text-xs text-blue-700 mb-2">
-                    Use demo@clixen.com with password "demo123" to explore all features
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                    onClick={handleDemoAccount}
-                    disabled={isLoading}
-                  >
-                    Use Demo Account
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-green-200 bg-green-50">
-            <CardContent className="p-4">
-              <div className="flex items-start space-x-3">
-                <Mail className="h-5 w-5 text-green-600 mt-0.5" />
-                <div>
-                  <h3 className="text-sm font-medium text-green-900 mb-1">Test Account</h3>
-                  <p className="text-xs text-green-700 mb-2">
-                    Use demo@clixen.com with password "demo123" for testing
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-green-300 text-green-700 hover:bg-green-100"
-                    onClick={handleTestAccount}
-                    disabled={isLoading}
-                  >
-                    Use Test Account
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
+  )
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense>
+      <SignInForm />
+    </Suspense>
   )
 }
