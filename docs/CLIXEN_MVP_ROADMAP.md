@@ -29,7 +29,7 @@
 - Refine UI for mobile-friendly layouts and responsive design.
 - Integrate telemetry: capture core events (sign ins, workflow creation, deployments, execution errors) and enforce per-user rate limits/quotas.
 - Write developer and user documentation: quickstart guide, API references.
-- Create Convex db migration scripts for workflows versioning and rollback schema.
+- Create db migration scripts for workflows versioning and rollback schema.
 - Finalize end-to-end tests and prepare v0.1.0 release.
 
 ## Long-Term Vision (Post-MVP)
