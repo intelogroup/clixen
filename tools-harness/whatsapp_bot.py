@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 import httpx
 from pydantic import BaseModel
@@ -13,6 +13,16 @@ app = FastAPI(title="WhatsApp Bot")
 
 BRIDGE_URL = os.getenv("WHATSAPP_BRIDGE_URL", "http://localhost:9235")
 PORT = int(os.getenv("WHATSAPP_BOT_PORT", "9236"))
+# Optional shared secret for /webhook and /send (defense-in-depth on top of the
+# loopback bind). When empty, loopback-only auth applies (matches the app's
+# loopback=owner model). Set WHATSAPP_BOT_TOKEN in .env to require it.
+BOT_TOKEN = os.getenv("WHATSAPP_BOT_TOKEN", "").strip()
+
+
+def _auth_ok(request: Request) -> bool:
+    if not BOT_TOKEN:
+        return True
+    return request.headers.get("X-Bot-Token", "") == BOT_TOKEN
 
 try:
     import harness as harness_module
@@ -95,7 +105,9 @@ async def status():
 
 
 @app.post("/webhook")
-async def webhook(message: WebhookMessage):
+async def webhook(request: Request, message: WebhookMessage):
+    if not _auth_ok(request):
+        raise HTTPException(401, "unauthorized")
     if not HARNESS_AVAILABLE:
         return JSONResponse(
             {"error": "Harness not available", "reply": "Bot is configured but harness is not loaded."},
@@ -148,7 +160,9 @@ async def webhook(message: WebhookMessage):
 
 
 @app.post("/send")
-async def send_message(to: str, message: str):
+async def send_message(request: Request, to: str, message: str):
+    if not _auth_ok(request):
+        raise HTTPException(401, "unauthorized")
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
@@ -163,4 +177,4 @@ async def send_message(to: str, message: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host="127.0.0.1", port=PORT)

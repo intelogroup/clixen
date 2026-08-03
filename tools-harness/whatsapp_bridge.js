@@ -44,6 +44,7 @@ function resetReconnect() { _reconnectAttempts = 0; }
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.WHATSAPP_BRIDGE_PORT || 9235;
 const BOT_URL = process.env.WHATSAPP_BOT_URL || 'http://localhost:9236';
+const BOT_TOKEN = process.env.WHATSAPP_BOT_TOKEN || '';
 const SESSION_DIR = process.env.WHATSAPP_SESSION_DIR || join(__dirname, '.baileys_auth');
 
 const logger = pino({ level: 'info' });
@@ -209,9 +210,11 @@ async function handleIncomingMessage(msg) {
   } catch (_) {}
 
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (BOT_TOKEN) headers['X-Bot-Token'] = BOT_TOKEN;
     const response = await fetch(`${BOT_URL}/webhook`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         sender: remoteJid,
         message: messageText,
@@ -478,8 +481,8 @@ async function main() {
   try {
     await getSocket();
 
-    app.listen(PORT, () => {
-      logger.info({ port: PORT, botUrl: BOT_URL }, 'WhatsApp bridge listening');
+    app.listen(PORT, '127.0.0.1', () => {
+      logger.info({ port: PORT, botUrl: BOT_URL }, 'WhatsApp bridge listening on 127.0.0.1');
     });
   } catch (error) {
     console.error('Failed to start bridge:', error);

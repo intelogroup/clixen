@@ -26,11 +26,32 @@ from pathlib import Path
 
 PORT = 9237
 DEFAULT_VOICE = "af_heart"
+# 0.0.0.0 default is deliberate: the ringback docker container reaches this via
+# host.docker.internal (docker bridge, not loopback). Override to 127.0.0.1 when
+# ringback isn't used. See _get_auth_token() for the optional token gate.
+BIND_HOST = os.environ.get("KOKORO_BIND_HOST", "0.0.0.0")
 
 log = logging.getLogger("kokoro_daemon")
 
 _kokoro = None
 _kokoro_lock = threading.Lock()
+
+
+def _get_auth_token() -> str | None:
+    """Optional shared secret. When set, /synthesize* requires an
+    X-Auth-Token header matching it — closes the LAN-exposed TTS endpoint
+    (0.0.0.0 bind) without breaking the ringback docker bridge. Clients that
+    need it must send the same env value."""
+    token = os.environ.get("KOKORO_AUTH_TOKEN", "").strip()
+    return token or None
+
+
+def _auth_ok(handler: BaseHTTPRequestHandler) -> bool:
+    token = _get_auth_token()
+    if not token:
+        return True
+    supplied = handler.headers.get("X-Auth-Token", "")
+    return supplied == token
 
 
 def _get_kokoro():
@@ -96,6 +117,10 @@ class _Handler(BaseHTTPRequestHandler):
             return None
 
     def do_POST(self):
+        if not _auth_ok(self):
+            self.send_response(401)
+            self.end_headers()
+            return
         if self.path == "/synthesize_stream":
             self._handle_stream()
             return
@@ -176,14 +201,16 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    log.info("warming Kokoro TTS daemon on port %d", PORT)
+    log.info("warming Kokoro TTS daemon on %s:%d", BIND_HOST, PORT)
     _get_kokoro()  # pay the load cost now, not on the first real request
-    # 0.0.0.0, not 127.0.0.1: the ringback docker container reaches this via
-    # host.docker.internal, which arrives over the Docker bridge/gateway
-    # interface, not loopback — a 127.0.0.1-bound socket silently dropped
-    # every container request (found live, TTS timeouts during a test call).
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), _Handler)
-    log.info("Kokoro TTS daemon listening on 0.0.0.0:%d", PORT)
+    # BIND_HOST defaults to 0.0.0.0 (not 127.0.0.1) because the ringback docker
+    # container reaches this via host.docker.internal, which arrives over the
+    # Docker bridge/gateway interface, not loopback — a 127.0.0.1-bound socket
+    # silently dropped every container request (found live, TTS timeouts during
+    # a test call). When KOKORO_AUTH_TOKEN is set, LAN callers also need the
+    # shared token. Set KOKORO_BIND_HOST=127.0.0.1 when ringback is not used.
+    server = ThreadingHTTPServer((BIND_HOST, PORT), _Handler)
+    log.info("Kokoro TTS daemon listening on %s:%d", BIND_HOST, PORT)
     server.serve_forever()
 
 

@@ -284,9 +284,13 @@ def _synthesize_kokoro_chunks(text: str):
 
     try:
         payload = json.dumps({"text": text, "voice": "af_heart"}).encode()
+        headers = {"Content-Type": "application/json"}
+        token = os.environ.get("KOKORO_AUTH_TOKEN", "").strip()
+        if token:
+            headers["X-Auth-Token"] = token
         request = _req.Request(
             "http://127.0.0.1:9237/synthesize_stream", data=payload,
-            headers={"Content-Type": "application/json"}, method="POST",
+            headers=headers, method="POST",
         )
         resp = _req.urlopen(request, timeout=15)
     except Exception:
