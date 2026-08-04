@@ -256,10 +256,15 @@ def apply_decision(paper: dict, decision: dict, kb) -> str:
                 # handler's own paper/embedding novelty gate — catches the case where
                 # a semantically "new" claim still restates something already surfaced
                 # (by science_scout or any other source) recently.
-                if wm_store.is_known(finding_text):
+                # Dedup key is call_detail, NOT finding_text: finding_text's stable
+                # "New {level} finding in {niche}:" prefix always contains the first
+                # ":" — dedup_key() cuts there, collapsing every distinct paper in
+                # the same niche onto one key (verified live 2026-08-04, 270/270
+                # findings that day suppressed as false dupes across ~30 niches).
+                if wm_store.is_known(call_detail):
                     store.log_suppressed_alert("science_scout", finding_text, "already surfaced (cross-source dedup)")
                 else:
-                    wm_store.mark_notified(finding_text, "", "science_scout")
+                    wm_store.mark_notified(call_detail, "", "science_scout")
                     decide_and_notify(
                         finding=finding_text,
                         source="science_scout", fallback_alert=True, wake_agent=True, call_phone=True, bypass_gate=True,

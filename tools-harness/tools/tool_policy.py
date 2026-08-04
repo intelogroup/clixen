@@ -63,8 +63,15 @@ def check_python_code_safety(code: str) -> None:
                 if module_name == "sys" and attr_name in ("modules",):
                     raise ValueError(f"Accessing 'sys.{func.attr}' is forbidden.")
             elif isinstance(func, ast.Name):
-                if func.id in ("eval", "exec", "execfile", "compile"):
+                if func.id in ("eval", "exec", "execfile", "compile", "__import__", "getattr", "setattr", "delattr", "vars", "globals", "locals"):
                     raise ValueError(f"Calling dangerous built-in '{func.id}' is forbidden.")
+
+        # 3. Block dunder attribute/name access used to route around the above
+        # (e.g. os.__dict__["system"], obj.__class__.__bases__, __builtins__)
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__") and node.attr.endswith("__"):
+            raise ValueError(f"Accessing dunder attribute '{node.attr}' is forbidden.")
+        if isinstance(node, ast.Name) and node.id.startswith("__") and node.id.endswith("__"):
+            raise ValueError(f"Referencing dunder name '{node.id}' is forbidden.")
 
 
 def validate_command(command: str) -> None:

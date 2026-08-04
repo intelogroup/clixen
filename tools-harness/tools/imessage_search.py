@@ -468,7 +468,7 @@ SEND_SCHEMA = {
 }
 
 
-IMMESSAGE_DEFAULT_SENDER = "8574261739"
+IMMESSAGE_DEFAULT_SENDER = os.environ.get("IMESSAGE_DEFAULT_TARGET", "").lstrip("+")
 
 def send(to: str, message: str, service: str = "iMessage",
          from_: str = None) -> str:
@@ -517,7 +517,7 @@ def send(to: str, message: str, service: str = "iMessage",
         else:
             # ponytail: there used to be an `elif from_:` branch here that
             # did `account "{from_}"` — Messages accounts are referenced by
-            # UUID (confirmed live 2026-07-13: `account "8574261739"` itself
+            # UUID (confirmed live 2026-07-13: `account "<phone-number>"` itself
             # raises "Invalid key form", the exact error class this file's
             # self-send fix worked around), never by phone number, so that
             # branch failed on every single call since `from_` defaults to

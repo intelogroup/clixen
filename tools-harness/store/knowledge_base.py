@@ -226,16 +226,20 @@ class KnowledgeBase:
     ) -> list[dict]:
         """
         Semantic search with staleness filtering.
+        source_filter applies as a native LanceDB prefilter (not a post-hoc
+        Python pass) — restricts the candidate set before vector scoring,
+        not after.
         Over-fetches by 4x (lesson: don't under-fetch then run out after stale filter).
         """
         qvec = _embed(query)
-        candidates = self.table.search(qvec).limit(top_k * 4).to_list()
+        search = self.table.search(qvec)
+        if source_filter:
+            search = search.where(f"source = '{source_filter}'", prefilter=True)
+        candidates = search.limit(top_k * 4).to_list()
 
         now = time.time()
         fresh = []
         for r in candidates:
-            if source_filter and r["source"] != source_filter:
-                continue
             ttl = TTL.get(r["source"], 3600)
             if (now - r["created_at"]) <= ttl:
                 fresh.append(r)

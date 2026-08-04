@@ -376,18 +376,32 @@ def grep_files(
     return result
 
 
-def _safe_rglob(root: Path, pattern: str):
+def _safe_rglob(root: Path, pattern: str, time_budget_s: float = 15.0):
     """rglob with per-dir OSError catch (iCloud deadlock fix).
-    os.walk onerror skips locked dirs instead of crashing the whole search."""
+    os.walk onerror skips locked dirs instead of crashing the whole search.
+
+    2026-08-04: a bare find_files under ~/Documents (iCloud-synced) took
+    17+ minutes — os.walk's per-entry stat blocks on iCloud daemon round-trips
+    for cloud-only placeholder files, and _SKIP_DIRS only helps for dirs
+    literally named "Mobile Documents", not an iCloud-synced Documents/Desktop
+    root itself. A wall-clock budget bounds this regardless of root cause."""
+    import time
     _SKIP_DIRS = {
         ".git", "__pycache__", "node_modules", ".venv", "venv",
         ".cache", "site-packages", "dist", "build",
         "Mobile Documents",
     }
+    deadline = time.monotonic() + time_budget_s
+    timed_out = False
     for dirpath, dirs, files in os.walk(root, onerror=lambda _: None):
+        if time.monotonic() > deadline:
+            timed_out = True
+            break
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         for f in fnmatch.filter(files, pattern):
             yield Path(dirpath) / f
+    if timed_out:
+        yield None  # sentinel: caller reports search was time-truncated
 
 
 def find_files(pattern: str, path: str = _HOME, max_results: int = 20) -> str:
@@ -396,17 +410,24 @@ def find_files(pattern: str, path: str = _HOME, max_results: int = 20) -> str:
         return f"Path not found: {root}"
 
     found = []
+    truncated_by_time = False
     for fp in _safe_rglob(root, pattern):
+        if fp is None:
+            truncated_by_time = True
+            break
         found.append(str(fp))
         if len(found) >= max_results:
             break
 
     if not found:
-        return f"No files matching '{pattern}' under {root}"
+        suffix = " (search stopped after 15s, tree not fully scanned — narrow the path for a full search)" if truncated_by_time else ""
+        return f"No files matching '{pattern}' under {root}{suffix}"
 
     result = "\n".join(found)
     if len(found) >= max_results:
         result += f"\n... (limit {max_results} reached)"
+    elif truncated_by_time:
+        result += "\n... (search stopped after 15s, tree not fully scanned — narrow the path for a full search)"
     return result
 
 
