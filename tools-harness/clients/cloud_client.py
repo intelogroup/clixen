@@ -61,6 +61,31 @@ _log = logging.getLogger(__name__)
 _TRANSIENT_MAX_RETRIES = 1
 _TRANSIENT_BASE_DELAY = 1.0
 
+# OpenRouter's 402 message when the account balance is low but nonzero:
+# "This request requires more credits, or fewer max_tokens. You requested up to
+# 65535 tokens, but can only afford 7592." The remaining balance IS spendable —
+# the request just asked for more max_tokens than it can afford, so clamp and
+# retry on the SAME provider instead of bailing to the fallback.
+_AFFORD_RE = re.compile(r"can only afford (\d+)", re.IGNORECASE)
+
+
+def _clamp_max_tokens_for_afford(kwargs: dict, err: Exception) -> dict | None:
+    """If the error is a low-balance 402, return kwargs with max_tokens clamped
+    just under the affordable ceiling (retry on the same provider). Else None."""
+    m = _AFFORD_RE.search(str(err))
+    if not m:
+        return None
+    afford = int(m.group(1))
+    requested = kwargs.get("max_tokens")
+    if requested is not None and requested <= afford:
+        return None  # already under the ceiling — clamping can't help
+    capped = max(min(afford - 256, 8192), 256)
+    if requested is not None and capped >= requested:
+        return None
+    out = dict(kwargs)
+    out["max_tokens"] = capped
+    return out
+
 
 def _create_with_retry(client, **kwargs):
     from openai import APIConnectionError, APITimeoutError, RateLimitError, InternalServerError
@@ -74,6 +99,15 @@ def _create_with_retry(client, **kwargs):
             delay = _TRANSIENT_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
             _log.warning("[cloud_client] transient error (%s), retrying in %.1fs", e, delay)
             time.sleep(delay)
+        except Exception as e:
+            clamped = _clamp_max_tokens_for_afford(kwargs, e)
+            if clamped is None:
+                raise
+            kwargs = clamped
+            _log.warning(
+                "[cloud_client] low-balance 402 (%s), retrying on same provider with max_tokens=%d",
+                e, kwargs["max_tokens"],
+            )
 
 
 def _create_stream_with_retry(client, **kwargs):
@@ -90,6 +124,15 @@ def _create_stream_with_retry(client, **kwargs):
             delay = _TRANSIENT_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
             _log.warning("[cloud_client] transient error (%s), retrying in %.1fs", e, delay)
             time.sleep(delay)
+        except Exception as e:
+            clamped = _clamp_max_tokens_for_afford(kwargs, e)
+            if clamped is None:
+                raise
+            kwargs = clamped
+            _log.warning(
+                "[cloud_client] low-balance 402 (%s), retrying on same provider with max_tokens=%d",
+                e, kwargs["max_tokens"],
+            )
 
 
 def _reasoning_extra_body(model: str, reasoning_effort: str | None) -> dict:
@@ -293,8 +336,23 @@ MAX_ROUNDS = 25
 _CLOUD_TOOL_TIMEOUT_S = float(os.environ.get("CLOUD_TOOL_TIMEOUT", "120"))
 
 _clients: dict[str, OpenAI] = {}
+# Dead-provider circuit breaker. A provider marked dead (payment/auth 402) is
+# skipped for a SHORT stepped window, then re-probed on the next real request.
+# 2026-08-03 regression: the window was a flat 24h, so DeepSeek + OpenRouter
+# each 402'd once at 11:35/11:39 and the whole day ran on gpt-4o-mini — a top-up
+# or a transient blip couldn't recover until restart. Now: base 300s, doubled per
+# consecutive failure, capped at 1h, and any successful completion clears the mark
+# (half-open probe semantics).
 _dead_providers: dict[str, float] = {}  # prefix -> timestamp when marked dead
-_DEAD_RETRY_AFTER = 86400  # retry a dead provider after 24h
+_dead_failures: dict[str, int] = {}     # prefix -> consecutive dead-mark count
+_DEAD_RETRY_AFTER = 300                 # base cooldown seconds
+_DEAD_RETRY_MAX = 3600                  # capped cooldown seconds (1h)
+_DEAD_RETRY_STEP = 2.0                  # exponential step per consecutive failure
+
+
+def _dead_window(prefix: str) -> float:
+    n = _dead_failures.get(prefix, 0)
+    return min(_DEAD_RETRY_AFTER * (_DEAD_RETRY_STEP ** max(n - 1, 0)), _DEAD_RETRY_MAX)
 
 # Cumulative token usage per real model name — read by callers (e.g. the
 # reliability benchmark) that want cost/usage visibility across a run.
@@ -336,8 +394,7 @@ def _provider_for(model: str) -> str | None:
 def _is_dead(model: str) -> bool:
     prefix = _provider_for(model)
     if prefix and prefix in _dead_providers:
-        dead_since = _dead_providers[prefix]
-        if time.time() - dead_since < _DEAD_RETRY_AFTER:
+        if time.time() - _dead_providers[prefix] < _dead_window(prefix):
             return True
         _dead_providers.pop(prefix, None)
     return False
@@ -346,9 +403,34 @@ def _is_dead(model: str) -> bool:
 def _mark_dead(model: str) -> None:
     prefix = _provider_for(model)
     if prefix:
+        _dead_failures[prefix] = _dead_failures.get(prefix, 0) + 1
         _dead_providers[prefix] = time.time()
-        _log.warning("[cloud_client] marked %s as dead (payment/auth failure), skipping it for %ds",
-                     prefix, _DEAD_RETRY_AFTER)
+        _log.warning("[cloud_client] marked %s as dead (payment/auth failure), skipping it for %.0fs",
+                     prefix, _dead_window(prefix))
+
+
+def _clear_dead(model: str) -> None:
+    """A successful completion on a provider clears its dead mark (half-open probe
+    semantics) — a top-up or transient blip must not keep the provider benched."""
+    prefix = _provider_for(model)
+    if prefix:
+        was = prefix in _dead_providers
+        _dead_providers.pop(prefix, None)
+        _dead_failures.pop(prefix, None)
+        if was:
+            _log.info("[cloud_client] %s recovered, clearing dead mark", prefix)
+
+
+def _emit_fallback_notice(on_token, from_model: str, to_model: str) -> None:
+    """Surface a model fallback to the user via the streaming callback — Hermes
+    style, no silent degradation. Display-only: chat()'s return value is what
+    lands in conversation history, so this never corrupts stored turns."""
+    if not on_token:
+        return
+    try:
+        on_token(f"\n\n[Model fallback: {from_model} unavailable, using {to_model}]")
+    except Exception:
+        pass
 
 
 def _is_payment_error(e: Exception) -> bool:
@@ -722,6 +804,7 @@ def _run_tool_loop(
         )
         resp = _with_deadline(_call, on_token, round_timeout, model=real_model)
         usage = getattr(resp, "usage", None)
+        _clear_dead(model)
         _track_usage(real_model, usage)
         # 2026-07-11: diagnostic-only addition — finish_reason was never logged
         # or checked anywhere in this file, so a response silently cut short by
@@ -931,6 +1014,7 @@ def raw_completion(model: str, messages: list, tools: list, temperature: float =
             tools=tools or None,
             temperature=temperature,
         )
+    _clear_dead(model)
     _track_usage(real_model, getattr(resp, "usage", None))
     return resp.choices[0]
 
@@ -992,6 +1076,7 @@ def chat(
         # exhausted OpenRouter account. OpenAI stays the last-resort tier below
         # if DeepSeek also fails.
         _log.info("[cloud_client] %s's provider is dead, using fallback %s", model, CLOUD_FALLBACK_MODEL)
+        _emit_fallback_notice(on_token, model, CLOUD_FALLBACK_MODEL)
         model = CLOUD_FALLBACK_MODEL
         fallback_model = OPENAI_FALLBACK_MODEL
         if _is_dead(model):
@@ -999,6 +1084,7 @@ def chat(
             # out of credits) — skip its guaranteed-402 round trip too, straight
             # to OpenAI last resort.
             _log.info("[cloud_client] fallback %s's provider is also dead, using %s directly", model, OPENAI_FALLBACK_MODEL)
+            _emit_fallback_notice(on_token, model, OPENAI_FALLBACK_MODEL)
             model = OPENAI_FALLBACK_MODEL
     if images and model != CLOUD_VISION_MODEL:
         # Only CLOUD_VISION_MODEL is verified to accept image_url content blocks —
@@ -1060,6 +1146,7 @@ def chat(
         if _is_payment_error(e):
             _mark_dead(model)
         _log.warning("[cloud_client] %s failed (%s), retrying on fallback %s", model, e, fallback_model)
+        _emit_fallback_notice(on_token, model, fallback_model)
         try:
             return _run_tool_loop(
                 fallback_model, list(messages), tools, on_token, max_rounds,
@@ -1071,6 +1158,7 @@ def chat(
                 raise
             _log.warning("[cloud_client] fallback %s also failed (%s), last resort OpenAI %s",
                          fallback_model, e2, OPENAI_FALLBACK_MODEL)
+            _emit_fallback_notice(on_token, fallback_model, OPENAI_FALLBACK_MODEL)
             return _run_tool_loop(
                 OPENAI_FALLBACK_MODEL, list(messages), tools, on_token, max_rounds,
                 run_id=run_id, force_tool_choice=force_tool_choice, reasoning_effort=reasoning_effort,
