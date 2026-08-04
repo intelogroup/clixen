@@ -424,6 +424,18 @@ async def _send_images_in_text(update: Update, text: str):
                 log.warning("Failed to send photo %s: %s", img_path, e)
 
 
+# Bounded, precise name match against the fixed template gallery — not a router,
+# just detects whether the request names one of the 3 shipped templates.
+_TEMPLATE_NAME_RE = re.compile(
+    r"\b(status\s*report|invoice|pitch\s*deck)\b", re.IGNORECASE,
+)
+_TEMPLATE_NAME_MAP = {
+    "status report": "status_report",
+    "invoice": "invoice",
+    "pitch deck": "pitch_deck",
+}
+
+
 def _doc_format(query: str) -> tuple[str, str]:
     """Pick output format from the request. Default PDF."""
     q = query.lower()
@@ -491,6 +503,39 @@ def _live_evidence(query: str) -> str:
         return ""
 
 
+def _csv_chart_spec(csv_body: str) -> dict | None:
+    """Cheap heuristic: >=2 numeric columns after the label column -> bar chart spec.
+    ponytail: first-numeric-look heuristic, refine only if wrong charts get made."""
+    import csv as _csv
+    import io as _io
+
+    rows = list(_csv.reader(_io.StringIO(csv_body.strip())))
+    if len(rows) < 2:
+        return None
+    header, data_rows = rows[0], rows[1:]
+    numeric_cols = []
+    for col_idx in range(1, len(header)):
+        vals = []
+        for row in data_rows:
+            if col_idx >= len(row):
+                return None
+            try:
+                vals.append(float(row[col_idx].replace(",", "").replace("$", "")))
+            except ValueError:
+                vals = None
+                break
+        if vals is not None:
+            numeric_cols.append((header[col_idx], vals))
+    if len(numeric_cols) < 1:
+        return None
+    return {
+        "type": "bar",
+        "title": header[0],
+        "categories": [row[0] for row in data_rows],
+        "series": {name: vals for name, vals in numeric_cols},
+    }
+
+
 def _run_doc_agent(query: str, model: str, chat_id: str, on_token):
     """
     Create a document (pdf/docx/pptx/xlsx) deterministically: gather source
@@ -518,6 +563,43 @@ def _run_doc_agent(query: str, model: str, chat_id: str, on_token):
     from tools.document_create import (
         create_pdf, markdown_to_docx, markdown_to_pptx, data_to_xlsx, _write_file,
     )
+
+    # 0. Template gallery: if the query names a known template, synthesize its
+    #    placeholder values with one LLM call and render it directly — skip the
+    #    generic gather/synthesize/convert path entirely.
+    _tmpl_match = _TEMPLATE_NAME_RE.search(query)
+    if _tmpl_match:
+        from tools.templates import render_template, _manifest
+        tmpl_name = _TEMPLATE_NAME_MAP[_tmpl_match.group(1).lower().replace("  ", " ")]
+        meta = _manifest().get(tmpl_name)
+        if meta:
+            placeholders = meta["placeholders"]
+            from store.conversation import get as _conv_get_early
+            recent = _conv_get_early(chat_id)[-6:]
+            ctx = "\n\n".join(f"{t.get('role', '?')}: {t.get('content', '')}" for t in recent) if recent else ""
+            values_prompt = (
+                f"Fill in values for a {tmpl_name.replace('_', ' ')} template based on the "
+                f"request below, using ONLY facts stated there or in recent chat context. "
+                f"Output ONLY a JSON object with exactly these keys: {placeholders}. "
+                "If a value isn't known, use a short reasonable placeholder, never leave it "
+                "empty. No commentary, no code fences.\n\n"
+                f"REQUEST: {query}\n{ctx}"
+            )
+            raw = _strip_fences(llm_chat(user_message=values_prompt, model=model, tools=[]) or "")
+            try:
+                import json as _json
+                values = _json.loads(raw)
+            except Exception:
+                values = {}
+            out = os.path.expanduser(f"~/Downloads/clixen_{int(time.time())}.{meta['format']}")
+            try:
+                path = render_template(tmpl_name, values, out)
+            except Exception as e:
+                log.warning("[document] template render failed: %s", e)
+                path = None
+            if path and os.path.exists(path) and os.path.getsize(path) > 0:
+                return f"Here's your {tmpl_name.replace('_', ' ')}.", path
+            # fall through to the generic path if template rendering failed
 
     # 1. Gather source material. Temporal asks ("today's matches", "latest scores")
     #    need live results; "make a pdf of THIS" refers to earlier turns.
@@ -568,7 +650,14 @@ def _run_doc_agent(query: str, model: str, chat_id: str, on_token):
             f"Write the body of a document for the request below, {_grounding} If the "
             "source lacks the requested information, say so plainly instead of guessing. "
             "Output ONLY clean Markdown: a title as a '# ' heading, then sections, bullet "
-            "lists, and paragraphs. No preamble, no code fences, no commentary.\n\n"
+            "lists, and paragraphs. If the source contains comparable numeric data across "
+            "categories (e.g. revenue by region, scores by team), include exactly ONE "
+            "fenced ```chart``` block (valid JSON: "
+            '{"type": "bar"|"line"|"pie", "title": str, "categories": [str,...], '
+            '"series": {"Series name": [number,...]}}) '
+            "anywhere in the body, in addition to the prose. Omit it entirely if there's "
+            "no clear chart-worthy data — never fabricate one. No other code fences, no "
+            "preamble, no commentary.\n\n"
             f"REQUEST: {query}\n{source}"
         )
     body = _strip_fences(llm_chat(user_message=prompt, model=model, tools=[]) or "")
@@ -579,7 +668,8 @@ def _run_doc_agent(query: str, model: str, chat_id: str, on_token):
     out = os.path.expanduser(f"~/Downloads/clixen_{int(time.time())}{ext}")
     try:
         if ext == ".xlsx":
-            csv_path = out[:-5] + ".csv"; _write_file(csv_path, body); path = data_to_xlsx(csv_path, out)
+            csv_path = out[:-5] + ".csv"; _write_file(csv_path, body)
+            path = data_to_xlsx(csv_path, out, chart_spec=_csv_chart_spec(body))
         elif ext == ".docx":
             md = out[:-5] + ".md"; _write_file(md, body); path = markdown_to_docx(md, out)
         elif ext == ".pptx":
