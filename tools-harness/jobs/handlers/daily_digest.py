@@ -38,7 +38,7 @@ def handle(instance: dict) -> dict:
 
     context = "\n".join(lines)
     try:
-        from clients.cloud_client import chat
+        from clients.ollama_client import chat
         summary = chat(context, system_prompt=_DIGEST_SYSTEM_PROMPT).strip()
     except Exception as exc:
         _log.error("daily_digest: LLM summarize failed: %s", exc)
