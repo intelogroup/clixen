@@ -19,7 +19,20 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).parent.parent / "data" / "raw.db"
+DB_PATH = None  # resolved in RawStore.__init__; see _resolve_db_path()
+
+
+def _resolve_db_path() -> str:
+    import os as _os
+
+    override = _os.environ.get("CLIXEN_RAW_DB_PATH", "").strip()
+    if override:
+        return override
+    from tools.vault_paths import db_path as _vault_db_path, ensure_data_dir, migrate_legacy_data
+
+    ensure_data_dir()
+    migrate_legacy_data()
+    return _vault_db_path("raw.db")
 
 TTL = {
     "brave_search":     60 * 60 * 6,
@@ -66,7 +79,9 @@ def _file_hash(path: str) -> Optional[str]:
 
 
 class RawStore:
-    def __init__(self, db_path: str = str(DB_PATH)):
+    def __init__(self, db_path: str | None = None):
+        if db_path is None:
+            db_path = _resolve_db_path()
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
         self._init()

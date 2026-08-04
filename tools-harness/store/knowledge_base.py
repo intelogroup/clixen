@@ -61,7 +61,24 @@ SCHEMA = pa.schema([
     pa.field("vector",     pa.list_(pa.float32(), EMBED_DIM)),
 ])
 
-DB_PATH = Path(__file__).parent.parent / "data" / "knowledge.lance"
+DB_PATH = None  # resolved lazily in __init__; see _resolve_db_path()
+
+# 2026-08-04: knowledge DB moves out of the repo dir into the OS app-private
+# data home (~/Library/Application Support/Clixen). Repo `data/` was the old
+# home — never ~/Documents (iCloud-syncs by default) — see THREAT_MODEL.md.
+# Tests still pass an explicit db_path, so the default only matters in prod.
+
+
+def _resolve_db_path() -> str:
+    import os as _os
+
+    override = _os.environ.get("CLIXEN_KNOWLEDGE_PATH", "").strip()
+    if override:
+        return override
+    from tools.vault_paths import db_path as _vault_db_path, migrate_legacy_data
+
+    migrate_legacy_data()
+    return _vault_db_path("knowledge.lance")
 
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
@@ -135,7 +152,11 @@ def _rrf(result_lists: list[list[dict]], top_k: int = 10, k: int = 60) -> list[d
 # ── KnowledgeBase ─────────────────────────────────────────────────────────────
 
 class KnowledgeBase:
-    def __init__(self, db_path: str = str(DB_PATH)):
+    def __init__(self, db_path: str | None = None):
+        if db_path is None:
+            db_path = _resolve_db_path()
+            from tools.vault_paths import ensure_data_dir
+            ensure_data_dir()
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db = lancedb.connect(db_path)
         self._init_table()

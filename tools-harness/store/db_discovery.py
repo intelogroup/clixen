@@ -32,9 +32,19 @@ EMBED_MODEL = "nomic-embed-text"
 _EXTRA_LANCE_ENV = os.environ.get("CLIXEN_EXTRA_LANCE_DBS", "")
 _EXTRA_SQLITE_ENV = os.environ.get("CLIXEN_EXTRA_SQLITE_DBS", "")
 
+
+def _clixen_data(name: str) -> str:
+    """Resolve a clixen store under the app-private data home (see tools/vault.py)."""
+    try:
+        from tools.vault_paths import db_path as _vault_db_path
+        return _vault_db_path(name)
+    except Exception:
+        return str(Path(__file__).parent.parent / "data" / name)
+
+
 KNOWN_LANCE_DBS = {
     "clixen": {
-        "path":   str(Path(__file__).parent.parent / "data" / "knowledge.lance"),
+        "path":   _clixen_data("knowledge.lance"),
         "tables": ["knowledge"],
         "text_field":   "content",
         "source_field": "source",
@@ -107,7 +117,7 @@ if os.environ.get("CLIXEN_EXTRA_DBS") == "1":
 
 KNOWN_SQLITE_DBS = {
     "clixen_raw": {
-        "path":     str(Path(__file__).parent.parent / "data" / "raw.db"),
+        "path":     _clixen_data("raw.db"),
         "table":    "raw_docs",
         "text_field":   "content",
         "source_field": "source",
@@ -349,7 +359,11 @@ def _discovery_root() -> str:
     env_root = os.environ.get("CLIXEN_DISCOVERY_ROOT", "").strip()
     if env_root:
         return env_root
-    return str(Path(__file__).resolve().parent.parent / "data")
+    try:
+        from tools.vault_paths import data_dir as _vault_data_dir
+        return str(_vault_data_dir())
+    except Exception:
+        return str(Path(__file__).resolve().parent.parent / "data")
 
 
 def discover_lance_dbs(root: str | None = None) -> list[str]:

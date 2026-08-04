@@ -78,8 +78,8 @@ def _get_knowledge_base():
     global _kb
     if _kb is None:
         from store.knowledge_base import KnowledgeBase
-        from pathlib import Path
-        db_path = str(Path(__file__).parent.parent.parent / "data" / "reddit_intel.lance")
+        from tools.vault_paths import db_path as _vault_db_path
+        db_path = _vault_db_path("reddit_intel.lance")
         _kb = KnowledgeBase(db_path=db_path)
     return _kb
 
