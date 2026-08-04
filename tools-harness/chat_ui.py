@@ -636,17 +636,27 @@ def _whatsapp_connection_snapshot() -> dict:
                 data = resp.json()
                 status = data.get("status", "unknown")
                 connected = status == "connected"
+                stuck = bool(data.get("stuck") or data.get("repairNeeded"))
+                if connected:
+                    detail = "WhatsApp connected"
+                elif stuck:
+                    detail = "WhatsApp reconnect loop - re-pair needed"
+                elif status == "disconnected":
+                    detail = "WhatsApp reconnecting"
+                else:
+                    detail = "WhatsApp pending - scan QR code"
                 return {
                     "connected": connected,
-                    "detail": "WhatsApp connected"
-                    if connected
-                    else "WhatsApp pending - scan QR code",
+                    "repairRequired": stuck,
+                    "repairReason": data.get("stuckReason"),
+                    "detail": detail,
                     "status": status,
                 }
     except Exception:
         pass
     return {
         "connected": False,
+        "repairRequired": False,
         "detail": "WhatsApp bridge unavailable",
         "status": "unavailable",
     }
@@ -834,7 +844,12 @@ def whatsapp_qr(request: Request):
             resp = client.get(f"{bridge_url}/api/qr-json")
             if resp.status_code == 200:
                 data = resp.json()
-                return {"status": data.get("status"), "qr": data.get("qr")}
+                return {
+                    "status": data.get("status"),
+                    "qr": data.get("qr"),
+                    "repairNeeded": bool(data.get("repairNeeded")),
+                    "repairAction": data.get("repairAction"),
+                }
     except Exception:
         pass
     return {"status": "error", "detail": "Bridge unavailable"}
