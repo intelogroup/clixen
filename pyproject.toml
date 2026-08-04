@@ -24,7 +24,6 @@ dependencies = [
   "requests>=2.33,<3",
   "trafilatura>=2.0,<3",
   "uvicorn>=0.33,<1",
-  "pymupdf>=1.23",
   "python-docx>=1,<2",
   "openpyxl>=3.1,<4",
   "pdfplumber",
@@ -33,7 +32,19 @@ dependencies = [
   "python-multipart",
   "python-telegram-bot",
   "faster-whisper",
+  # kokoro-onnx's own deps include phonemizer-fork/espeakng-loader/pykakasi
+  # (GPL-3.0) — tools-harness/tools/misaki_tokenizer.py stubs them out at
+  # runtime so they're never actually imported/executed, using misaki
+  # (Apache-2.0) instead. `uv sync` may still pull them onto disk since
+  # kokoro-onnx's metadata declares them; strip explicitly before a Tauri
+  # bundle so the GPL bytes aren't shipped at all.
   "kokoro-onnx",
+  "misaki[en]",
+  # misaki's spacy G2P model — pinned by direct wheel URL, not a bare name,
+  # because spacy models aren't on PyPI proper; without this pin, first TTS
+  # call would silently `spacy download` over the network (breaks offline/
+  # sandboxed installs).
+  "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
   "onnxruntime",
   "sqlalchemy",
   "google-auth",
@@ -52,6 +63,8 @@ dependencies = [
   "urllib3>=2.7.0",
   "langchain-core>=1.3.3",
   "langsmith>=0.8.18",
+  "python-pptx>=1,<2",
+  "matplotlib>=3.9,<4",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +76,11 @@ dev = [
 ]
 structured = [
   "instructor>=1,<2",
+]
+pii = [
+  # already resolved transitively via misaki's en-core-web-sm wheel pin above;
+  # declared explicitly here so the version contract isn't an accident.
+  "spacy>=3.8,<3.9",
 ]
 ocr = [
   "opencv-python-headless>=4.10",
@@ -100,6 +118,9 @@ asyncio_mode = "auto"
 markers = [
   "live: needs Ollama / network / external creds / a running server (auto-skipped when deps are down; run with `pytest -m live`)",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["tools-harness"]
