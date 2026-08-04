@@ -390,3 +390,26 @@ def test_approval_resolution(monkeypatch, tmp_path):
     approve = client.post(f"/approvals/{approval_id}/approve")
     assert approve.status_code == 200
     assert approve.json()["status"] == "approved"
+
+
+def test_file_access_grants_authed(monkeypatch, tmp_path):
+    _reset_auth_state(monkeypatch, tmp_path)
+    client = TestClient(chat_ui.app)
+    _register_local_account(client)
+
+    resp = client.get("/api/file-access/grants")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True or "error" in payload
+
+
+def test_file_access_snapshot_authed(monkeypatch, tmp_path):
+    _reset_auth_state(monkeypatch, tmp_path)
+    client = TestClient(chat_ui.app)
+    _register_local_account(client)
+
+    resp = client.get("/api/file-access", params={"path": tmp_path.as_posix()})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["snapshot"]["ok"] is True
+    assert payload["grants"]["ok"] is True

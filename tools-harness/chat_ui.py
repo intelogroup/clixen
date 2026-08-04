@@ -860,6 +860,33 @@ def workspace_state(request: Request):
     return _build_workspace_payload(_current_account(request))
 
 
+@app.get("/api/file-access")
+def api_file_access(request: Request, path: str = ""):
+    """Who is reading a directory right now + which apps hold TCC folder/FDA grants.
+
+    Auth-gated. lsof snapshot + TCC grant map (see tools/file_access.py).
+    """
+    _require_auth(request)
+    from tools.file_access import apps_with_grants, who_is_reading
+
+    snapshot = who_is_reading(path) if path else {"ok": False, "error": "no path given"}
+    grants = apps_with_grants()
+    return {
+        "snapshot": snapshot if path else None,
+        "grants": grants,
+        "default_path": path or "",
+    }
+
+
+@app.get("/api/file-access/grants")
+def api_file_access_grants(request: Request):
+    """Cheap TCC grant map only (no lsof)."""
+    _require_auth(request)
+    from tools.file_access import apps_with_grants
+
+    return apps_with_grants()
+
+
 @app.post("/webhooks/trigger/{workflow_id}")
 async def webhook_trigger(workflow_id: str, request: Request, secret: str = ""):
     """Inbound receiver for trigger_type='webhook' automations.

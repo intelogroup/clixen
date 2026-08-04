@@ -23,6 +23,15 @@ WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 # write-denied) and BLOCKED_PATTERNS still applies underneath it.
 DEV_ROOT = Path(__file__).resolve().parents[3]
 APP_DATA_DIR = (Path.home() / ".gemini/antigravity").resolve()
+# 2026-08-04: canonical clixen-owned data home. NOT ~/Documents/~/Desktop —
+# those are iCloud-synced by default and TCC grants for them are all-or-nothing
+# (see THREAT_MODEL.md). Application Support is the conventional app-data
+# location and is not synced. Vault/index/conversation data should live here.
+CLIXEN_DATA_DIR = (Path.home() / "Library/Application Support/Clixen").resolve()
+# Removable volumes (USB) are TCC-guarded locations on macOS (apps need consent
+# to access them) — legitimately private for clixen data. Allow them, but they
+# are presence-dependent: a USB drive may not always be mounted.
+REMOVABLE_VOLUMES_ROOT = Path("/Volumes").resolve()
 HOME = Path.home().resolve()
 TMP_DIRS = [
     Path("/tmp").resolve(),
@@ -78,6 +87,15 @@ def is_safe_path(path_str: str, write: bool = False) -> bool:
 
     # Always allow if under app data directory
     if p_str == str(APP_DATA_DIR) or p_str.startswith(str(APP_DATA_DIR) + "/"):
+        return True
+
+    # Clixen data home (Application Support/Clixen) — non-iCloud app data
+    if p_str == str(CLIXEN_DATA_DIR) or p_str.startswith(str(CLIXEN_DATA_DIR) + "/"):
+        return True
+
+    # Removable volumes (USB) — TCC-guarded, legitimately private. Presence-
+    # dependent: caller must handle "not mounted".
+    if p_str == str(REMOVABLE_VOLUMES_ROOT) or p_str.startswith(str(REMOVABLE_VOLUMES_ROOT) + "/"):
         return True
 
     # Allow tmp dirs

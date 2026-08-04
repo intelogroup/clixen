@@ -123,6 +123,10 @@ from tools.system_status import (
     SCHEMA as SYSTEM_STATUS_SCHEMA,
     execute as system_status_execute,
 )
+from tools.file_access import (
+    SCHEMA as FILE_ACCESS_SCHEMA,
+    execute as file_access_execute,
+)
 from tools.reminders import (
     LIST_REMINDERS_SCHEMA,
     CREATE_REMINDER_SCHEMA,
