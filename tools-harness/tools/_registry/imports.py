@@ -154,6 +154,8 @@ from tools.document_create import (
     MARKDOWN_TO_PPTX_SCHEMA,
     TEXT_TO_FILE_SCHEMA,
     HTML_TO_FILE_SCHEMA,
+    CREATE_FROM_TEMPLATE_SCHEMA,
+    LIST_TEMPLATES_SCHEMA,
     markdown_to_docx_executor,
     markdown_to_pdf_executor,
     create_pdf_executor,
@@ -162,6 +164,20 @@ from tools.document_create import (
     markdown_to_pptx_executor,
     text_to_file_executor,
     html_to_file_executor,
+    create_from_template_executor,
+    list_templates_executor,
+)
+from tools.doc_quality import (
+    VALIDATE_DOCX_SCHEMA,
+    REPAIR_DOCX_ELEMENT_ORDER_SCHEMA,
+    CHECK_XLSX_QUALITY_SCHEMA,
+    CHECK_PDF_ANOMALIES_SCHEMA,
+    ADD_DOCX_COMMENT_SCHEMA,
+    validate_docx_executor,
+    repair_docx_element_order_executor,
+    check_xlsx_quality_executor,
+    check_pdf_anomalies_executor,
+    add_docx_comment_executor,
 )
 from tools.diagram_render import RENDER_DIAGRAM_SCHEMA, render_diagram_executor
 from tools.image_edit import EDIT_IMAGE_SCHEMA, edit_image_executor
@@ -206,6 +222,12 @@ from tools.structured import (
     parse_file,
     read_pdf,
     parse_code,
+)
+from tools.pii_redact import (
+    REDACT_PII_SCHEMA,
+    redact_pii,
+    REDACT_DOCUMENT_SCHEMA,
+    redact_document,
 )
 from tools.semantic_files import (
     INDEX_DIR_SCHEMA,

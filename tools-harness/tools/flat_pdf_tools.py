@@ -24,11 +24,15 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
-import fitz
 import numpy as np
 from PIL import Image
 
 _log = logging.getLogger("flat_pdf_tools")
+
+_FITZ_REMOVED_MSG = (
+    "PDF tooling disabled: PyMuPDF (AGPL-3.0) was removed for license "
+    "compliance. Pending port to pdfium-render/lopdf."
+)
 
 _DESCENDER_CHARS = set("gjpqy")
 _CHECKBOX_SIZE_MIN = 5
@@ -265,6 +269,7 @@ def detect_flat_pdf_fields(path: str, pages: str | None = None) -> str:
     Raises:
         FileNotFoundError: If the PDF does not exist.
     """
+    return _FITZ_REMOVED_MSG
     p = _resolve_pdf_path(path)
     if not p.exists():
         return f"PDF not found: {path}"
@@ -608,6 +613,7 @@ def fill_flat_pdf(
     Returns:
         Confirmation message with filled field names and any skipped fields.
     """
+    return _FITZ_REMOVED_MSG
     p = _resolve_pdf_path(path)
     if not p.exists():
         return f"PDF not found: {path}"

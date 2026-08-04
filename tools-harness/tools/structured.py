@@ -50,6 +50,15 @@ READ_DOCUMENT_SCHEMA = {
                     "description": "For image OCR: language code such as 'en' or 'fr'",
                     "default": "en",
                 },
+                "redact": {
+                    "type": "boolean",
+                    "description": (
+                        "Scan extracted text for PII/PHI (names, dates, SSN, email, phone) "
+                        "using a local NER model and append a summary of what was found. "
+                        "Text itself is left unchanged (flag, not strip)."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["path"],
         },
@@ -162,8 +171,15 @@ def read_document(
     pages: str = "1-10",
     max_chars: int = 12000,
     lang: str = "en",
+    redact: bool = False,
 ) -> str:
-    """Route a local document path to the best available text extractor."""
+    """Route a local document path to the best available text extractor.
+
+    redact=True pipes the extracted text through tools.pii_redact.redact_pii
+    (flag mode: text unchanged, a summary of detected entities appended) —
+    kept out of each format-specific reader so PDF/docx/etc extraction stays
+    untouched.
+    """
     p = Path(path).expanduser().resolve()
     if not p.exists():
         return f"File not found: {p}"
@@ -174,36 +190,48 @@ def read_document(
     max_chars = max(1000, min(int(max_chars or 12000), 50000))
 
     if suffix == ".pdf":
-        return read_pdf(str(p), pages=pages)[:max_chars]
-    if suffix == ".docx":
-        return _read_docx(p, max_chars=max_chars)
-    if suffix == ".xlsx":
-        return _read_xlsx(p, max_chars=max_chars)
-    if suffix in _STRUCTURED_SUFFIXES:
-        return parse_file(str(p))[:max_chars]
-    if suffix in _CODE_SUFFIXES:
-        return parse_code(str(p), include_bodies=False)[:max_chars]
-    if suffix in _IMAGE_SUFFIXES:
+        text = read_pdf(str(p), pages=pages)[:max_chars]
+    elif suffix == ".docx":
+        text = _read_docx(p, max_chars=max_chars)
+    elif suffix == ".xlsx":
+        text = _read_xlsx(p, max_chars=max_chars)
+    elif suffix == ".pages":
+        text = _read_pages(p, max_chars=max_chars)
+    elif suffix in _STRUCTURED_SUFFIXES:
+        text = parse_file(str(p))[:max_chars]
+    elif suffix in _CODE_SUFFIXES:
+        text = parse_code(str(p), include_bodies=False)[:max_chars]
+    elif suffix in _IMAGE_SUFFIXES:
         try:
             from tools.ocr import execute as ocr_execute
         except Exception as e:
             return f"OCR unavailable for {p}: {e}"
-        return ocr_execute(str(p), lang=lang)[:max_chars]
-    if suffix in _TEXT_SUFFIXES or _looks_like_text(p):
+        text = ocr_execute(str(p), lang=lang)[:max_chars]
+    elif suffix in _TEXT_SUFFIXES or _looks_like_text(p):
         try:
             from tools.filesystem import read_file
         except Exception:
-            return p.read_text(errors="replace")[:max_chars]
-        return read_file(str(p), limit=400)[:max_chars]
+            text = p.read_text(errors="replace")[:max_chars]
+        else:
+            text = read_file(str(p), limit=400)[:max_chars]
+    else:
+        return (
+            f"Unsupported document format: {p.suffix or '(no extension)'}\n"
+            f"Path: {p}\n"
+            "Supported: text/code files, JSON/YAML/TOML/CSV/.env, PDF, DOCX, XLSX, "
+            "Pages (read-only), and image OCR (PNG/JPG/TIFF/BMP/WebP). "
+            "For Numbers, Keynote, legacy .doc/.xls, audio, or video, convert/export "
+            "to a supported format first."
+        )
 
-    return (
-        f"Unsupported document format: {p.suffix or '(no extension)'}\n"
-        f"Path: {p}\n"
-        "Supported: text/code files, JSON/YAML/TOML/CSV/.env, PDF, DOCX, XLSX, "
-        "and image OCR (PNG/JPG/TIFF/BMP/WebP). "
-        "For Pages, Numbers, Keynote, legacy .doc/.xls, audio, or video, convert/export "
-        "to a supported format first."
-    )
+    if redact:
+        from tools.pii_redact import redact_pii
+
+        result = redact_pii(text, mode="flag")
+        if result["entities"]:
+            summary = ", ".join(f"{e['label']}:{e['text']!r}" for e in result["entities"])
+            text += f"\n\n[PII/PHI detected — {len(result['entities'])} entities: {summary}]"
+    return text
 
 
 def _looks_like_text(path: Path) -> bool:
@@ -274,6 +302,62 @@ def _read_xlsx(path: Path, max_chars: int) -> str:
         return f"XLSX read error: not a valid .xlsx zip file: {path}"
     except Exception as e:
         return f"XLSX read error: {e}"
+
+
+def _extract_printable_runs(data: bytes, min_len: int = 6) -> list[str]:
+    """Scan raw bytes for printable-ASCII/UTF-8 runs of length >= min_len.
+
+    Document.iwa is Snappy-compressed protobuf, but Snappy stores literal
+    text runs uncompressed inline — a raw byte scan recovers real body text
+    without decoding protobuf or Snappy.
+    """
+    runs: list[str] = []
+    start = None
+    for i, b in enumerate(data):
+        printable = 0x20 <= b <= 0x7E or b >= 0xC2
+        if printable and start is None:
+            start = i
+        elif not printable and start is not None:
+            if i - start >= min_len:
+                try:
+                    runs.append(data[start:i].decode("utf-8"))
+                except UnicodeDecodeError:
+                    pass
+            start = None
+    if start is not None and len(data) - start >= min_len:
+        try:
+            runs.append(data[start:].decode("utf-8"))
+        except UnicodeDecodeError:
+            pass
+    return runs
+
+
+def _read_pages(path: Path, max_chars: int) -> str:
+    """Read-only text extraction for Apple Pages files (.pages).
+
+    No public create/edit/style API exists locally — Pages.app owns that.
+    This recovers body text only, via raw byte-scan on Index/Document.iwa
+    (see _extract_printable_runs).
+    """
+    try:
+        with zipfile.ZipFile(path) as zf:
+            if "Index/Document.iwa" not in zf.namelist():
+                return f"Pages read error: no Index/Document.iwa found in {path}"
+            data = zf.read("Index/Document.iwa")
+        runs = _extract_printable_runs(data)
+        survivors = []
+        for run in runs:
+            letters = sum(c.isalpha() for c in run)
+            if letters * 2 >= len(run) and any(c.isspace() for c in run):
+                survivors.append(run)
+        if not survivors:
+            return f"No readable text found in Pages file: {path}"
+        result = f"PAGES: {path}\n" + "\n".join(survivors)
+        return result[:max_chars]
+    except zipfile.BadZipFile:
+        return f"Pages read error: not a valid .pages zip file: {path}"
+    except Exception as e:
+        return f"Pages read error: {e}"
 
 
 def _xlsx_shared_strings(zf: zipfile.ZipFile) -> list[str]:
@@ -410,15 +494,18 @@ def read_pdf(path: str, pages: str = "1-10") -> str:
     if not p.exists():
         return f"File not found: {p}"
 
-    import fitz  # pymupdf — already a project dependency, used by pdf_tools.py etc.
+    return "PDF tooling disabled: PyMuPDF (AGPL-3.0) was removed for license compliance. Pending port to pdfium-render/lopdf."
 
     # Parse page range
     try:
         if "-" in pages:
-            start, end = pages.split("-", 1)
-            page_range = range(int(start) - 1, int(end))
+            start_s, end_s = pages.split("-", 1)
+            start_idx = int(start_s) - 1
+            end_idx = int(end_s)
         else:
-            page_range = range(int(pages) - 1, int(pages))
+            start_idx = int(pages) - 1
+            end_idx = int(pages)
+        page_range = range(start_idx, end_idx)
     except ValueError:
         return f"Invalid page range: {pages}. Use '1-5' or '3'."
 
@@ -436,9 +523,62 @@ def read_pdf(path: str, pages: str = "1-10") -> str:
         # many small sequential read_pdf calls to cover a long document
         # (confirmed live: exhausted a 25-step budget on a 185-page report).
         # 30000 chars (~7-8k tokens) lets one call cover ~20-30 typical pages.
-        return "\n".join(parts)[:30000]
+        result = "\n".join(parts)[:30000]
+        # Scanned PDF? pymupdf's embedded-text extraction returns ~nothing for
+        # image-only pages. Fall back to rendering pages and OCR-ing them via the
+        # Unlimited-OCR daemon (tools/ocr.py handles the daemon->PaddleOCR chain).
+        if _embedded_text_len(result) < 20:
+            return _ocr_pdf_pages(str(p), start_idx, end_idx, total) or result
+        return result
     except Exception as e:
         return f"PDF read error: {e}"
+
+
+# Strip the "PDF: <path> (N pages total)" header and "--- Page N ---" separators
+# so the scanned-PDF detector counts real text only.
+_PDF_HEADER_RE = re.compile(r"^PDF: .*\((\d+) pages total\)$|^--- Page \d+ ---$", re.MULTILINE)
+
+
+def _embedded_text_len(text: str) -> int:
+    return len(re.sub(r"\s+", "", _PDF_HEADER_RE.sub("", text)))
+
+
+def _ocr_pdf_pages(path: str, start: int, end: int, total: int) -> str:
+    """Render a (scanned) PDF's pages to images and OCR them via tools.ocr."""
+    import shutil
+    import tempfile
+
+    return "PDF OCR disabled: PyMuPDF (AGPL-3.0) was removed for license compliance."
+
+    from tools import ocr as _ocr  # lazy — text PDFs never import the daemon client
+
+    try:
+        import fitz
+        doc = fitz.open(path)
+    except Exception as e:
+        return f"PDF OCR failed: {e}"
+    try:
+        mat = fitz.Matrix(200 / 72, 200 / 72)
+        tmp_dir = Path(tempfile.mkdtemp(prefix="pdf_ocr_"))
+        parts = [f"PDF (OCR): {path}  ({total} pages total)"]
+        for i in range(start, min(end, total)):
+            pix = doc[i].get_pixmap(matrix=mat)
+            img = tmp_dir / f"page_{i + 1:04d}.png"
+            pix.save(str(img))
+            page_text = _ocr.execute(str(img), lang="en")
+            if page_text.startswith(("File not found", "Unsupported", "PaddleOCR is not installed", "OCR failed")):
+                parts.append(f"\n--- Page {i + 1} ---\n[{page_text}]")
+            else:
+                parts.append(f"\n--- Page {i + 1} ---\n{page_text}")
+        return "\n".join(parts)[:30000]
+    except Exception as e:
+        return f"PDF OCR failed: {e}"
+    finally:
+        try:
+            doc.close()
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def parse_code(path: str, include_bodies: bool = False) -> str:

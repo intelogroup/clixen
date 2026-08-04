@@ -23,9 +23,12 @@ import os
 import re
 from pathlib import Path
 
-import fitz  # pymupdf
-
 _log = logging.getLogger("vision_form_tools")
+
+_FITZ_REMOVED_MSG = (
+    "PDF tooling disabled: PyMuPDF (AGPL-3.0) was removed for license "
+    "compliance. Pending port to pdfium-render/lopdf."
+)
 
 _MIN_UNDERSCORE_RUN = 5
 _MIN_CHECKBOX_SIZE = 5
@@ -297,6 +300,7 @@ def vision_fill_form_fields(
     Returns:
         Confirmation message with summary.
     """
+    return _FITZ_REMOVED_MSG
     p = _resolve_pdf_path(path)
     if not p.exists():
         return f"PDF not found: {path}"
