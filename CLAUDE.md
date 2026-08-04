@@ -32,7 +32,7 @@ Local LLM harness + chat app, on-device (Apple M4, 24 GB unified memory).
 | `jobs/worker.py` | Polls `job_queue` (one-shot) + `workflow_store` (scheduled automations) |
 
 ## Models
-Cloud-first (2026-07): main agent defaults to cloud via OpenRouter — local gemma4 was unreliable past 2-3 chained tool calls.
+Cloud-first (2026-07): main agent defaults to cloud via OpenRouter — local gemma4 was unreliable on browser/DOM-probing tasks (CSS-selector loops, hallucinated content). Correction (2026-08-04): gemma4:12b-mlx verified live to chain 10 real tool calls cleanly, incl. implicit dependency-graph inference, decoy-tool rejection, and mid-chain error recovery — the "2-3 call ceiling" was an infra timeout/recursion-cap artifact, not a model limit. Detail: `docs/agents/models.md`.
 
 | Model | Where | Role |
 |-------|-------|------|
@@ -44,12 +44,12 @@ Cloud-first (2026-07): main agent defaults to cloud via OpenRouter — local gem
 | `tools/local_vision.py` | Local | Replaces qwen3-vl for most screenshot analysis tasks |
 | `nomic-embed-text` | Local | Embeddings (`tools/semantic_files.py`, `store/knowledge_base.py`) |
 
-`OPENROUTER_API_KEY` lives in `tools-harness/.env` (not project root). `clients/cost_guard.py` enforces a daily token budget (`CLOUD_DAILY_TOKEN_BUDGET`). See `docs/agents/models.md` for routing internals, thinking-mode gotchas, warmup/KV-cache detail.
+`OPENROUTER_API_KEY` in `tools-harness/.env`. `cost_guard.py` enforces daily token budget. Full detail: `docs/agents/models.md`.
 
-**Dead-provider circuit breaker** (`clients/cloud_client.py:287-342`): on a 402/payment or auth failure, that provider prefix (e.g. `deepseek/`, `openrouter/`) is marked dead in-memory and skipped for 24h (`_DEAD_RETRY_AFTER = 86400`), falling through the chain to the next configured model and ultimately `OPENAI_FALLBACK_MODEL` (`gpt-4o-mini`) as last resort. After 24h it's retried automatically on the next call — if still out of credits, marked dead again for another 24h. In-memory only (resets on process restart), so a `core.py` restart also clears dead-provider state early. Check `core_stderr.log` for `marked ... as dead` warnings — that's the signal a provider needs a credit top-up, not a code bug.
+**Dead-provider breaker** (`cloud_client.py:287-342`): 402/auth failure → provider prefix marked dead in-memory 24h, falls through chain to `OPENAI_FALLBACK_MODEL` (`gpt-4o-mini`). Resets on `core.py` restart. `core_stderr.log` `marked ... as dead` = credit top-up needed, not a bug.
 
 ## Routing
-`router.py`'s classifiers pick an **intent**, not a model — every branch defaults to cloud except `ocr` (stays local, only multimodal model). `harness.py`'s post-classify block is what actually re-overrides `routed_model` for several intents (browser/transit/vision/etc, cloud-primary with automatic local fallback). Branch order in the classifiers is load-bearing — reordering is a behavior change. Full detail: `docs/agents/models.md`.
+`router.py` classifiers pick **intent**, not model — every branch defaults cloud except `ocr` (local only). `harness.py` post-classify block re-overrides `routed_model` for some intents (cloud-primary, local fallback). Branch order is load-bearing. Detail: `docs/agents/models.md`.
 
 ## UI Modes (chat_ui.py)
 **Auto**: router picks model. **Dev**: `chat_id` prefix `ide_` → local model + full fs/git/shell tools. **Models**: manual picker.
@@ -61,10 +61,10 @@ Native Ollama tool calling on capable local models (~7B+ minimum for reliable ag
 Single pipeline, no LangGraph, zero API keys required for the base path: `guard → rewrite → search(SearXNG+DDG, parallel) → rerank → summarize(gemma4) → finalize`. Chinese queries short-circuit to `agent_reach.py` (Bilibili + Exa). Full architecture + bug history: `docs/agents/web-search.md`.
 
 ## Connectors (BrowserOS + Ringback)
-`tools/connector_{doordash,uber,sofascore}.py` drive a real logged-in BrowserOS session (no scraping/API keys); `"browser"`-tagged, reachable from web/Telegram but **not** the LangGraph local-agent (toolset gap, by design/not yet closed). `tools/connector_ringback.py`'s `call_my_phone()` places a real SIP call, gated by a 900s/15min cooldown (`ringback/.last_call_ts`, flock-guarded, restore-on-fail) — tool description tells the model to quote the exact cooldown remaining-seconds verbatim rather than paraphrase it. Full detail + bug history: `docs/agents/browser-automation.md`.
+`tools/connector_{doordash,uber,sofascore}.py` drive real logged-in BrowserOS session; `"browser"`-tagged, reachable from web/Telegram, not LangGraph local-agent (known gap). `connector_ringback.py`'s `call_my_phone()` places real SIP call, 900s cooldown (`ringback/.last_call_ts`, flock-guarded) — quote remaining-seconds verbatim, don't paraphrase. Detail: `docs/agents/browser-automation.md`.
 
 ## Telegram + WhatsApp (single supervised job)
-One launchd job (`com.clixen.messaging.plist`) runs `messaging_supervisor.sh`, which supervises `telegram_bot.py` + `whatsapp_bot.py` + `whatsapp_bridge.js` as one process group. `KeepAlive=true` — unload before manual kill. Both routers → `classify_telegram()` → `harness.run()`. Telegram/WhatsApp use Kokoro TTS for spoken replies.
+One launchd job (`com.clixen.messaging.plist`) → `messaging_supervisor.sh` supervises `telegram_bot.py`+`whatsapp_bot.py`+`whatsapp_bridge.js` as one process group. `KeepAlive=true` — unload before manual kill. Both → `classify_telegram()` → `harness.run()`. Kokoro TTS for spoken replies.
 
 ## Tauri Desktop App (next phase)
 Not yet built. See `.claude/skills/tauri-migration-plan/SKILL.md`.
