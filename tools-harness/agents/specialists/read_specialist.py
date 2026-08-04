@@ -193,6 +193,67 @@ def _resolve_existing(path: str) -> str | None:
     return None
 
 
+_DOC_EXT_RE = re.compile(
+    r"\.(?:pdf|docx?|xlsx?|pptx?|md|txt|rtf|odt|json|yaml|yml|csv|tsv|py|js|ts|go|rs|c|h|cpp|java|swift|sh|html?|xml|log)\b",
+    re.IGNORECASE,
+)
+
+
+def _resolve_file_from_query(query: str) -> str | None:
+    """Space-aware: find the longest existing file path embedded in a free-text query.
+
+    Absolute / ~ paths and bare filenames (spaces allowed) are grown token-by-token;
+    bare names are also tried against the project root and home dir.
+
+    The old extractor (`/[^\\s"']*` or `[\\w./-]+\\.\\w{1,5}`) stopped at the first
+    space, so a path like "…/perso/006-006 Haiti oxygen strategy outline.pdf"
+    resolved to nothing and the read fell into the (local-Ollama) ReAct loop.
+    Confirmed live in chat_ui.log 2026-08-03.
+    """
+    tokens = query.split()
+    if not tokens:
+        return None
+
+    bases: list[str] = []
+    try:
+        from tools.filesystem import get_project_root
+        pr = get_project_root()
+        if pr:
+            bases.append(pr)
+    except Exception:
+        pass
+    bases.append(os.path.expanduser("~"))
+
+    best: str | None = None
+
+    def _consider(cand: str) -> None:
+        nonlocal best
+        cand = cand.rstrip(",.;:!?\"')]}")
+        if not cand or not os.path.isfile(cand):
+            return
+        if best is None or len(cand) > len(best):
+            best = cand
+
+    n = len(tokens)
+    for i in range(n):
+        tok = tokens[i]
+        is_head = tok.startswith("/") or tok.startswith("~/")
+        tail = " ".join(tokens[i:])
+        # Only grow bare-name spans that end in a known file extension, so prose
+        # like "can you read the outline" isn't mistaken for a filename. Absolute
+        # heads are existence-gated instead (they may point at extension-less files).
+        if not is_head and not _DOC_EXT_RE.search(tail):
+            continue
+        for j in range(i + 1, n + 1):
+            joined = " ".join(tokens[i:j])
+            if is_head:
+                _consider(os.path.expanduser(joined))
+            else:
+                for base in bases:
+                    _consider(os.path.join(base, joined))
+    return best
+
+
 def run_read_specialist(
     query: str,
     model: str = DEFAULT_MODEL,
@@ -225,15 +286,14 @@ def run_read_specialist(
                 _log.info("[read] fast path: %s via %s", resolved, tool)
                 return _fast_read(resolved)
 
-    # ── Try to extract a path from the query (handles ~, absolute, and bare relative) ──
-    path_match = re.search(r"(?:~|/[^\s\"'])[^\s\"']*|\b[\w./-]+\.\w{1,5}\b", query)
-    if path_match:
-        candidate = _resolve_existing(path_match.group(0))
-        if candidate and os.path.isfile(candidate):
-            tool = _detect_tool(candidate)
-            if tool:
-                _log.info("[read] query path: %s via %s", candidate, tool)
-                return _fast_read(candidate)
+    # ── Try to extract a path from the query (handles ~, absolute, bare relative,
+    #    and filenames with spaces) ──
+    candidate = _resolve_file_from_query(query)
+    if candidate:
+        tool = _detect_tool(candidate)
+        if tool:
+            _log.info("[read] query path: %s via %s", candidate, tool)
+            return _fast_read(candidate)
 
     # ── ReAct loop ──
     tools = _read_tool_schemas()

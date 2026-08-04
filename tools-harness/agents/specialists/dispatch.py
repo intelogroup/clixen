@@ -82,6 +82,11 @@ _SPEC = {
         ],
         "negate": [
             _pat(r"\b(?:find|search|locate)\b.{0,20}\b(?:file|folder|directory)\b"),
+            # "extract text from the PDF file at <path>" is a local doc read, not
+            # web scraping — scraper's bare \bextract\b accept used to steal it
+            # (confirmed live: chat_ui.log, "extract text from the PDF file at
+            # /Users/kalinovda..." matched=scraper). Require a file-ish target.
+            _pat(r"\bextract\b.{0,40}\b(?:pdf|document|file|docx?|md)\b"),
         ],
     },
     "data": {
@@ -140,6 +145,18 @@ _SPEC = {
             _pat(r"\bread\s+(?:the\s+)?(?:file|pdf|doc|document|text)"),
             _pat(r"\bwhat(?:\'s| is)\s+in\s+(?:this|that|the)\s+(?:file|pdf|doc|document)\b"),
             _pat(r"\b(?:show|display)\s+(?:me\s+)?(?:the\s+)?(?:contents?|file|text)\b"),
+            # "extract text from the PDF file at <path>" — pairs with the scraper
+            # negate above; file-ish target required so web-extract stays scraper.
+            _pat(r"\bextract\b.{0,30}\b(?:text|content)\b.{0,40}\b(?:pdf|document|file|docx?|md)\b"),
+            # "read the 006-006 Haiti oxygen strategy outline.docx" — bare filename
+            # + extension; the generic read patterns only cover file/document/pdf.
+            _pat(r"\b(?:read|open|view|show|display)\b.{0,60}\b\.(?:pdf|docx?|md|txt)\b"),
+            # "verify the BHI report" / "verify the .md file version" / "verify the
+            # docs here" — file-verification phrasing that used to return None and
+            # dump the task on the weak LLM loop.
+            _pat(r"\bverify\b.{0,30}\b(?:report|pdf|docx?|md|docs?|document)\b"),
+            # "use libreoffice" to read/convert a document.
+            _pat(r"\b(?:use|via|with)\b.{0,15}\b(?:libreoffice|soffice)\b"),
         ],
         "negate": [
             _pat(r"\b(?:write|create|edit|fill|transcribe|analy[sz]e|download)\b"),
