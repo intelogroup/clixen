@@ -17,6 +17,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { createServer, Server } from 'http';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { logIncoming, logOutgoing } from './whatsapp_log.js';
 
 const execAsync = promisify(exec);
 
@@ -72,6 +73,11 @@ let pairingCode: string | null = null;
 let connected = false;
 let pairingInProgress = false;
 let pairingPhoneNumber: string | null = null;
+// Hello is sent at most once per process, only on a fresh pairing (isNewLogin)
+// — never on a reconnect. The WhatsApp connection drops routinely (timedOut /
+// badSession / network blips); greeting on every 'open' used to spam the
+// owner's own thread with a hello per reconnect (~148 in 5 days).
+let welcomeSent = false;
 
 // Message cache so getMessage can answer retry requests ("waiting for message")
 const msgCache = new Map<string, proto.IMessage>();
@@ -100,6 +106,7 @@ async function getSocket(): Promise<WASocket> {
     browser: Browsers.macOS('Chrome'),
     markOnlineOnConnect: false,
     syncFullHistory: false,
+    keepAliveIntervalMs: 30_000,
     getMessage: async (key) => msgCache.get(key.id ?? '') ?? { conversation: '' },
   });
 
@@ -180,15 +187,20 @@ async function handleConnectionUpdate(
 
     if (sock?.user?.id) {
       const myJid = sock.user.id;
-      logger.info({ jid: myJid }, 'Sending hello to own number');
-      try {
-        const helloSent = await sock.sendMessage(myJid, {
-          text: '👋 Hello! WhatsApp bridge connected successfully. You can now chat with G4L from WhatsApp!',
-        });
-        if (helloSent?.key?.id) sentIds.add(helloSent.key.id);
-        logger.info('Hello message sent');
-      } catch (e) {
-        logger.error({ error: (e as Error).message }, 'Failed to send hello');
+      if (isNewLogin && !welcomeSent) {
+        welcomeSent = true;
+        logger.info({ jid: myJid }, 'Sending hello to own number');
+        try {
+          const helloSent = await sock.sendMessage(myJid, {
+            text: '👋 Hello! WhatsApp bridge connected successfully. You can now chat with G4L from WhatsApp!',
+          });
+          if (helloSent?.key?.id) sentIds.add(helloSent.key.id);
+          logger.info('Hello message sent');
+        } catch (e) {
+          logger.error({ error: (e as Error).message }, 'Failed to send hello');
+        }
+      } else {
+        logger.info({ jid: myJid, isNewLogin }, 'Connected — skipping hello (reconnect or already greeted)');
       }
     }
   }
@@ -217,6 +229,9 @@ function handleMessagesUpsert(
       remoteJid.endsWith('@newsletter') ||
       remoteJid.endsWith('@broadcast')
     ) continue;
+
+    // Persist to local archive (~/.clixen/whatsapp.db) for offline search.
+    logIncoming(msg, messageText).catch(() => {});
 
     // Only process messages whose conversation JID is the user's own number (self-chat).
     // This unconditional guard covers BOTH directions:
@@ -257,7 +272,7 @@ async function handleIncomingMessage(msg: proto.IWebMessageInfo): Promise<void> 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sender: remoteJid,
+        sender: canonicalJid(remoteJid),
         message: messageText,
         name: msg.pushName ?? remoteJid.split('@')[0],
       }),
@@ -293,12 +308,31 @@ async function handleIncomingMessage(msg: proto.IWebMessageInfo): Promise<void> 
         }
       }
       if (sent?.key?.id) sentIds.add(sent.key.id);
+      logOutgoing(remoteJid, replyText, sent?.key?.id).catch(() => {});
       logger.info({ to: remoteJid, length: replyText.length }, 'Sent reply');
     }
   } catch (error) {
     try { await sock!.sendPresenceUpdate('paused', remoteJid); } catch (_) {}
     logger.error({ error }, 'Failed to process message');
   }
+}
+
+// ─── Chat identity canonicalization ─────────────────────────────────────────
+
+// WhatsApp introduced LID (1934...@lid) alongside the phone-number JID
+// (1857...@s.whatsapp.net) for the same user. The bridge only services the
+// owner's own number (self-chat), so every forwarded message is the owner —
+// but the JID form can flip between PN and LID across reconnects, which used
+// to fork the conversation into two session files (whatsapp_...@lid vs
+// whatsapp_...@s.whatsapp.net). Canonicalize everything to the phone-number
+// JID so one user = one chat_id = one session file.
+function canonicalJid(jid: string): string {
+  const normalize = (j: string) => j.replace(/:\d+@/, '@');
+  const myPn = normalize(sock?.user?.id ?? '');
+  const myLid = normalize((sock?.user as unknown as { lid?: string })?.lid ?? '');
+  const remote = normalize(jid);
+  if (remote === myLid && myPn) return myPn;
+  return remote;
 }
 
 // ─── HTTP routes ─────────────────────────────────────────────────────────────
@@ -352,6 +386,7 @@ app.post('/auth/pairing-code', async (req: Request, res: Response) => {
       printQRInTerminal: false,
       markOnlineOnConnect: false,
       syncFullHistory: false,
+      keepAliveIntervalMs: 30_000,
       getMessage: async (key) => msgCache.get(key.id ?? '') ?? { conversation: '' },
     });
 
@@ -470,6 +505,7 @@ app.post('/send', async (req: Request, res: Response) => {
     await jitter(400, 1200);
     const sent = await sock.sendMessage(to, { text: message });
     if (sent?.key?.id) { msgCache.set(sent.key.id, { conversation: message }); sentIds.add(sent.key.id); }
+    logOutgoing(to, message, sent?.key?.id).catch(() => {});
     res.json({ status: 'sent', to, message });
   } catch (error) {
     logger.error({ error }, 'Failed to send message');
