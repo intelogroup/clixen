@@ -170,6 +170,7 @@ EXECUTORS = {
         limit=args.get("limit", 25),
     ),
     "system_status": lambda args: system_status_execute(),
+    "file_access_watch": lambda args: file_access_execute(args),
     "clipboard_read": lambda args: mn_clipboard_read(),
     "clipboard_write": lambda args: mn_clipboard_write(text=args["text"]),
     "list_safari_tabs": lambda args: mn_list_safari_tabs(),

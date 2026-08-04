@@ -188,10 +188,18 @@ const ALLOWED_SVG_ATTRS = new Set([
   'fill-rule', 'href', 'xlink:href', 'id', 'class', 'style'
 ]);
 
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function sanitizeSvg(svgText) {
   const raw = (svgText || '').trim();
   if (!raw) return null;
-
   const doc = new DOMParser().parseFromString(raw, 'image/svg+xml');
   const root = doc.documentElement;
   if (!root || root.tagName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) {
@@ -970,8 +978,63 @@ function switchSettingsTab(tabName) {
   if (tabName === 'cookbook' && typeof loadCookbookSystemProfile === 'function') {
     loadCookbookSystemProfile();
   }
+  if (tabName === 'privacy') {
+    loadFileAccessGrants();
+  }
 }
 window.switchSettingsTab = switchSettingsTab;
+
+function loadFileAccessGrants() {
+  const list = document.getElementById('fa-grants-list');
+  if (!list) return;
+  fetchJson('/api/file-access/grants')
+    .then(data => {
+      if (!data.ok) { list.innerHTML = `<span class="fa-empty">${escapeHtml(data.error || 'Unavailable')}</span>`; return; }
+      if (!data.grants || !data.grants.length) {
+        list.innerHTML = '<span class="fa-empty">No apps hold folder / Full Disk Access grants.</span>';
+        return;
+      }
+      list.innerHTML = data.grants.map(g =>
+        `<div class="fa-grant"><span class="fa-grant-app">${escapeHtml(g.app)}</span>` +
+        `<span class="fa-grant-access">${escapeHtml(g.access.join(', '))}</span></div>`
+      ).join('');
+    })
+    .catch(err => { list.innerHTML = `<span class="fa-empty">Load failed: ${escapeHtml(String(err))}</span>`; });
+}
+
+function scanFileAccess() {
+  const list = document.getElementById('fa-readers-list');
+  const input = document.getElementById('fa-path-input');
+  if (!list || !input) return;
+  const path = encodeURIComponent(input.value.trim());
+  list.innerHTML = '<span class="fa-empty">Scanning…</span>';
+  fetchJson(`/api/file-access${path ? `?path=${path}` : ''}`)
+    .then(data => {
+      const snap = data.snapshot;
+      if (snap && !snap.ok) { list.innerHTML = `<span class="fa-empty">${escapeHtml(snap.error || 'Scan failed')}</span>`; return; }
+      const readers = (snap && snap.processes) || [];
+      if (!readers.length) {
+        list.innerHTML = '<span class="fa-empty">No processes currently have files open here.</span>';
+        return;
+      }
+      list.innerHTML = readers.map(p =>
+        `<div class="fa-reader"><span class="fa-reader-pid">${p.pid}</span>` +
+        `<span class="fa-reader-name">${escapeHtml(p.process)}</span>` +
+        `<span class="fa-reader-files">${escapeHtml((p.files || []).slice(0, 2).join(', '))}</span></div>`
+      ).join('');
+    })
+    .catch(err => { list.innerHTML = `<span class="fa-empty">Scan failed: ${escapeHtml(String(err))}</span>`; });
+}
+
+function initFileAccess() {
+  const scanBtn = document.getElementById('fa-scan-btn');
+  const input = document.getElementById('fa-path-input');
+  if (scanBtn) scanBtn.addEventListener('click', scanFileAccess);
+  if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') scanFileAccess(); });
+}
+document.addEventListener('DOMContentLoaded', initFileAccess);
+window.scanFileAccess = scanFileAccess;
+window.loadFileAccessGrants = loadFileAccessGrants;
 
 function openWorkspaceModal() {
   document.getElementById('workspace-modal').classList.add('open');
