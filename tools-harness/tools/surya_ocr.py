@@ -1,26 +1,50 @@
 """
-Surya OCR tool — fast, accurate OCR with layout detection in 90+ languages.
+Surya OCR tool — layout-aware, structured OCR for scanned documents with
+tables/multi-column layout.
 
-Uses VikParuchuri/surya (v0.17+). Falls back gracefully if not installed.
-Supports: PNG, JPG, JPEG, TIFF, BMP, WebP, PDF (via pypdfium2).
+Backend: the warm Surya daemon (surya_daemon.py, surya-ocr 0.22.x — a VLM
+running on llama.cpp in its OWN venv). The daemon returns structured HTML
+(<table>/<h1>/<li>…) instead of a flat text dump, which preserves reading
+order and table structure on scanned/multi-column documents. Falls back
+gracefully when the daemon isn't running (the harness doesn't supervise it).
+
+Supports: PNG, JPG, JPEG, TIFF, BMP, WebP (image files only — for PDFs the
+read_specialist/structured path rasterizes and calls back in here per page).
 """
 
+import json
+import os
 from pathlib import Path
 
-_surya_loaded: bool | None = None
+_DAEMON_URL = os.environ.get("SURYA_URL", "http://127.0.0.1:9240").rstrip("/")
+_DAEMON_DISABLED = os.environ.get("SURYA_DISABLE", "0") == "1"
+_DAEMON_TIMEOUT = float(os.environ.get("SURYA_TIMEOUT", "900"))
+
+_SUPPORTED_EXTS = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp"}
 
 
-def _ensure_surya():
-    global _surya_loaded
-    if _surya_loaded is not None:
-        return _surya_loaded
+def _ocr_daemon(image_path: str, mode: str = "ocr") -> str:
+    """OCR via the warm Surya daemon. Raises on any failure."""
+    import urllib.error
+    import urllib.request
+
+    if _DAEMON_DISABLED:
+        raise ConnectionError("Surya daemon disabled (SURYA_DISABLE=1)")
+    body = json.dumps({"image_path": image_path, "mode": mode}).encode()
+    req = urllib.request.Request(
+        f"{_DAEMON_URL}/ocr",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
-        import surya
-        _surya_loaded = True
-        return True
-    except ImportError:
-        _surya_loaded = False
-        return False
+        with urllib.request.urlopen(req, timeout=_DAEMON_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as e:
+        raise ConnectionError(f"Surya daemon HTTP {e.code}: {e.read()[:200]!r}") from e
+    if "error" in data:
+        raise ConnectionError(f"Surya daemon error: {data['error']}")
+    return (data.get("text") or "").strip() or "No text detected in image."
 
 
 SCHEMA = {
@@ -28,27 +52,24 @@ SCHEMA = {
     "function": {
         "name": "surya_ocr",
         "description": (
-            "Extract text from an image or PDF using Surya OCR with layout-aware detection. "
-            "Returns structured text with reading order preserved. "
-            "Use when the user wants to OCR / scan / read text in a document, screenshot, "
-            "photo, or PDF. More accurate than ocr_image for multi-column layouts, "
-            "tables, and mixed-language documents. Supports 90+ languages."
+            "Extract text from an image using Surya OCR with layout-aware detection. "
+            "Returns structured text with reading order preserved (tables/multi-column "
+            "come back as HTML markup, not a flat dump). "
+            "Use when the user wants to OCR / scan / read text in a scanned document, "
+            "photo, or screenshot — especially documents with TABLES, multi-column "
+            "layouts, or mixed content. For a PDF, use read_document instead (it "
+            "rasterizes scanned pages and calls OCR per page)."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "image_path": {
                     "type": "string",
-                    "description": "Absolute path to the image or PDF file"
-                },
-                "lang": {
-                    "type": "string",
-                    "description": "Language code: 'en' (default), 'fr', 'de', 'zh', 'ja', etc.",
-                    "default": "en",
+                    "description": "Absolute path to the image file (PNG, JPG, TIFF, BMP, WebP)"
                 },
                 "detect_tables": {
                     "type": "boolean",
-                    "description": "Whether to detect and OCR tables separately (slower)",
+                    "description": "Use table-recognition mode (structured table output, slower)",
                     "default": False,
                 },
             },
@@ -58,56 +79,25 @@ SCHEMA = {
 }
 
 
-def execute(image_path: str, lang: str = "en", detect_tables: bool = False) -> str:
+def execute(image_path: str, detect_tables: bool = False) -> str:
     path = Path(image_path)
     if not path.exists():
         return f"File not found: {image_path}"
     if not path.is_file():
         return f"Not a file: {image_path}"
-
-    if not _ensure_surya():
+    if path.suffix.lower() not in _SUPPORTED_EXTS:
         return (
-            "Surya OCR is not installed. Run: pip install surya-ocr\n"
-            "Then the model weights will download on first use (~1 GB)."
+            f"Unsupported file type '{path.suffix}' — surya_ocr only handles image files "
+            f"({', '.join(sorted(_SUPPORTED_EXTS))}). For a PDF, use read_document."
         )
 
     try:
-        from surya.ocr import run_ocr
-        from surya.model.detection.model import load_model as load_det_model
-        from surya.model.detection.processor import load_processor as load_det_processor
-        from surya.model.recognition.model import load_model as load_rec_model
-        from surya.model.recognition.processor import load_processor as load_rec_processor
-    except ImportError as e:
-        return f"Surya imports failed: {e}"
-
-    try:
-        langs = [lang] if lang else ["en"]
-        det_model = load_det_model()
-        det_processor = load_det_processor()
-        rec_model = load_rec_model()
-        rec_processor = load_rec_processor()
-
-        results = run_ocr(
-            [str(path)],
-            langs,
-            det_model,
-            det_processor,
-            rec_model,
-            rec_processor,
-        )
-
-        if not results or not results[0]:
-            return "No text detected."
-
-        all_text = []
-        for page_result in results:
-            for line in page_result.text_lines:
-                all_text.append(line.text)
-
-        if not all_text:
-            return "No text detected."
-
-        return "\n".join(all_text)
-
+        return _ocr_daemon(str(path), mode="table" if detect_tables else "ocr")
     except Exception as e:
-        return f"Surya OCR failed: {e}"
+        import logging
+
+        logging.getLogger("tools.surya_ocr").debug("Surya daemon unavailable (%s)", e)
+        return (
+            "Surya OCR is not available right now (daemon not running). "
+            "Fall back to ocr_image, or ensure the Surya daemon is supervised by core.py."
+        )

@@ -9,6 +9,8 @@ Run:  python core.py
 
 import sys
 import os
+import subprocess
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -60,12 +62,104 @@ def _run_voiceprint_daemon():
     _voiceprint_main()
 
 
+def _unlimited_ocr_python() -> str | None:
+    """Resolve the Python that runs the Unlimited-OCR daemon (its OWN venv —
+    the model needs transformers==4.57.1 which isn't the clixen venv). Returns
+    None when Unlimited-OCR isn't configured, so a clean machine stays clean."""
+    env_py = os.environ.get("UNLIMITED_OCR_PYTHON", "").strip()
+    if env_py and Path(env_py).expanduser().exists():
+        return str(Path(env_py).expanduser())
+    repo = os.environ.get("UNLIMITED_OCR_REPO", "").strip()
+    if repo:
+        candidate = Path(repo).expanduser() / ".venv-ocr" / "bin" / "python"
+        if candidate.exists():
+            return str(candidate)
+    default = Path.home() / ".unlimited-ocr" / ".venv-ocr" / "bin" / "python"
+    if default.exists():
+        return str(default)
+    return None
+
+
+def _run_unlimited_ocr_daemon():
+    """Spawn the Unlimited-OCR daemon as its OWN process (6.7B model + MPS working
+    set must not live in core.py's process on a 24GB Mac). The thread blocks on
+    the child, so a crash is caught by the same supervision/restart loop. Because
+    the child is a separate process it can ORPHAN across core.py restarts — probe
+    /health first and only spawn when nothing is serving the port, so a stale
+    daemon never blocks respawn with an address-in-use failure."""
+    import urllib.request
+
+    py = _unlimited_ocr_python()
+    daemon = Path(__file__).resolve().parent / "unlimited_ocr_daemon.py"
+    url = os.environ.get("UNLIMITED_OCR_URL", "http://127.0.0.1:9239").rstrip("/")
+
+    def _alive() -> bool:
+        try:
+            with urllib.request.urlopen(f"{url}/health", timeout=2) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    while True:
+        if not _alive():
+            proc = subprocess.Popen(
+                [py, str(daemon)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                proc.wait()
+            finally:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+        time.sleep(30)
+
+
+def _run_surya_daemon():
+    """Spawn the Surya daemon as its OWN process (the 0.22 VLM needs its own
+    venv + llama.cpp backend; same gating/health-probe pattern as the
+    Unlimited-OCR daemon so a clean machine stays clean)."""
+    import urllib.request
+
+    py = _unlimited_ocr_python()
+    daemon = Path(__file__).resolve().parent / "surya_daemon.py"
+    url = os.environ.get("SURYA_URL", "http://127.0.0.1:9240").rstrip("/")
+
+    def _alive() -> bool:
+        try:
+            with urllib.request.urlopen(f"{url}/health", timeout=2) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    while True:
+        if not _alive():
+            proc = subprocess.Popen(
+                [py, str(daemon)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                proc.wait()
+            finally:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+        time.sleep(30)
+
+
 _TARGETS = {
     "chat_ui": _run_chat_ui,
     "email_watch": _run_email_watch,
     "kokoro_daemon": _run_kokoro_daemon,
     "voiceprint_daemon": _run_voiceprint_daemon,
 }
+if _unlimited_ocr_python() is not None:
+    _TARGETS["unlimited_ocr_daemon"] = _run_unlimited_ocr_daemon
+    _TARGETS["surya_daemon"] = _run_surya_daemon
 _RESTART_BACKOFF = 30  # seconds between restart attempts
 # Crash-loop guard: if a service dies within _CRASH_LOOP_WINDOW_S of its last
 # restart more than _CRASH_LOOP_MAX times, stop restarting it and log loudly —
