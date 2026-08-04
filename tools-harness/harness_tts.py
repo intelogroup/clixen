@@ -44,10 +44,10 @@ def _play_wav(path: str) -> None:
 def _speak(text: str, voice: str = "af_heart"):
     import soundfile as sf
     import tempfile
-    from kokoro_onnx import Kokoro
+    from tools.misaki_tokenizer import load_kokoro
 
     onnx_path, voices_path = _kokoro_paths()
-    kokoro = Kokoro(onnx_path, voices_path)
+    kokoro = load_kokoro(onnx_path, voices_path)
     samples, sr = kokoro.create(_strip_md(text), voice=voice, speed=1.0, lang="en-us")
 
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)

@@ -59,7 +59,7 @@ def _get_kokoro():
     if _kokoro is None:
         with _kokoro_lock:
             if _kokoro is None:
-                from kokoro_onnx import Kokoro
+                from tools.misaki_tokenizer import load_kokoro
 
                 onnx_path = os.environ.get(
                     "KOKORO_ONNX_PATH",
@@ -70,7 +70,7 @@ def _get_kokoro():
                     str(Path(__file__).resolve().parent.parent / "models" / "voices-v1.0.bin"),
                 )
                 log.info("loading Kokoro model (onnx=%s)", onnx_path)
-                _kokoro = Kokoro(onnx_path, voices_path)
+                _kokoro = load_kokoro(onnx_path, voices_path)
                 log.info("Kokoro loaded")
     return _kokoro
 
