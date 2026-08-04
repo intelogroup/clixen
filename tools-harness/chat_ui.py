@@ -264,7 +264,7 @@ def _kokoro_voices_path() -> str:
 def _get_kokoro():
     with _kokoro_lock:
         import onnxruntime as ort
-        from kokoro_onnx import Kokoro
+        from tools.misaki_tokenizer import load_kokoro
 
         providers = []
         env_provider = os.environ.get("ONNX_PROVIDER")
@@ -281,7 +281,7 @@ def _get_kokoro():
         for provider in ordered_providers:
             try:
                 os.environ["ONNX_PROVIDER"] = provider
-                return Kokoro(_kokoro_model_path(), _kokoro_voices_path())
+                return load_kokoro(_kokoro_model_path(), _kokoro_voices_path())
             except Exception as exc:
                 last_exc = exc
                 _log.warning("Kokoro init failed with %s: %s", provider, exc)

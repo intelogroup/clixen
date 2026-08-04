@@ -72,10 +72,10 @@ def _get_kokoro():
             if _kokoro is None:
                 os.environ.setdefault("ONNX_PROVIDER", "CPUExecutionProvider")
                 log.info("Kokoro: using %s", os.environ["ONNX_PROVIDER"])
-                from kokoro_onnx import Kokoro
+                from tools.misaki_tokenizer import load_kokoro
 
                 repo_models = Path(__file__).resolve().parent.parent / "models"
-                _kokoro = Kokoro(
+                _kokoro = load_kokoro(
                     os.environ.get("KOKORO_ONNX_PATH", str(repo_models / "kokoro-v1.0.onnx")),
                     os.environ.get("KOKORO_VOICES_PATH", str(repo_models / "voices-v1.0.bin")),
                 )
