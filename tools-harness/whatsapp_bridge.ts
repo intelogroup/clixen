@@ -18,6 +18,13 @@ import { createServer, Server } from 'http';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { logIncoming, logOutgoing } from './whatsapp_log.js';
+import {
+  initialState as _reconnectInitialState,
+  reconnectDelay as _reconnectDelay,
+  recordReconnectFailure as _recordReconnectFailure,
+  resetReconnect as _resetReconnect,
+  clearStuck as _clearStuck,
+} from './whatsapp_reconnect_state.js';
 
 const execAsync = promisify(exec);
 
@@ -43,13 +50,51 @@ function isRateLimited(jid: string): boolean {
   return entry.count > MAX_PER_WINDOW;
 }
 
-let _reconnectAttempts = 0;
-function reconnectDelay(): number {
-  const delay = Math.min(3000 * Math.pow(2, _reconnectAttempts), 120_000);
-  _reconnectAttempts++;
-  return delay;
+// A session rejected at the login handshake (e.g. 405 "Connection Failure")
+// never recovers by retrying hard — WhatsApp treats persistent failures as
+// needing a re-link. After a few consecutive failed reconnects we enter
+// "stuck" mode: back off to a slow probe (10 min) instead of hammering, and
+// surface a repair signal (QR or reset hint) so the operator can re-pair.
+// The pure state machine lives in whatsapp_reconnect_state.ts (unit-testable
+// without a live socket).
+const _reconnectState = _reconnectInitialState();
+
+function reconnectDelayMs(): number {
+  return _reconnectDelay(_reconnectState);
 }
-function resetReconnect(): void { _reconnectAttempts = 0; }
+function resetReconnect(): void {
+  _resetReconnect(_reconnectState);
+}
+function recordReconnectFailureWrap(reasonText: string, errorMsg: string): boolean {
+  const newlyStuck = _recordReconnectFailure(_reconnectState, reasonText, errorMsg);
+  if (newlyStuck) {
+    logger.error(
+      { failures: _reconnectState.consecutiveFailures, reason: _reconnectState.stuckReason },
+      'RECONNECT STORM — session likely needs re-pair (backing off to slow probe)',
+    );
+    // Best-effort fresh socket so Baileys can emit a QR while stuck. If the
+    // old creds still block login, no QR arrives and repairAction stays
+    // 'reset_session' — the UI/operator then hits /auth/reset for a clean re-pair.
+    if (sock) {
+      try { sock.end(undefined); } catch (_) {}
+      sock = null;
+    }
+    setImmediate(() => getSocket().catch(e => logger.error({ error: (e as Error).message }, 'Stuck probe failed')));
+  }
+  return newlyStuck;
+}
+function clearStuckWrap(): void {
+  _clearStuck(_reconnectState);
+}
+function stuckFlag(): boolean {
+  return _reconnectState.stuck;
+}
+function stuckSinceValue(): number | null {
+  return _reconnectState.stuckSince;
+}
+function stuckReasonValue(): string {
+  return _reconnectState.stuckReason;
+}
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -168,8 +213,14 @@ async function handleConnectionUpdate(
     if (isRestartRequired) pairingInProgress = false;
 
     if (shouldReconnect && (!pairingInProgress || isRestartRequired)) {
-      const delay = reconnectDelay();
-      logger.info({ delay }, `Reconnecting in ${delay}ms...`);
+      if (!stuckFlag()) {
+        recordReconnectFailureWrap(
+          reasonText,
+          (disconnectError as Error)?.message ?? String(disconnectError ?? 'unknown'),
+        );
+      }
+      const delay = reconnectDelayMs();
+      logger.info({ delay, stuck: stuckFlag() }, `Reconnecting in ${delay}ms...`);
       sock = null;
       setTimeout(() => getSocket().catch(e => logger.error({ error: (e as Error).message }, 'Reconnect failed')), delay);
     } else if (!shouldReconnect) {
@@ -181,6 +232,10 @@ async function handleConnectionUpdate(
     pairingInProgress = false;
     pairingPhoneNumber = null;
     resetReconnect();
+    if (stuckFlag()) {
+      clearStuckWrap();
+      logger.info('Reconnect storm resolved — session is healthy again');
+    }
     logger.info('Connected to WhatsApp!');
     qrCode = null;
     pairingCode = null;
@@ -360,7 +415,17 @@ app.get('/auth/qr', (_req: Request, res: Response) => {
 });
 
 app.get('/api/qr-json', (_req: Request, res: Response) => {
-  res.json({ status: connected ? 'connected' : 'pending', qr: qrCode, connected });
+  const stuck = stuckFlag();
+  res.json({
+    status: connected ? 'connected' : 'pending',
+    qr: qrCode,
+    connected,
+    stuck,
+    stuckSince: stuckSinceValue(),
+    stuckReason: stuckReasonValue(),
+    repairNeeded: stuck,
+    repairAction: stuck && !qrCode ? 'reset_session' : (stuck ? 'scan_qr' : undefined),
+  });
 });
 
 app.post('/auth/pairing-code', async (req: Request, res: Response) => {
@@ -484,11 +549,16 @@ app.post('/auth/reset', (_req: Request, res: Response) => {
 });
 
 app.get('/status', (_req: Request, res: Response) => {
+  const stuck = stuckFlag();
   res.json({
     status: connected ? 'connected' : 'disconnected',
     botUrl: BOT_URL,
     qrAvailable: !!qrCode,
     sessionExists: existsSync(join(SESSION_DIR, 'creds.json')),
+    stuck,
+    stuckSince: stuckSinceValue(),
+    stuckReason: stuckReasonValue(),
+    repairNeeded: stuck,
   });
 });
 
