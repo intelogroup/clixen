@@ -107,6 +107,58 @@ def test_scoring_nonzero_for_real_query():
 
 
 # ---------------------------------------------------------------------------
+# Docs skills (quality gates: Check Document Quality / Repair DOCX)
+# ---------------------------------------------------------------------------
+
+def test_doc_skills_registered():
+    """Verify the doc-quality skills are registered with their tools wired."""
+    _reset_external_only()
+    ids = {s.id for s in SKILLS}
+    for sid in ("check_document_quality", "repair_docx", "add_document_comment"):
+        assert sid in ids, f"{sid} not registered"
+    for s in SKILLS:
+        if s.id in ("check_document_quality", "repair_docx", "add_document_comment"):
+            assert s.category == "Docs", f"{s.id} category should be Docs, got {s.category}"
+            for tool in s.tools:
+                assert tool in EXECUTORS, f"{s.id} requires {tool!r} not in EXECUTORS"
+
+
+def test_match_check_document_quality():
+    _reset_external_only()
+    r = match_skill_for_task({"query": "check this generated docx file is valid"})
+    assert "check document quality" in r.lower(), (
+        f"expected Check Document Quality, got: {r[:100]}"
+    )
+
+
+def test_match_repair_docx():
+    _reset_external_only()
+    r = match_skill_for_task({"query": "docx won't open, repair it"})
+    assert "repair docx" in r.lower(), (
+        f"expected Repair DOCX, got: {r[:100]}"
+    )
+
+
+def test_match_add_document_comment():
+    _reset_external_only()
+    r = match_skill_for_task({"query": "add a comment to this word document"})
+    assert "add document comment" in r.lower(), (
+        f"expected Add Document Comment, got: {r[:100]}"
+    )
+
+
+def test_doc_quality_tools_in_registry():
+    """Verify the 4 doc-quality tools are callable via the executor registry."""
+    _reset_external_only()
+    from tools.registry import ALL_TOOLS as _AT
+    names = {t["function"]["name"] for t in _AT}
+    for n in ("validate_docx", "repair_docx_element_order",
+              "check_xlsx_quality", "check_pdf_anomalies"):
+        assert n in names, f"{n} not in ALL_TOOLS"
+        assert n in EXECUTORS, f"{n} not in EXECUTORS"
+
+
+# ---------------------------------------------------------------------------
 # run_skill — execution pipeline
 # ---------------------------------------------------------------------------
 
@@ -328,6 +380,11 @@ if __name__ == "__main__":
     test_match_arxiv()
     test_match_no_match()
     test_scoring_nonzero_for_real_query()
+    test_doc_skills_registered()
+    test_match_check_document_quality()
+    test_match_repair_docx()
+    test_match_add_document_comment()
+    test_doc_quality_tools_in_registry()
     test_run_single_tool_skill()
     test_run_skill_unknown_id()
     test_run_skill_missing_args()

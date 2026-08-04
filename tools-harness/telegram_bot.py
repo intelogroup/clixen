@@ -818,6 +818,8 @@ async def _tts_and_send(
             conv_append(chat_id, "user", query)
             conv_append(chat_id, "assistant", response or "(document created)")
         else:
+            import uuid as _uuid
+            _run_id = _uuid.uuid4().hex[:8]
             response, model, intent = await asyncio.to_thread(
                 harness.run_for_messaging,
                 query,
@@ -826,7 +828,10 @@ async def _tts_and_send(
                 model=cls.model,
                 intent=cls.intent,
                 specialist_hint=cls.specialist_hint,
+                run_id=_run_id,
             )
+            from skills_hub import note_last_task
+            note_last_task(chat_id, _run_id, query)
     except Exception:
         sentence_q.put_nowait(None)  # unblock consumer
         try:

@@ -85,6 +85,18 @@ def _s(title: str, desc: str, category: str, tools: list[str], prompt: str,
 
 
 
+# In-memory only — per-process, keyed by chat_id. "the thing I just did", not a
+# persistent audit log — a restart just means the last task can't be promoted
+# until the user runs another one.
+_LAST_TASK: dict[str, tuple[str, str]] = {}  # chat_id -> (run_id, query)
+
+
+def note_last_task(chat_id: str, run_id: str, query: str) -> None:
+    """Record the run_id/query of the most recent completed task for chat_id,
+    so a later 'save this as a skill' can look up what just ran."""
+    _LAST_TASK[chat_id] = (run_id, query)
+
+
 # Category modules append to SKILLS at import time (data split out of this file
 # for size; see skills_data/*.py). Import order across these doesn't matter —
 # scoring treats each skill independently.
@@ -93,6 +105,8 @@ from skills_data import automation as _sd_automation  # noqa: E402,F401
 from skills_data import research_business as _sd_research_business  # noqa: E402,F401
 from skills_data import knowledge_comm as _sd_knowledge_comm  # noqa: E402,F401
 from skills_data import misc as _sd_misc          # noqa: E402,F401
+from skills_data import docs as _sd_docs          # noqa: E402,F401
+from skills_data import user_generated as _sd_user_generated  # noqa: E402,F401
 
 # ---------------------------------------------------------------------------
 # External skill discovery — scan gstack/superpowers/.claude skill dirs
@@ -898,9 +912,91 @@ def gstack_skill_info(args: dict) -> str:
     )
 
 
+def promote_last_task_as_skill(chat_id: str) -> str:
+    """Turn the most recent completed task in this chat into a reusable Skill.
+    Reads the tool-call sequence from trace_store (already recorded per run_id
+    by harness.run()) and asks the LLM to generalize the original request into
+    a templated system prompt — no raw transcript, no one-off facts/dates."""
+    last = _LAST_TASK.get(chat_id)
+    if not last:
+        return "[error] no recent task to promote — run something first, then ask to save it."
+    run_id, query = last
+
+    from store import trace_store
+    trace = trace_store.get_trace(run_id) or []
+    tools_used = sorted({t["tool"] for t in trace if t.get("tool")})
+    if not tools_used:
+        return "[error] the last task didn't call any tools — nothing reusable to promote."
+
+    from harness import local_chat as llm_chat
+    gen_prompt = (
+        "Turn this one-off request into a REUSABLE, GENERALIZED system prompt for an "
+        "agent skill. Strip specific facts, names, dates, and numbers from THIS request "
+        "— write instructions for the general task pattern instead. Output ONLY the "
+        "system prompt text, no preamble, no commentary, no code fences.\n\n"
+        f"ORIGINAL REQUEST: {query}\n"
+        f"TOOLS IT USED: {', '.join(tools_used)}"
+    )
+    system_prompt = (llm_chat(user_message=gen_prompt, tools=[]) or "").strip()
+    if not system_prompt:
+        return "[error] couldn't generalize the task into a skill prompt."
+
+    title_prompt = (
+        f"Give a short (2-5 word) Title Case name for a skill that does this, "
+        f"output ONLY the name:\n{query}"
+    )
+    title = (llm_chat(user_message=title_prompt, tools=[]) or "Saved Task").strip().strip('"')
+
+    keywords = sorted({w for w in re.findall(r"[a-z]{4,}", query.lower())})[:8]
+    skill = _s(title, f"User-saved skill: {query[:120]}", "Saved", tools_used,
+               system_prompt, keywords)
+
+    # Persist to disk (survives restart) and register immediately (usable now).
+    user_gen_path = Path(__file__).parent / "skills_data" / "user_generated.py"
+    block = (
+        f'\nSKILLS.append(_s(\n'
+        f'    {title!r}, {f"User-saved skill: {query[:120]}"!r}, "Saved", {tools_used!r},\n'
+        f'    {system_prompt!r},\n'
+        f'    {keywords!r},\n'
+        f'))\n'
+    )
+    with open(user_gen_path, "a") as f:
+        f.write(block)
+    SKILLS.append(skill)
+
+    return f"Saved as skill {skill.id!r} ({title}). It'll be usable immediately and after restarts."
+
+
+PROMOTE_TASK_TO_SKILL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "promote_task_to_skill",
+        "description": (
+            "Save the most recently completed task in this chat as a new reusable "
+            "skill, so a similar future request auto-matches to it. ONLY call this "
+            "when the user explicitly asks to save/remember the last task as a skill "
+            "(e.g. 'save this as a skill', 'remember how you did that') — never "
+            "proactively."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
+def promote_task_to_skill(args: dict) -> str:
+    """Tool executor for PROMOTE_TASK_TO_SKILL_SCHEMA."""
+    from tools.registry import CURRENT_CHAT_ID
+    chat_id = CURRENT_CHAT_ID.get() or "default"
+    try:
+        return promote_last_task_as_skill(chat_id)
+    except Exception as e:
+        return f"[error] promote_task_to_skill failed: {e}"
+
+
 # Both schemas and executors for registry.py
 SKILLS_HUB_SCHEMAS = [SKILLS_DISCOVERY_SCHEMA, SKILLS_MATCH_SCHEMA, RUN_SKILL_SCHEMA,
-                       LOAD_EXTERNAL_SKILL_SCHEMA, GSTACK_SKILL_INFO_SCHEMA]
+                       LOAD_EXTERNAL_SKILL_SCHEMA, GSTACK_SKILL_INFO_SCHEMA,
+                       PROMOTE_TASK_TO_SKILL_SCHEMA]
 
 SKILLS_HUB_EXECUTORS = {
     "list_available_skills": list_available_skills,
@@ -908,4 +1004,5 @@ SKILLS_HUB_EXECUTORS = {
     "run_skill": run_skill,
     "load_external_skill": load_external_skill,
     "gstack_skill_info": gstack_skill_info,
+    "promote_task_to_skill": promote_task_to_skill,
 }

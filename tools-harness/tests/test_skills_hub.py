@@ -18,11 +18,18 @@ from tools.registry import ALL_TOOLS, EXECUTORS
 
 
 def _reset_and_rescan():
-    """Reset SKILLS and re-scan for clean test state."""
+    """Reset SKILLS and re-scan for clean test state.
+
+    Only external (ext.*) skills are re-scanned; builtin skills_data skills
+    must be preserved or later test modules that expect them (e.g.
+    test_skills_can_run.py) fail when this runs first in the same process.
+    """
+    builtins = [s for s in SKILLS if not s.id.startswith("ext.")]
     SKILLS.clear()
     from skills_hub import _registered_external_ids
     _registered_external_ids.clear()
     _scan_external_skills()
+    SKILLS.extend(builtins)
 
 
 def _get_ext_skills():

@@ -428,6 +428,8 @@ from skills_data.orchestrator_fragments import (
     web_search_dispatch as _frag_web_search_dispatch,
     automation_dsl as _frag_automation_dsl,
     remember_action as _frag_remember_action,
+    skill_promotion as _frag_skill_promotion,
+    cleanup_organize as _frag_cleanup_organize,
 )
 
 _FRAGMENT_TRIGGERS: list[tuple[re.Pattern, str, str]] = [
@@ -435,6 +437,8 @@ _FRAGMENT_TRIGGERS: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"search|look up|find out|what'?s the|latest|score|standings|price of|news|eta|bus|transit|uber", re.I), "web_search_dispatch", _frag_web_search_dispatch.FRAGMENT),
     (re.compile(r"automat|workflow|pipeline|trigger|watcher|branch|condition", re.I), "automation_dsl", _frag_automation_dsl.FRAGMENT),
     (re.compile(r"remember that|keep in mind|don'?t forget", re.I), "remember_action", _frag_remember_action.FRAGMENT),
+    (re.compile(r"save.*(as a|this|that).*skill|remember how you did|save.*skill", re.I), "skill_promotion", _frag_skill_promotion.FRAGMENT),
+    (re.compile(r"clean ?up|organize|declutter|tidy", re.I), "cleanup_organize", _frag_cleanup_organize.FRAGMENT),
 ]
 
 # One-turn stickiness so a topic-less follow-up ("yes do that") still gets the
@@ -869,6 +873,9 @@ def _run_impl(
             CONTACTS_RESOLVE_SCHEMA,
             SKILLS_MATCH_SCHEMA,
             SEND_TELEGRAM_SCHEMA,
+            # Skill-promotion — cheap, no subagent isolation needed, same tier as
+            # SKILLS_MATCH_SCHEMA above.
+            *[t for t in ALL_TOOLS if t["function"]["name"] == "promote_task_to_skill"],
     ]
 
         # _is_simple_query computed earlier (before the system prompt was built)
