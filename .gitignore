@@ -63,3 +63,6 @@ tools-harness/scores_md.md
 tools-harness/screenshot.png
 tools-harness/world_cup_scores.*
 .claude/
+
+# Rust build artifacts
+**/target/
