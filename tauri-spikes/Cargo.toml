@@ -1,0 +1,18 @@
+[package]
+name = "tauri-spikes"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "spike"
+path = "src/main.rs"
+
+[dependencies]
+docx-rs = "0.4"
+lopdf = "0.44"
+printpdf = "0.12"
+calamine = "0.36"
+rust_xlsxwriter = "0.97"
+umya-spreadsheet = "3.0"
+zip = "8"
+snap = "1.1.2"
