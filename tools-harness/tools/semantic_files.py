@@ -21,7 +21,22 @@ import pyarrow as pa
 _OFFICE_EXTS = {".pdf", ".xlsx", ".xls", ".docx", ".doc"}
 
 _HOME = str(Path.home())
-_DB_PATH = os.path.join(_HOME, ".cache", "clixen", "file_index.lance")
+# 2026-08-04: file index moves to the OS app-private data home (not ~/.cache,
+# not repo data/, never ~/Documents) — see THREAT_MODEL.md.
+def _resolve_db_path() -> str:
+    import os as _os
+
+    override = _os.environ.get("CLIXEN_FILE_INDEX_PATH", "").strip()
+    if override:
+        return override
+    from tools.vault_paths import db_path as _vault_db_path, ensure_data_dir, migrate_legacy_data
+
+    ensure_data_dir()
+    migrate_legacy_data()
+    return _vault_db_path("file_index.lance")
+
+
+_DB_PATH = None
 _TABLE = "file_chunks"
 _EMBED_MODEL = "nomic-embed-text"
 _EMBED_DIM = 768
@@ -113,7 +128,7 @@ _SCHEMA = pa.schema([
 
 
 def _get_table():
-    db = lancedb.connect(_DB_PATH)
+    db = lancedb.connect(_resolve_db_path())
     if _TABLE in db.table_names():
         return db.open_table(_TABLE)
     return db.create_table(_TABLE, schema=_SCHEMA)

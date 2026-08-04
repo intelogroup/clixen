@@ -17,7 +17,17 @@ log = logging.getLogger(__name__)
 
 _SOURCE = "user_memory"
 _SESSION_SOURCE = "session_memory"
-_MEM_DB_PATH = str(Path(__file__).parent.parent / "data" / "memory.lance")
+_MEM_DB_PATH = None  # resolved in _memory_kb(); see tools/vault.py
+
+
+def _memory_db_path() -> str:
+    global _MEM_DB_PATH
+    if _MEM_DB_PATH is None:
+        from tools.vault_paths import db_path as _vault_db_path, ensure_data_dir, migrate_legacy_data
+        ensure_data_dir()
+        migrate_legacy_data()
+        _MEM_DB_PATH = _vault_db_path("memory.lance")
+    return _MEM_DB_PATH
 
 # Cosine-distance gates (nomic-embed). Measured: relevant matches land ~0.73-0.84,
 # unrelated noise >1.0. Recall keeps anything plausibly on-topic; forget is destructive
@@ -46,7 +56,7 @@ def _kb() -> KnowledgeBase:
     """Lazy singleton — connect to the memory DB once, reuse across calls."""
     global _mem_kb
     if _mem_kb is None:
-        _mem_kb = KnowledgeBase(db_path=_MEM_DB_PATH)
+        _mem_kb = KnowledgeBase(db_path=_memory_db_path())
     return _mem_kb
 
 
