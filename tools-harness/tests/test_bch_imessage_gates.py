@@ -31,7 +31,7 @@ import store.workflow_store as wf_mod
 from jobs.handlers import user_automation as ua
 
 BASE_CONFIG = {
-    "watch_contact": "+17817293736",
+    "watch_contact": "+14155551234",
     "trigger_phrases": ["can you help", "wondering if you can help", "enter yes or no"],
     "blackout_days": ["monday", "wednesday"],
     "skip_keywords": ["today", "tomorrow"],
