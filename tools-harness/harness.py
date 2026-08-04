@@ -29,6 +29,10 @@ _MESSAGING_GATE = threading.Semaphore(2)  # matches OLLAMA_MAX_LOADED_MODELS=2
 
 load_dotenv(Path(__file__).parent / ".env")
 
+from tools.env_secrets import load_secrets
+
+load_secrets()
+
 from tools.registry import ALL_TOOLS, PLAN_TOOLS, tools_with_tags, CURRENT_CHAT_ID
 from clients import ollama_client, cloud_client
 from clients.router import classify_ide, classify_message, model_for_intent, reasoning_effort_for_intent, _SPORTS_RE

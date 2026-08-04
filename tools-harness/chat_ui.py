@@ -768,6 +768,38 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
+# E3 hardening: 127.0.0.1 bind stops LAN access but not other local processes
+# on the same machine. Gate everything but the first HTML load + static
+# assets behind a per-install token, delivered to the browser via cookie so
+# the existing UI needs zero client-side changes.
+from tools.auth_token import get_or_create_token
+
+_LOCALHOST_TOKEN = get_or_create_token()
+_TOKEN_EXEMPT_PREFIXES = ("/static/",)
+_TOKEN_COOKIE = "clixen_token"
+
+
+@app.middleware("http")
+async def _require_localhost_token(request: Request, call_next):
+    if _LOCALHOST_TOKEN is None:
+        return await call_next(request)  # Keychain unavailable — bind-only, same as before
+    path = request.url.path
+    is_html_get = request.method == "GET" and not any(path.startswith(p) for p in _TOKEN_EXEMPT_PREFIXES)
+    presented = request.cookies.get(_TOKEN_COOKIE) or request.headers.get("x-clixen-token")
+    first_load = is_html_get and presented is None and _is_first_load(request)
+    if presented != _LOCALHOST_TOKEN and not first_load:
+        return Response(status_code=403, content="missing or invalid X-Clixen-Token")
+    response = await call_next(request)
+    if is_html_get:
+        response.set_cookie(_TOKEN_COOKIE, _LOCALHOST_TOKEN, httponly=True, samesite="strict")
+    return response
+
+
+def _is_first_load(request: Request) -> bool:
+    # Only the top-level page navigations (not fetch/XHR) get a free pass to
+    # pick up the cookie; every subsequent call must present it.
+    return request.headers.get("sec-fetch-mode") == "navigate"
+
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
