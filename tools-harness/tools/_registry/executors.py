@@ -283,12 +283,20 @@ EXECUTORS = {
     "github_create_pr": lambda args: github_create_pr_executor(args),
     "text_to_file": lambda args: text_to_file_executor(args),
     "html_to_file": lambda args: html_to_file_executor(args),
+    "create_from_template": lambda args: create_from_template_executor(args),
+    "list_templates": lambda args: list_templates_executor(args),
+    "validate_docx": lambda args: validate_docx_executor(args),
+    "repair_docx_element_order": lambda args: repair_docx_element_order_executor(args),
+    "check_xlsx_quality": lambda args: check_xlsx_quality_executor(args),
+    "check_pdf_anomalies": lambda args: check_pdf_anomalies_executor(args),
+    "add_docx_comment": lambda args: add_docx_comment_executor(args),
     # Structured parsing
     "read_document": lambda args: read_document(
         path=args["path"],
         pages=args.get("pages", "1-10"),
         max_chars=args.get("max_chars", 12000),
         lang=args.get("lang", "en"),
+        redact=args.get("redact", False),
     ),
     "parse_file": lambda args: parse_file(
         path=args["path"],
@@ -297,6 +305,15 @@ EXECUTORS = {
     "read_pdf": lambda args: read_pdf(
         path=args["path"],
         pages=args.get("pages", "1-10"),
+    ),
+    "redact_pii": lambda args: redact_pii(
+        text=args["text"],
+        mode=args.get("mode", "flag"),
+    ),
+    "redact_document": lambda args: redact_document(
+        file_path=args["file_path"],
+        mode=args.get("mode", "flag"),
+        output_path=args.get("output_path"),
     ),
     "parse_code": lambda args: parse_code(
         path=args["path"],

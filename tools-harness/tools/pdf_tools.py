@@ -6,7 +6,10 @@ import json
 import os
 from pathlib import Path
 
-import fitz  # pymupdf
+_FITZ_REMOVED_MSG = (
+    "PDF tooling disabled: PyMuPDF (AGPL-3.0) was removed for license "
+    "compliance. Pending port to pdfium-render/lopdf."
+)
 
 
 def _resolve_pdf_path(path_str: str) -> Path:
@@ -35,6 +38,7 @@ def pdf_to_markdown(pdf_path: str, output_dir: str | None = None) -> tuple[str, 
     Raises:
         FileNotFoundError: If the PDF does not exist.
     """
+    raise RuntimeError(_FITZ_REMOVED_MSG)
     p = Path(pdf_path)
     if not p.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
@@ -71,6 +75,7 @@ def extract_pdf_images(pdf_path: str, output_dir: str) -> list[str]:
     Raises:
         FileNotFoundError: If the PDF does not exist.
     """
+    raise RuntimeError(_FITZ_REMOVED_MSG)
     p = Path(pdf_path)
     if not p.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
@@ -112,6 +117,7 @@ def detect_pdf_form_fields(path: str) -> str:
     Raises:
         FileNotFoundError: If the PDF does not exist.
     """
+    return _FITZ_REMOVED_MSG
     p = _resolve_pdf_path(path)
     if not p.exists():
         return f"PDF not found: {path}"
@@ -166,6 +172,7 @@ def fill_pdf_form(
         FileNotFoundError: If the source PDF does not exist.
         ValueError: If ``fields`` is a string that cannot be parsed as JSON.
     """
+    return _FITZ_REMOVED_MSG
     p = _resolve_pdf_path(path)
     if not p.exists():
         return f"PDF not found: {path}"

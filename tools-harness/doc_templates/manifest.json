@@ -1,0 +1,17 @@
+{
+  "status_report": {
+    "format": "docx",
+    "label": "Status report",
+    "placeholders": ["title", "period", "author", "summary", "next_steps"]
+  },
+  "invoice": {
+    "format": "xlsx",
+    "label": "Invoice",
+    "placeholders": ["invoice_number", "client_name", "date", "line_item", "amount", "total"]
+  },
+  "pitch_deck": {
+    "format": "pptx",
+    "label": "Pitch deck",
+    "placeholders": ["company_name", "tagline", "problem", "solution"]
+  }
+}

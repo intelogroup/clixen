@@ -32,12 +32,12 @@ def _resolve_form_path(path_str: str) -> Path:
 
 
 def _has_acroform(p: Path) -> bool:
-    """Check if a PDF has interactive AcroForm fields."""
-    import fitz
-    with fitz.open(str(p)) as doc:
-        for page in doc:
-            for _ in page.widgets():
-                return True
+    """Check if a PDF has interactive AcroForm fields.
+
+    PyMuPDF (AGPL-3.0) removed for license compliance — always reports False,
+    routing callers to the flat-PDF/vision path (also disabled pending a
+    pdfium-render/lopdf port).
+    """
     return False
 
 

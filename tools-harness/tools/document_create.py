@@ -12,6 +12,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+# One bounded, precise extraction (not a router) — see CLAUDE.md design principle.
+_CHART_BLOCK_RE = re.compile(r"```chart\n(.*?)\n```", re.S)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -20,6 +23,23 @@ from typing import Any
 def _read_markdown(path: str) -> str:
     """Read markdown file content."""
     return Path(path).expanduser().read_text(encoding="utf-8")
+
+
+def extract_chart_spec(md_text: str) -> tuple[str, dict | None]:
+    """Strip an optional ```chart``` fenced JSON block from markdown text.
+
+    Returns (markdown_without_fence, spec_or_None). A malformed block is
+    dropped silently — never blocks document creation.
+    """
+    m = _CHART_BLOCK_RE.search(md_text)
+    if not m:
+        return md_text, None
+    stripped = md_text[: m.start()] + md_text[m.end():]
+    try:
+        spec = json.loads(m.group(1))
+    except Exception:
+        return stripped, None
+    return stripped, spec
 
 
 def _write_file(path: str, content: str) -> str:
@@ -52,6 +72,7 @@ def markdown_to_docx(md_path: str, output_path: str, template: str = "") -> str:
     from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
     md_text = _read_markdown(md_path)
+    md_text, chart_spec = extract_chart_spec(md_text)
     html = _md.markdown(md_text, extensions=["extra", "codehilite", "tables"])
     # Parse HTML into document elements
     from xml.etree import ElementTree as ET
@@ -80,6 +101,15 @@ def markdown_to_docx(md_path: str, output_path: str, template: str = "") -> str:
             handler(doc, text)
         else:
             doc.add_paragraph(text)
+
+    if chart_spec:
+        from tools.chart_embed import add_chart_to_docx_png
+        import tempfile
+        try:
+            with tempfile.TemporaryDirectory() as _td:
+                add_chart_to_docx_png(doc, chart_spec, _td)
+        except Exception:
+            pass  # never let a bad chart spec block document creation
 
     output_p = Path(output_path).expanduser()
     output_p.parent.mkdir(parents=True, exist_ok=True)
@@ -140,6 +170,7 @@ def markdown_to_pdf(md_path: str, output_path: str, theme: str = "light") -> str
     from reportlab.lib import colors
 
     md_text = _read_markdown(md_path)
+    md_text, chart_spec = extract_chart_spec(md_text)
     html = _md.markdown(md_text, extensions=["extra", "tables"])
     from xml.etree import ElementTree as ET
     root = ET.fromstring(f"<root>{html}</root>")
@@ -171,7 +202,22 @@ def markdown_to_pdf(md_path: str, output_path: str, theme: str = "light") -> str
                 elements.append(Paragraph(prefix + li_text, styles["BodyText"]))
         elements.append(Spacer(1, 0.2 * inch))
 
+    _chart_png = None
+    if chart_spec:
+        from reportlab.platypus import Image as _RLImage
+        from tools.chart_embed import render_chart_png
+        try:
+            # doc.build() defers reading the image file until after this function
+            # returns — must outlive the `with` block, so no TemporaryDirectory here.
+            _chart_png = str(Path(output_path).expanduser().with_name("_chart_tmp.png"))
+            render_chart_png(chart_spec, _chart_png)
+            elements.append(_RLImage(_chart_png, width=6 * inch, height=3.86 * inch))
+        except Exception:
+            _chart_png = None  # never let a bad chart spec block PDF creation
+
     doc.build(elements)
+    if _chart_png:
+        Path(_chart_png).unlink(missing_ok=True)
     return output_path
 
 
@@ -259,7 +305,8 @@ def json_to_docx(json_path: str, output_path: str, template: str = "") -> str:
 # 4. Data → XLSX
 # ---------------------------------------------------------------------------
 
-def data_to_xlsx(data_path: str, output_path: str, sheet_name: str = "Sheet1") -> str:
+def data_to_xlsx(data_path: str, output_path: str, sheet_name: str = "Sheet1",
+                  chart_spec: dict | None = None) -> str:
     """
     Create an Excel (.xlsx) file from JSON or CSV data.
 
@@ -273,6 +320,8 @@ def data_to_xlsx(data_path: str, output_path: str, sheet_name: str = "Sheet1") -
         data_path: Path to JSON or CSV input file
         output_path: Path for output .xlsx file
         sheet_name: Name of the worksheet
+        chart_spec: Optional {"type","title","categories","series"} dict — adds a
+            native openpyxl chart (bar/line/pie) next to the data.
 
     Returns:
         Path to created .xlsx file
@@ -301,6 +350,13 @@ def data_to_xlsx(data_path: str, output_path: str, sheet_name: str = "Sheet1") -
     elif isinstance(data, dict):
         for key, value in data.items():
             ws.append([key, str(value)])
+
+    if chart_spec:
+        from tools.chart_embed import add_native_xlsx_chart
+        try:
+            add_native_xlsx_chart(ws, chart_spec)
+        except Exception:
+            pass  # never let a bad chart spec block spreadsheet creation
 
     output_p = Path(output_path).expanduser()
     output_p.parent.mkdir(parents=True, exist_ok=True)
@@ -339,6 +395,7 @@ def markdown_to_pptx(md_path: str, output_path: str, template: str = "") -> str:
     from pptx.util import Inches, Pt
 
     md_text = _read_markdown(md_path)
+    md_text, chart_spec = extract_chart_spec(md_text)
 
     prs = pptx.Presentation()
     if template and Path(template).exists():
@@ -376,6 +433,18 @@ def markdown_to_pptx(md_path: str, output_path: str, template: str = "") -> str:
             current_content.append(line)
 
     _finalize_slide()
+
+    if chart_spec:
+        from tools.chart_embed import add_native_pptx_chart
+        try:
+            # Layout 6 is the standard "blank" layout in python-pptx's default
+            # template; fall back to the last available layout for custom templates.
+            layout_idx = 6 if len(prs.slide_layouts) > 6 else len(prs.slide_layouts) - 1
+            chart_slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
+            add_native_pptx_chart(chart_slide, chart_spec)
+        except Exception:
+            pass  # never let a bad chart spec block presentation creation
+
     output_p = Path(output_path).expanduser()
     output_p.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(output_p))
@@ -571,6 +640,36 @@ TEXT_TO_FILE_SCHEMA = {
     },
 }
 
+CREATE_FROM_TEMPLATE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "create_from_template",
+        "description": (
+            "Create a document from a pre-built template (status report docx, "
+            "invoice xlsx, pitch deck pptx) by filling in its {{placeholder}} fields. "
+            "Call list_templates first if unsure which template/placeholders to use."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "template_name": {"type": "string", "description": "One of: status_report, invoice, pitch_deck"},
+                "values": {"type": "object", "description": "Map of placeholder name -> fill value", "additionalProperties": {"type": "string"}},
+                "output_path": {"type": "string", "description": "Output file path"},
+            },
+            "required": ["template_name", "values", "output_path"],
+        },
+    },
+}
+
+LIST_TEMPLATES_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "list_templates",
+        "description": "List available document templates and their placeholder fields.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
 HTML_TO_FILE_SCHEMA = {
     "type": "function",
     "function": {
@@ -632,6 +731,7 @@ def data_to_xlsx_executor(args: dict) -> str:
         data_path=args["data_path"],
         output_path=args["output_path"],
         sheet_name=args.get("sheet_name", "Sheet1"),
+        chart_spec=args.get("chart_spec"),
     )
 
 
@@ -651,6 +751,24 @@ def text_to_file_executor(args: dict) -> str:
         return "Error: missing output_path. Provide output_path in args."
     encoding = args.get("encoding", "utf-8")
     return text_to_file(content, output_path, encoding)
+
+
+def create_from_template_executor(args: dict) -> str:
+    from tools.templates import render_template
+    try:
+        return render_template(
+            name=args["template_name"],
+            values=args.get("values", {}),
+            output_path=args["output_path"],
+        )
+    except Exception as e:
+        return f"[error] create_from_template failed: {e}"
+
+
+def list_templates_executor(args: dict) -> str:
+    from tools.templates import list_templates
+    import json as _json
+    return _json.dumps(list_templates())
 
 
 def html_to_file_executor(args: dict) -> str:
