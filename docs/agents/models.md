@@ -3,11 +3,24 @@
 ## Cloud-First Routing (2026-07 revamp)
 
 **The main agent now defaults to a cloud model, not gemma4.** gemma4:12b-mlx was proving
-unreliable past 2-3 chained tool calls (CSS-selector probing loops, hallucinated content,
-empty `content=''` responses — known failure class for small local models under long tool-calling chains).
-Both the web-UI/Telegram/WhatsApp path (`harness.py`) and the LangGraph local-agent
-(`agents/local_agent_graph.py`) now default to OpenRouter's DeepSeek, with GPT-4o-mini
-as an automatic fallback.
+unreliable on specific real tasks (CSS-selector probing loops, hallucinated content,
+empty `content=''` responses seen in browser/DOM-probing flows). Both the web-UI/Telegram/WhatsApp
+path (`harness.py`) and the LangGraph local-agent (`agents/local_agent_graph.py`) now default
+to OpenRouter's DeepSeek, with GPT-4o-mini as an automatic fallback.
+
+**Correction (2026-08-04):** the earlier framing — "unreliable past 2-3 chained tool calls" as a
+generic ceiling — was wrong. Verified live: gemma4:12b-mlx correctly chains 10 sequential tool
+calls (real read/write file tools via the local-agent, exact args propagated, no hallucination),
+and holds up on a harder FuncBenchGen/BFCL-style test — implicit dependency-graph inference (no
+step order given), 5 semantically-close decoy tools ignored, and correct retry after an injected
+mid-chain tool error. 3/3 clean on both tests.
+What actually broke the real-app 10-call run wasn't the model: `agents/local_agent_nodes.py`'s
+120s per-call ollama timeout and `agents/local_agent_graph.py`'s 180s/120s node timeouts plus the
+15-step LangGraph recursion cap (`_DEFAULT_MAX_STEPS = 15`) killed the run around step 4-8 as
+per-call latency grew with accumulating context — an infra ceiling, not a reasoning failure. The
+original CSS-probing/hallucination failures above are real and still the reason cloud-first stays
+the default for browser-driven work, but "gemma4 can't chain past 2-3 tools" should not be cited
+as the general reason — it's task/latency-shaped, not a hard reasoning limit.
 
 - **`clients/cloud_client.py`** — OpenRouter-backed chat client, same `chat(**kwargs)` shape
   as `ollama_client.chat()`. `DEFAULT_CLOUD_MODEL = "deepseek/deepseek-v4-flash"` (DeepSeek's own

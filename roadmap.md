@@ -96,7 +96,22 @@ Mac-native, and fast to actually use** — no Docker, no gateway process, no
 flow-engine SQLite schema to reason about — "runs well on your Mac with
 local models, does 4-5 things reliably" rather than "generalized agent
 platform." Scope the desktop app around that constraint, not around matching
-OpenClaw/Hermes feature-for-feature.
+OpenClaw/Hermes feature-for-feature. Concretely for the primary Tauri
+surface (document work): **not an all-around agent** — see §0b for the
+locked architecture this implies.
+
+**Target niche (2026-08-04): privacy-bound solo professionals** —
+therapists, coaches, consultants, small-practice lawyers/accountants.
+Recurring pain (daily admin: reminders, client-note digests, inbox triage),
+existing willingness to pay (already pay for practice-management SaaS),
+narrow/nameable audience (local directories, coach/therapist communities),
+clear ROI (3-5hrs/week saved). Key differentiator for this buyer
+specifically: client confidentiality means they *can't* use cloud AI for
+notes — the offline-gemma4 privacy tier is a requirement for them, not a
+compromise, unlike the general market where "runs locally" is just parity
+with OpenClaw. Sell as "AI office assistant" (WhatsApp/Telegram reminders,
+ringback call nudges, daily digest) — no code/API/"workflow" jargon in
+positioning or UI copy for this segment.
 
 **Pricing (unchanged from earlier analysis):** free tier (chat only) → Pro
 $19 one-time or $6/mo (voice, messaging, automations) → Privacy/Offline tier
@@ -105,19 +120,95 @@ workflows). Realistic revenue target: $5-15K ARR in first 12 months, not
 $50K — no existing distribution channel or named customer list yet; $50K is
 a plausible year-2 outcome only if the local-reliability niche bet lands.
 
+**Constraint: local concurrency ceiling (2026-08-04).** Not an artificial
+Ollama concurrency cap — a memory ceiling. gemma4:12b resident weights + KV
+cache eat most of 24GB unified mem on M4; a second concurrent 12b instance
+either OOMs or Metal serializes it (no true parallel exec across two loaded
+instances of the same model class). `OLLAMA_NUM_PARALLEL` batches requests
+onto one loaded model but throughput/latency degrades hard past 1-2
+concurrent requests on a 12b model on this hardware — it's time-sliced
+batching, not real parallelism. Practical effect: the "100% local, zero
+cloud spend" privacy tier can run one workflow's LLM step at a time
+reliably; two scheduled workflows firing simultaneously will queue/stack
+latency, not run in parallel. Scope the privacy tier's marketing and the
+scheduler's concurrency limit (`jobs/worker.py`) around "one local LLM call
+in flight at a time," not "N workflows fully parallel."
+
+Confirmed via code read: this asymmetry is already intentional, not a bug.
+`clients/cloud_client.py` (~line 780) fans out tool/subagent calls with
+`ThreadPoolExecutor(max_workers=min(len(tool_calls), 4))` — real parallelism,
+safe because OpenRouter handles concurrency server-side, no local memory
+contention. `clients/ollama_client.py`'s tool-call loop is a plain sequential
+`for call in tool_calls` — no thread pool. `tools/orchestrator_tools.py`'s
+`ask_*` subagent dispatch uses `ThreadPoolExecutor(max_workers=1)` per call,
+which is a timeout wrapper, not a fan-out point — subagent calls already
+execute one-at-a-time regardless of local/cloud. Do not "fix" the local loop
+to match cloud's 4-way parallel pattern — that would reintroduce the OOM/
+serialization risk described above.
+
+---
+
+## 0b. Document Agent Architecture (Decided 2026-08-04)
+
+Locks in scope for the primary Tauri surface: **one domain, private document
+work — not a general-purpose agent.** §7b/7c/7d cover *what* the doc engine
+does (crate stack, per-format ops); this section covers *how it's
+orchestrated* so gemma4:12b's known ceiling (unreliable past 2-3 chained
+tool calls, single serialized inference slot per §0 concurrency note) never
+turns into an open-ended 20-60-tool agentic loop.
+
+**Fixed pipeline, not open tool-choice:**
+
+```
+ingest → extract (OCR/parse) → chunk/embed → retrieve → ground → synthesize
+```
+
+gemma4 is called at exactly two fixed slots — intent classify (which pipeline
+variant) and final synthesis (answer from already-grounded snippets). It
+never chooses which tool to call next; code chooses. Most queries (find
+clause, extract date, list parties) resolve entirely in Tier A below, with no
+gemma4 call at all.
+
+**Tiering (extends §9b's non-LLM tools table with the "why"):** gemma4 is a
+single serialized inference queue — the only genuine parallelism available
+is fanning out everything that isn't gemma4.
+
+| Tier | Examples | Parallel-safe | gemma4 involved? |
+|------|----------|-----------------|-------------------|
+| A — deterministic code | PDF/doc extraction, regex field extraction, citation/span grounding, format conversion, schema validation | Yes — pure code, no model weights | No |
+| B — small dedicated model daemon | surya OCR daemon, `nomic-embed-text` daemon | Yes — separate weights/process from gemma4, can run concurrently with it | No |
+| Serialized | Intent classify, final synthesis | No — single queue | Yes, only here |
+
+Orchestrator fans out Tier A + Tier B concurrently, collects structured
+results, then makes at most one gemma4 call at the end (synthesis over
+pre-extracted data) — never a per-subagent loop.
+
+**Anti-hallucination gates (enforced in code, not by prompting alone):**
+- No answer without a grounded source span; if retrieval returns no snippets, skip the gemma4 call entirely and return "not found in document" directly.
+- Synthesis prompt scoped to "answer only from provided text, else say not found" — belt, not the whole guardrail.
+- Post-hoc fuzzy-match of gemma4's claim back against the source span (Tier A, no LLM); mismatch → discard the answer, surface "uncertain," don't show it.
+- System prompt bans world-knowledge answers — retrieval-empty-skip (above) is the enforcement, the prompt line is backup only.
+- Every answer shows its source quote/page in the UI — provenance the user (lawyer/doctor/therapist) can verify at a glance, not a trust claim.
+
+**Conversational state lives in code.** Active document, prior extracted
+facts, and follow-up reference resolution ("what about clause 3?") are
+resolved by code before any gemma4 call — the model is not asked to
+re-derive multi-turn state itself.
+
 ---
 
 ## 1. Security Hardening
 
 | ID | Severity | What | Files | Effort | Verify |
 |----|----------|------|-------|--------|--------|
-| S1 | **CRITICAL** | WhatsApp bot binds `0.0.0.0:9236` with no auth — exposed to LAN | `tools-harness/whatsapp_bot.py:166` | 1 line | `curl localhost:9236/health` returns 200 from loopback only |
-| S2 | **CRITICAL** | Kokoro TTS daemon binds `0.0.0.0:9237` with no auth — LAN-exposed TTS endpoint | `tools-harness/kokoro_daemon.py:185` | 1 line | Same as S1, on 9237 |
-| S3 | **CRITICAL** | Hardcoded email+password in client-side React (`jimkalinov@gmail.com` / `Jimkali90#`) — ships to every browser | `lib/auth-context.tsx:52`, `app/auth/signin/page.tsx:84,286` | 10 min | Grep for password string — zero hits after fix |
-| S4 | **HIGH** | `/voice/ingest` endpoint has no auth check — broadcast injection | `tools-harness/chat_ui.py:2195` | 2 lines | POST /voice/ingest returns 401 from non-localhost |
-| S5 | **HIGH** | Real phone `+18574261739` in source + test files | `tools-harness/tools/imessage_search.py:471`, `tools-harness/.env:55,58` | 5 min | Grep for phone number — only `.env` |
-| S6 | **HIGH** | Real Telegram chat ID `8538224711` in test file | `tools-harness/tests/test_telegram_routing_sweep_round2.py:45` | 1 line | Grep for chat ID — zero hits in source |
-| S7 | **MEDIUM** | Python REPL AST check bypassable via `getattr(__builtins__, 'ev'+'al')` | `tools-harness/tools/tool_policy.py:38-67`, `tools/tool_policy.py` `check_python_code_safety()` | 30 min | Unit test with bypass payload — caught |
+| S1 | **RESOLVED (stale, verified 2026-08-04)** | Audit claimed WhatsApp bot binds `0.0.0.0:9236` no auth. Checked live: `whatsapp_bot.py:180` is `uvicorn.run(app, host="127.0.0.1", ...)` — already loopback-only. No fix needed | `tools-harness/whatsapp_bot.py:180` | n/a | confirmed via grep+read |
+| S2 | **RESOLVED (stale, verified 2026-08-04)** | Audit claimed Kokoro daemon's `0.0.0.0:9237` bind needed switching to loopback. Checked live: the `0.0.0.0` bind is deliberate (comment at `kokoro_daemon.py:29-31` — ringback's docker container reaches it via `host.docker.internal`, not loopback; changing the bind would break ringback) and a `KOKORO_AUTH_TOKEN` gate (`_get_auth_token`/`_auth_ok`, `:36-46`) already closes it. No fix needed | `tools-harness/kokoro_daemon.py:29-46` | n/a | confirmed via read |
+| S3 | **RESOLVED (stale, verified 2026-08-04)** | Audit claimed hardcoded `jimkalinov@gmail.com`/`Jimkali90#` in client React. Repo-wide grep (`.tsx`/`.ts`/`.py`, excluding `.next`/`node_modules`) — zero hits. Already removed | `lib/auth-context.tsx`, `app/auth/signin/page.tsx` | n/a | grep, zero hits |
+| S4 | **RESOLVED (stale, verified 2026-08-04)** | Audit claimed `/voice/ingest` has no auth check. Checked live: `chat_ui.py:2398` calls `_require_auth(request)` as its first line. No fix needed | `tools-harness/chat_ui.py:2398` | n/a | confirmed via read |
+| S5 | **DONE (2026-08-04)** | Verified live: `.env:55,58` is gitignored (`.gitignore:3`), never a real leak. But `imessage_search.py:471` *did* hardcode the real number as a source-level default — real leak into tracked git history. Fixed: default now reads `IMESSAGE_DEFAULT_TARGET` from `.env` (already existed), no literal in source. Also scrubbed the number from a stale example comment at line ~520. 19/19 imessage-tagged tests pass | `tools-harness/tools/imessage_search.py:471` | done | `IMMESSAGE_DEFAULT_SENDER` resolves from env, confirmed live import |
+| S6 | **RESOLVED (stale, verified 2026-08-04)** | `tests/test_telegram_routing_sweep_round2.py` no longer exists (renamed/removed). Live grep of all tracked `*.py` for the chat ID: zero hits — only appears in gitignored `.env`. Not a current leak | — | n/a | `git grep` for chat ID across tracked source, zero hits |
+| S7 | **DONE (2026-08-04)** | Confirmed live via dry-run: `check_python_code_safety()` bypassed cleanly by `__import__("subprocess")`, `getattr(os,"system")`, `os.__dict__["system"]`, `().__class__.__bases__[0].__subclasses__()` — zero exceptions raised, real and current. Fixed: block `__import__`/`getattr`/`setattr`/`delattr`/`vars`/`globals`/`locals` calls, plus any dunder attribute/name access (blocks `__dict__`, `__class__`, `__builtins__`, etc.). Re-ran same 4 payloads post-fix — all blocked; legit code (`pandas`, `json`, plain calc) still passes; 21/21 in `test_security_boundaries.py` + `test_bch_imessage_gates.py` pass | `tools-harness/tools/tool_policy.py:38-73` | done | 4 known bypass payloads all raise `ValueError`, legit code unaffected, full test suite green |
+| S8 | **DONE (2026-08-04)** | `KnowledgeBase.search()` filtered `source` in Python *after* fetching top_k*4 candidates instead of via LanceDB `.where(prefilter=True)`. Fixed: `source_filter` now restricts the candidate set natively before vector scoring. Verified with a live dry-run (mocked embeddings, mixed-source table, asserted filtered search returns only the target source) — 40/40 existing KB-dependent tests still pass. Scope note: did **not** add a `client_id` field/multi-client isolation — no caller needs it today, single-user-local design, would be YAGNI ahead of an actual multi-client feature | `tools-harness/store/knowledge_base.py:200-226` | done | `search(query, source_filter=X)` returns only rows where `source == X`, confirmed live |
 
 ---
 
@@ -157,7 +248,7 @@ env var defaults or removed.
 
 | ID | Severity | What | Files | Effort | Verify |
 |----|----------|------|-------|--------|--------|
-| X1 | **BLOCKER** | `gemma4:12b-mlx` hardcoded as default local model in 90+ call sites — Intel Macs and Linux get GGUF (`gemma4:latest`), not MLX | `ollama_client.py:70`, all 10 specialists, `websearch.py:471`, `deep_research.py:26`, `telegram_bot.py:1036`, `_summarize.py:608` | 1 env var + 90+ sites | Set `LOCAL_MODEL=gemma4:latest` → all local calls use it |
+| X1 | **BLOCKER** | `gemma4:12b-mlx` hardcoded as default local model in 65+ call sites (verified via grep 2026-08-04) — Intel Macs and Linux get GGUF (`gemma4:latest`), not MLX. `ollama_client.py` already exposes a single-source-of-truth `DEFAULT_MODEL = os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:12b-mlx")` constant with a comment telling call sites to import it — the 65+ sites just aren't using it yet | `ollama_client.py:75`, all 10 specialists, `websearch.py:471`, `deep_research.py:26`, `telegram_bot.py:1036`, `_summarize.py:608` | Env var already exists; remaining work is migrating 65+ sites to import the constant | Set `OLLAMA_DEFAULT_MODEL=gemma4:latest` → all local calls use it |
 | X2 | **BLOCKER** | All 7 launchd plists hardcoded to `/Users/kalinovdameus/Developer/clixen/` — non-transferable | `tools-harness/launchd/*.plist` | 1 hr | Template plist + `install-launchd.sh` generation script |
 | X3 | **HIGH** | `/opt/homebrew/bin/node` hardcoded (Apple Silicon Homebrew path) | `messaging_supervisor.py:32`, `messaging_supervisor.sh:27` | 2 lines each | `which node` or `NODE_BIN` env var |
 | X4 | **HIGH** | `/opt/homebrew/bin/python3.12` in task worker plist — different Python paths on other machines | `com.clixen.task_worker.plist:12` | 1 line | Use `.venv/bin/python` like other plists |
@@ -235,7 +326,151 @@ Total estimated: ~12 hours
 
 ---
 
+## 7b. Tauri Privacy-Tier Build Requirement (2026-08-04, corrected 2026-08-04)
+
+**Correction:** the original entry here misread `agents/local_agent_nodes.py:863-877`.
+Re-verified via `git log -p` (single commit touches this file — no regression,
+this was a misread from the start, not a later behavior change): the
+escalation gate is `error_count >= 3 and is_cloud_model(state.current_model)`
+— it only fires **cloud → cloud-fallback** (a flaky/misbehaving DeepSeek call
+gets one retry on GPT), never local(gemma4) → cloud. There is no code path
+in this function that promotes an offline gemma4 session to a cloud model.
+The "despite the name 'local agent,' it unconditionally escalates to cloud"
+claim below was wrong; keeping the requirement anyway as defense-in-depth,
+not because this specific mechanism is a live confidentiality bug.
+
+**Requirement (retained as defense-in-depth):** for the privacy-tier Tauri
+build, don't rely solely on this one gate staying correct forever — ship
+without `clients.cloud_client` importable/reachable at all in that build
+target, so a confidential session fails/stops locally on repeated errors
+instead of any future code change accidentally reintroducing a local→cloud
+path. Re-audit any other local-agent-labeled code path for a similar pattern
+at Tauri build time; this file audits clean today, but "clean today" isn't
+a substitute for the build-target guarantee.
+
+---
+
+## 7bb. `clixen_search` — status check (verified 2026-08-04)
+
+External chat advice proposed a `clixen_search` tool (LanceDB hybrid vector+FTS,
+`client_id`-filtered, same `EXECUTORS` pattern as `redact_document()`) plus a
+vault (`ClixenVault/`, Argon2id passphrase, `assert_path_in_vault()`,
+`license.rs`/Lemon Squeezy paywall). Checked against actual repo state before
+acting on any of it — most was aspirational, not built:
+
+- `redact_document()` — **real**, `tools-harness/tools/pii_redact.py:66`,
+  registered in `EXECUTORS`. The one piece of that advice already shipped.
+- `clixen_search`, `ClixenVault`, `assert_path_in_vault()`, `license.rs`,
+  Argon2id — **zero hits repo-wide**. None of this exists. Not a gap in a
+  half-built feature, just not started.
+- `tauri-spikes/` — exists but is a bare `cargo new` skeleton (`main.rs` only,
+  no Tauri framework wiring). No onboarding/paywall/license work is
+  buildable yet; there's no app surface to attach it to.
+- LanceDB hybrid+prefilter architecture claim in the advice — **verified live**
+  against LanceDB 0.33 in this venv: native `.where(prefilter=True)`,
+  `create_fts_index()`, and single-call `search(query_type="hybrid")` all work
+  correctly (prefilter test: 1/1 correct row, no leak; hybrid test: correct
+  row on both vector+text+filter combined). The architecture is buildable
+  today — see S8 above for the concrete first step (fix `knowledge_base.py`'s
+  post-hoc Python filter, which is the real gap, not a missing capability).
+- Pricing in the external advice ($199 one-time / 7-day trial / Lemon Squeezy)
+  conflicts with this roadmap's own §0 pricing ($19–29 one-time or $6–9/mo,
+  dated 2026-08-03/04). Roadmap's number stands — no reason given in the
+  external advice to override a dated, already-reasoned decision.
+
+**Build order implied:** S8 (fix `knowledge_base.py` filter/schema) is the
+correct next step — it's both the live security fix and the foundation
+`clixen_search` needs. Vault/license/payment work stays blocked behind an
+actual Tauri app surface existing, which it doesn't yet.
+
+---
+
+## 7c. Doc-processing crate stack (DECIDED 2026-08-04)
+
+Embedded-in-Rust, no LGPL, no pandoc-style sidecar. Four ops per format
+(create / edit / get style / get comments) for the privacy-tier build.
+
+| Format | Crate(s) | License | Role split |
+|--------|----------|---------|------------|
+| DOCX | `docx-rs` | MIT | create / edit / get style / get comments |
+| PDF | `lopdf` + `printpdf` | both MIT | `lopdf` = read/edit/style/comments; `printpdf` = create [annotations] |
+| EXCEL | `calamine` + `rust_xlsxwriter` + `umya-spreadsheet` | calamine MIT, xlsxwriter MIT OR Apache-2.0, umya MIT | calamine = read (indexing), xlsxwriter = create/edit (no in-place edit — read then rewrite), umya = full style/comments |
+| PAGES | convert via macOS `textutil` → docx, then `docx-rs` | n/a | `.pages` = Apple-private IWA protobuf zip; no MIT parser exists. Option B (zip + quick-protobuf reverse-engineer) rejected for V1 |
+
+Still open → now drafted: Tauri command shapes for the two hardest ops.
+
+**PDF `get_comments` (lopdf).** PDF comments are annotation objects, not a
+sidecar. Walk each page's `/Annots` array, filter `Subtype /Text` and
+`/Highlight` (popup/ink/link/square are different annotation kinds, not
+comments). Extract per annotation: `/Contents` (comment body, may be hex or
+stream — `Content::Stream` decode), `/T` (author, often unset in exported
+PDFs — default to "anonymous"), `/Subj` (subject), `/Rect` (position, for
+anchoring back to the page), and the page number. Return `[{page, author,
+rect, text}]`. Skip form-field `/Widget` annotations (those belong to
+`get_style`/form-fill, not comments). Watch: comment text is sometimes
+UTF-16BE in the literal stream — detect the BOM before UTF-8 decode.
+
+**Excel `get_styles` (umya-spreadsheet).** `worksheet.get_style(ref)` returns
+the cell style: font (bold/italic/underline, size, color RGB), fill (solid
+color, pattern type), `numFmt` (the number format string — needed to
+distinguish currency/percent/date cells), and alignment (wrap, halign,
+valign). Expose `get_styles(path, sheet, range?)` returning a JSON matrix
+keyed by cell ref so the model can match "red bold cell = flagged input"
+conventions (open-cowork financial-modeling color code: blue=inputs,
+black=formulas, green=same-workbook links, red=external). Note: umya reads
+the raw XML; merged-cell styling lives on the top-left cell only. `calamine`
+is NOT used here — its read path exposes value types, not formats.
+
+---
+
+## 7d. Doc-skill learnings from open-cowork + kimi-skills (2026-08-04)
+
+Studied `OpenCoworkAI/open-cowork` `.claude/skills/{docx,pdf,pptx,xlsx}` (MIT)
+and `thvroyal/kimi-skills` `skills/kimi-{docx,pdf,xlsx}` (unlicensed — patterns
+only, no code lifted). Cross-format patterns worth keeping for the Tauri build:
+
+1. **Original-diff validation** — validate against real XSDs but only fail on
+   errors the *original* file didn't already have (kills false positives).
+2. **JSON contract + validate-before-mutate + post-write regression check** —
+   model emits structured intent, script validates every key before touching
+   the file, then re-measures output and fails on regression. No second model call.
+3. **Two-direction render loop** — model-authored geometry made visible
+   (validation overlay images) + machine-checked before use (PDF FORMS.md).
+4. **De-noise the DOM before the model edits** — merge adjacent runs, strip
+   proofErr, escape smart quotes, pretty-print. Radical rule: edit raw XML
+   directly, don't script content changes.
+5. **LibreOffice as the unpaid formula/render engine** — one headless LO macro
+   gives a real calculator for xlsx (openpyxl writes formulas as strings) and
+   renders docx/pptx→images for visual QA.
+6. **Element-order repair** (kimi-docx `element_order.py`) — stable-sort
+   children against schema order, unknown elements kept at end (lossless);
+   force `w:sectPr` last in body. Single best fix for "Word says unreadable content".
+7. **xlsx error taxonomy** — scan for the 7 error strings, ban dynamic-array
+   fns (FILTER/UNIQUE/XLOOKUP/LET/LAMBDA break Excel ≤2019), flag SUM/AVERAGE
+   over ≤2-cell ranges (pandas off-by-one signature), never openpyxl a pivot file.
+8. **Native editable charts** — embed data as `c:strCache`/`c:numCache` so charts
+   render without external Excel refs; heatmap/3D fall back to matplotlib PNG.
+9. **Comments/track-changes** — modern Word comments span 5 XML files
+   (comments + commentsExtended + commentsIds + commentsExtensible + people)
+   chained by paraId/durableId; text-anchored, char-precise run splitting.
+10. **Regenerate, don't patch** — failed validation = rebuild from scratch.
+
+Implemented in Python harness (2026-08-04, `tools/doc_quality.py` + skills
+"Check Document Quality" / "Repair DOCX" in `skills_data/docs.py`): #6 docx
+element-order repair, #7 xlsx formula/forbidden-fn/small-aggregate scan,
+structural docx validation (parts/rels/sectPr), PDF blank/low-content page
+scan. Deferred to Rust build (§7c): #1 XSD validation (no Python equivalent),
+#8 native charts, #9 comments, #5 LibreOffice recalc, #3 render loop.
+
+---
+
 ## 8. Prebuilt Workflow Templates (Desktop App Packaging)
+
+Scope note: this section and §9 are messaging/scheduling automations
+(reminders, digests, watchers) — a separate feature surface from the
+document agent in §0b. Don't reuse this section's open-ended
+trigger/condition/branch primitives as a template for the doc agent; §0b's
+fixed pipeline is the intended shape there, not B1-B10 generalized routing.
 
 Generic automations to ship as one-click templates in the packaged app — no
 Clixen-specific setup (SIP number, DoorDash account) required, just fill-in
@@ -284,6 +519,30 @@ Build B1-B6 first (trigger/condition primitives) — B7-B10 mostly reuse
 existing `agents/local_agent_tools.py` and `store/workflow_store.py` plumbing
 already built for W1-W10.
 
+### 9b. Local-First Non-LLM Tools (2026-08-04)
+
+gemma4:12b is the actual bottleneck (single inference slot, 24GB ceiling —
+see Section 0 concurrency note). Any task that doesn't need generation/
+reasoning should run as a deterministic tool instead, for two reasons: it's
+parallel-safe (separate process/small-model, not competing for gemma4's
+memory slot), and it's more reliable (no hallucination risk, vs. gemma4's
+known degradation past 2-3 chained tool calls). Design rule: reserve gemma4
+for synthesis/dialogue/reasoning only; push classification, extraction,
+conversion, and search off onto narrow tools.
+
+| Tool | Use | Parallel-safe? | Status |
+|------|-----|-----------------|--------|
+| ffmpeg | Audio/video transcode, extraction, format conversion | Yes — separate subprocess, no shared model memory | Already used ad hoc, not yet a registered agent tool |
+| OCR (tesseract or similar) | Scanned doc → text | Yes — CPU-bound, no shared model memory | `gemma4:12b-mlx` currently handles OCR intent (see CLAUDE.md Models table) — candidate to replace/supplement with a dedicated OCR engine to free gemma4 for that slot |
+| `nomic-embed-text` | Embeddings — semantic search, dedup, similarity | Yes — small single-forward-pass model, already separate from gemma4 | Already in use (`tools/semantic_files.py`, `store/knowledge_base.py`) |
+| Small classifier (intent/triage) | Route/tag without generation (e.g. distilled BERT-class model) | Yes — tiny model, low memory footprint | Not yet built — candidate to offload `router.py` classification work currently done by gemma4 |
+
+Concrete next step: audit `router.py`'s `classify()`/`classify_telegram()` —
+currently uses gemma4 as intent classifier per CLAUDE.md Models table; a
+small dedicated classifier model would free gemma4 entirely from the
+routing path and could run in parallel with whatever gemma4 is already
+doing, since it's a separate small model.
+
 ---
 
 ## Verification Checklist
@@ -295,6 +554,6 @@ Before marking this roadmap complete, verify:
 - [ ] `python doctor.py` passes with only expected warnings (no missing models, no unset critical keys)
 - [ ] All network services bind to `127.0.0.1` (verify: `lsof -iTCP -sTCP:LISTEN | grep -v 127.0.0.1` empty)
 - [ ] `grep -r "jimkalinov\|jayveedz19\|kalinovjim\|raymonvillemaxi\|benouchecapierre\|+18574261739\|8538224711" --include="*.py" --include="*.ts" --include="*.tsx" --include="*.sh" --include="*.plist" tools-harness/` returns zero hits (except `.env`)
-- [ ] `export LOCAL_MODEL=gemma4:latest` → all local model calls use GGUF format
+- [ ] `export OLLAMA_DEFAULT_MODEL=gemma4:latest` → all local model calls use GGUF format
 - [ ] `.env.example` documents every required and optional env var with "where to get it" links
 - [ ] No hardcoded personal credentials in any tracked source file (React, Python, config)
