@@ -9,6 +9,7 @@ import {
   proto,
   BaileysEventMap,
 } from 'baileys';
+import { fetchLatestWaWebVersion } from 'baileys/lib/Utils/generics.js';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import { join, dirname } from 'path';
@@ -136,6 +137,22 @@ process.on('unhandledRejection', (reason) => logger.error({ reason }, 'Unhandled
 
 // ─── Socket lifecycle ────────────────────────────────────────────────────────
 
+let waVersion: [number, number, number] | null = null;
+
+async function resolveWaVersion(): Promise<[number, number, number]> {
+  if (waVersion) return waVersion;
+  try {
+    const { version, isLatest } = await fetchLatestWaWebVersion();
+    if (isLatest && version.length === 3) {
+      waVersion = version as [number, number, number];
+      logger.info({ version: waVersion.join('.') }, 'Using latest WhatsApp Web version');
+    }
+  } catch (error) {
+    logger.warn({ error: (error as Error).message }, 'Failed to fetch latest WA version; falling back to bundled');
+  }
+  return waVersion ?? [2, 3000, 1044387223];
+}
+
 async function getSocket(): Promise<WASocket> {
   if (sock && connected) return sock;
   if (sock) {
@@ -146,6 +163,7 @@ async function getSocket(): Promise<WASocket> {
   const { state: authState, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
   sock = makeWASocket({
+    version: await resolveWaVersion(),
     auth: authState,
     logger,
     browser: Browsers.macOS('Chrome'),
@@ -445,6 +463,7 @@ app.post('/auth/pairing-code', async (req: Request, res: Response) => {
     const { state: authState, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
     sock = makeWASocket({
+      version: await resolveWaVersion(),
       logger,
       auth: authState,
       browser: Browsers.macOS('Chrome'),
