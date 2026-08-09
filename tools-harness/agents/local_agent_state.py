@@ -57,6 +57,18 @@ class LocalAgentState(BaseModel):
         description="Tool-filter hint: 'document' trims to filesystem+doc-creation tools "
         "for faster document-creation runs; 'full' (default) keeps form/vision/audio tools too",
     )
+    skill_prompt: str | None = Field(
+        default=None,
+        description="Matched skills_hub.py skill's recipe, formatted as "
+        "'[SKILL: name — desc]\\n\\n{system_prompt}' — injected into the system prompt "
+        "to steer multi-step planning instead of leaving gemma4 to free-plan.",
+    )
+    project_root: str | None = Field(
+        default=None,
+        description="Scoped project/workspace root announced to the model in its system "
+        "prompt — passed explicitly (not read from filesystem.py's ContextVar) since "
+        "LangGraph's async node execution doesn't reliably propagate contextvars.",
+    )
     error_count: int = Field(
         default=0,
         description="Consecutive tool error count",
