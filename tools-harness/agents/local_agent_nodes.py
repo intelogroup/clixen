@@ -25,7 +25,7 @@ from tools.registry import execute_tool as _registry_execute_tool, is_error_resu
 from tools.filesystem import find_files
 from tools.injection_guard import wrap_external_output
 from clients.cloud_client import is_cloud_model
-from clients.ollama_client import DEFAULT_MODEL as _LOCAL_DEFAULT_MODEL
+from clients.ollama_client import DEFAULT_MODEL as _LOCAL_DEFAULT_MODEL, _trace_resp
 from log_config import setup_logging as _setup_logging
 
 _log = _setup_logging("local_agent_nodes")
@@ -37,7 +37,7 @@ _cloud_lock = threading.Lock()
 _CLOUD_COOLDOWN = 300
 
 # System prompt for local-agent (reused from harness.py)
-def _build_system_prompt(task: str, tool_schemas: list[dict], home: str) -> str:
+def _build_system_prompt(task: str, tool_schemas: list[dict], home: str, project_root: str | None = None) -> str:
     """Build a system prompt dynamically from tool schemas + task type.
 
     Tool descriptions are extracted live from the actual schemas — no
@@ -65,6 +65,12 @@ def _build_system_prompt(task: str, tool_schemas: list[dict], home: str) -> str:
 
     lines.append("")
 
+    if project_root:
+        lines.append(f"PROJECT ROOT: {project_root} — all file paths in this task live under here. "
+                     "Use this exact path (e.g. list_directory/read_file on it directly), "
+                     "never guess or invent a different folder name.")
+        lines.append("")
+
     # Critical instruction
     lines.append("CRITICAL: Call a tool for every request. Never describe what you'd do. "
                  "Never write tool syntax as plain text — make actual tool calls.")
@@ -89,6 +95,27 @@ def _build_system_prompt(task: str, tool_schemas: list[dict], home: str) -> str:
     if read_group:
         lines.append("READ:")
         lines.extend(read_group)
+        lines.append("")
+
+    # Content search tools (indexed) — named explicitly so weaker models
+    # don't fall back to guessing file paths with read_file instead.
+    search_group = []
+    if has("fulltext_search"):
+        search_group.append("  fulltext_search — keyword/exact-phrase search over indexed files (BM25, fast)")
+    if has("semantic_file_search"):
+        search_group.append("  semantic_file_search — meaning/conceptual search over indexed files (vector similarity)")
+    if has("index_directory_fts"):
+        search_group.append("  index_directory_fts — index a directory for fulltext_search (run once first)")
+    if has("index_directory"):
+        search_group.append("  index_directory — index a directory for semantic_file_search (run once first)")
+    if search_group:
+        lines.append("CONTENT SEARCH — MANDATORY FIRST STEP for any open-ended question about what's "
+                      "in your files/notes when no specific file path is named (e.g. 'is there a...', "
+                      "'search my notes for...', 'find where X is mentioned'). Call fulltext_search or "
+                      "semantic_file_search BEFORE list_directory or grep_files — do not browse "
+                      "directories by hand to look for content, that's what these tools are for. "
+                      "If nothing already indexed, index first (index_directory_fts / index_directory).")
+        lines.extend(search_group)
         lines.append("")
 
     # Write tools
@@ -199,16 +226,19 @@ def _build_system_prompt(task: str, tool_schemas: list[dict], home: str) -> str:
     lines.append("")
     lines.append("HONESTY: If a tool result doesn't contain the answer, a file/field can't be found, "
                  "or you're not sure, say so plainly instead of guessing or inventing plausible-looking "
-                 "content, paths, or field values. State uncertainty when it exists.")
+                 "content, paths, or field values. State uncertainty when it exists. Never answer with a "
+                 "topic, fact, or deadline that did not literally appear in a tool result you received — "
+                 "if your searches came back empty or irrelevant, say 'I couldn't find that in your files,' "
+                 "do not substitute a plausible-sounding but unrelated answer.")
 
     return "\n".join(lines)
 
 
-def _get_system_prompt(model: str, task: str = "full", query: str = "", tools: list[dict] | None = None) -> str:
+def _get_system_prompt(model: str, task: str = "full", query: str = "", tools: list[dict] | None = None, project_root: str | None = None) -> str:
     """Build system prompt with memory recall prepended."""
     import os
     home = os.path.expanduser("~")
-    base = _build_system_prompt(task, tools or [], home)
+    base = _build_system_prompt(task, tools or [], home, project_root)
     if query:
         from tools.memory_tools import recall_block
         mem_block = recall_block(query)
@@ -223,13 +253,13 @@ _CLIENT = None
 def _get_client() -> ollama.Client:
     # Bounded timeout so a stalled gemma4 call (long prompts hang — see CLAUDE.md)
     # raises instead of blocking the whole graph forever. 120s covers a slow cold
-    # gemma4:12b-mlx round; a real hang trips it and the graph's consecutive-error
+    # gemma4:12b round; a real hang trips it and the graph's consecutive-error
     # handler ends the run cleanly instead of the bot going silent.
     global _CLIENT
     if _CLIENT is not None:
         return _CLIENT
     host = os.environ.get("OLLAMA_HOST") or os.environ.get("OLLAMA_BASE_URL")
-    _CLIENT = ollama.Client(host=host, timeout=120) if host else ollama.Client(timeout=120)
+    _CLIENT = ollama.Client(host=host, timeout=float(os.environ.get("LOCAL_AGENT_CLIENT_TIMEOUT", "120"))) if host else ollama.Client(timeout=float(os.environ.get("LOCAL_AGENT_CLIENT_TIMEOUT", "120")))
     return _CLIENT
 
 
@@ -381,7 +411,7 @@ async def call_model(state: LocalAgentState) -> dict:
     # Add system prompt if not present
     if not has_system:
         _query_text = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
-        system_prompt = _get_system_prompt(model, task=state.task, query=_query_text, tools=tools)
+        system_prompt = _get_system_prompt(model, task=state.task, query=_query_text, tools=tools, project_root=state.project_root)
         ollama_messages.insert(0, {"role": "system", "content": system_prompt})
     _log.info("[local-agent/graph] SENDING TO OLLAMA: %d tools, first tool: %s", len(tools), tools[0]['function']['name'] if tools else 'NONE')
 
@@ -395,9 +425,7 @@ async def call_model(state: LocalAgentState) -> dict:
         temperature=0.0 if model.startswith("gemma4") else 0.7,
     )
 
-    _log.debug("[local-agent/graph] ollama response received")
-    _log.info("[local-agent/graph] MODEL RESPONSE: content='%s', has_tool_calls=%s", 
-              (response.message.content or '')[:100], bool(response.message.tool_calls))
+    _trace_resp(f"local-agent-step-{step}", model, response)
 
     # Convert ollama response back to LangChain AIMessage
     response_msg = response.message  # ChatResponse.message is a Message object
@@ -465,11 +493,46 @@ def plan_step(state: LocalAgentState) -> dict:
         _log.warning("[local-agent/graph] plan_step failed (%s), continuing without a plan", e)
         return {}
 
-    if not plan_text:
-        return {}
+    result_messages = []
+    if plan_text:
+        _log.info("[local-agent/graph] plan=%s", plan_text[:200])
+        result_messages.append(SystemMessage(content=f"[Plan]\n{plan_text}"))
 
-    _log.info("[local-agent/graph] plan=%s", plan_text[:200])
-    return {"messages": [SystemMessage(content=f"[Plan]\n{plan_text}")]}
+    # ponytail: system-prompt instructions telling the model to prefer
+    # fulltext_search/semantic_file_search over list_directory+grep_files
+    # were tested live and ignored (same class of gap as the voice-length
+    # rule in CLAUDE.md) — the model kept wandering directories by hand and
+    # timing out, or hallucinating an unrelated answer when nothing turned
+    # up. Code backstop: for an open-ended question naming no explicit file
+    # path (structural signal, not keyword-matched — same pattern as
+    # count_path_tokens in _harness_fs_actions.py), run both indexed
+    # searches deterministically before the loop starts and hand the model
+    # real grounded results up front, regardless of which tool it reaches for.
+    _available_names = {t["function"]["name"] for t in get_local_agent_tools(state.task)}
+    _has_search = "fulltext_search" in _available_names or "semantic_file_search" in _available_names
+    if _has_search:
+        from _harness_fs_actions import count_path_tokens
+        if count_path_tokens(query) == 0:
+            found = []
+            for name in ("fulltext_search", "semantic_file_search"):
+                if name not in _available_names:
+                    continue
+                try:
+                    out = _registry_execute_tool(name, {"query": query, "top_k": 3})
+                    if out and not is_error_result(out):
+                        from store.conversation import compress_tool_output
+                        found.append(f"[{name}]\n{compress_tool_output(out, max_chars=2000, max_tail_lines=40)}")
+                except Exception as e:  # noqa: BLE001 — best-effort grounding, never blocks the run
+                    _log.warning("[local-agent/graph] auto-search %s failed (%s)", name, e)
+            _log.info("[local-agent/graph] auto-search fired, %d/%d tools returned results", len(found), 2)
+            if found:
+                result_messages.append(SystemMessage(
+                    content="[Auto-search results for the user's question — use this content if it "
+                            "answers the request; if it doesn't, say you couldn't find it rather than "
+                            "guessing]\n\n" + "\n\n".join(found)
+                ))
+
+    return {"messages": result_messages} if result_messages else {}
 
 
 def verify_answer(state: LocalAgentState) -> dict:
@@ -498,9 +561,11 @@ def verify_answer(state: LocalAgentState) -> dict:
             "verified": False,
         }
 
+    from store.conversation import compress_tool_output
     query = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
     transcript = "\n".join(
-        f"[tool result] {m.content[:2000]}" for m in messages if isinstance(m, ToolMessage)
+        f"[tool result] {compress_tool_output(m.content, max_chars=2000, max_tail_lines=40)}"
+        for m in messages if isinstance(m, ToolMessage)
     )[-12000:]
 
     prompt = [
