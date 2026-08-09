@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import queue
 import threading
 import uuid
@@ -22,6 +23,7 @@ from langgraph.types import RetryPolicy
 
 from agents.local_agent_state import LocalAgentState
 from clients.cloud_client import DEFAULT_CLOUD_MODEL, CLOUD_FALLBACK_MODEL, is_cloud_model
+from tools.filesystem import set_project_root as _set_project_root
 from store.trace_store import get_trace, store_trace as _store_trace, record as _record_trace
 from log_config import setup_logging as _setup_logging
 
@@ -104,8 +106,8 @@ def create_local_agent_graph():
         retry_on=lambda e: "Timeout" not in type(e).__name__,
     )
     workflow.add_node("plan", plan_step)
-    workflow.add_node("agent", call_model, timeout=180, retry_policy=_agent_retry)
-    workflow.add_node("tools", tool_node, timeout=120)
+    workflow.add_node("agent", call_model, timeout=int(os.environ.get("LOCAL_AGENT_MODEL_TIMEOUT", "180")), retry_policy=_agent_retry)
+    workflow.add_node("tools", tool_node, timeout=int(os.environ.get("LOCAL_AGENT_TOOL_TIMEOUT", "120")))
     workflow.add_node("verify", verify_answer)
 
     # Set entry point — plan runs once before the agent loop starts
@@ -162,6 +164,7 @@ def run_local_agent(
     max_steps: int | None = None,
     stream_callback=None,
     task: str = "full",
+    project_root: str | None = None,
 ):
     """
     Run the local-agent graph with a user query.
@@ -212,9 +215,15 @@ def run_local_agent(
         "task": task,
         "verified": False,
         "verify_attempts": 0,
+        "project_root": project_root,
     }
 
     config = {"recursion_limit": max_steps + 2}  # +2 for safety margin
+
+    # tools/filesystem.py resolves relative paths against this ContextVar, not
+    # LocalAgentState.project_root (that only reaches the system-prompt text) —
+    # mirrors harness.py's force_local_agent path (harness.py:604).
+    _set_project_root(project_root)
 
     _log.info("[local-agent/run] query=%s model=%s", query[:50], model)
 
