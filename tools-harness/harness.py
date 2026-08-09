@@ -97,6 +97,8 @@ _CODE_TASK_PATTERNS = re.compile(
 
 _DOCUMENT_TASK_PATTERNS = re.compile(
     r"\b(pdf|docx?|\.pdf|\.docx?|markdown|\.md|"
+    r"pptx?|\.pptx?|powerpoint|pitch\s+deck|slide\s*deck|"
+    r"xlsx|\.xlsx|csv|\.csv|spreadsheet|"
     r"fill(?:_|\s+)(the\s+)?form|form\s+field|detect_form_fields|"
     r"email\s+attachment|attach(?:ment|\s+as)|"
     r"convert.*(to\s+pdf|to\s+doc)|export.*(to\s+pdf|to\s+doc))\b",
@@ -109,7 +111,16 @@ def _infer_local_agent_task(query: str) -> str:
         return "document"
     if _CODE_TASK_PATTERNS.search(query):
         return "code"
-    return "full"
+    # ponytail: "full" (78 tools, +form +browser_nav) as the unmatched-query
+    # default meant any query phrased outside the two keyword lists above —
+    # e.g. a RAG-style search with no doc/code keyword overlap — got the
+    # heaviest toolset, bloating gemma4's prompt-prefill past the 120s client
+    # timeout (confirmed live: 78-tool payload, ReadTimeout at exactly 120s).
+    # "code" (53 tools) is a strict superset of "document" that also carries
+    # semantic_file_search/fulltext_search/grep_files (tagged "code", not
+    # "core" — "document" mode can't search at all), missing only
+    # form-filling/browser-nav tools that have their own dedicated paths.
+    return "code"
 
 from store.conversation import (
     get as conv_get,
@@ -347,7 +358,7 @@ def _check_claim_against_trace(answer: str, trace: list[dict]) -> str | None:
         from clients.ollama_client import chat as _local_chat_raw, DEFAULT_MODEL
         verdict = _local_chat_raw(user_message=prompt, model=DEFAULT_MODEL, options={"num_predict": 60})
     except Exception:
-        # Local model unreachable/unloaded (e.g. gemma4:12b-mlx 404) — fall back
+        # Local model unreachable/unloaded (e.g. gemma4:12b 404) — fall back
         # to cloud rather than silently no-op'ing the whole check.
         try:
             from clients.cloud_client import chat as _cloud_chat_raw
@@ -476,7 +487,7 @@ def _get_optimized_opts(intent: str, model: str) -> dict:
 
     KV cache is pre-allocated at 16384 during warmup. Changing num_ctx
     between requests forces Ollama to re-allocate (5-13s penalty on
-    gemma4:12b-mlx). Keep num_ctx consistent at 16384 for all intents
+    gemma4:12b). Keep num_ctx consistent at 16384 for all intents
     to avoid this. `num_predict` is safe to vary — it only caps
     generation length, doesn't affect cache.
     """
@@ -515,7 +526,7 @@ def _normalize_svg_reply(text: str) -> str:
     return _NESTED_SVG_FENCE_RE.sub(fixed, text, count=1)
 
 
-from _harness_fs_actions import LocalFsAction, parse_local_fs_action, execute_local_fs_action  # noqa: F401
+from _harness_fs_actions import LocalFsAction, parse_local_fs_action, execute_local_fs_action, count_path_tokens  # noqa: F401
 from _harness_dispatch_render import _render_dispatch_result  # noqa: F401
 
 def run(*args, **kwargs):
@@ -1100,6 +1111,20 @@ def _run_impl(
     _FS_TOOL_NAMES = tools_with_tags("fs")
     _FS_TOOL_SCHEMAS = [t for t in ALL_TOOLS if t["function"]["name"] in _FS_TOOL_NAMES]
 
+    # force_local_agent (docs/knowledge/file retrieval eval path): the full 49-tool
+    # "fs" set is ~8.2k prompt tokens of schema alone on every round — verified live
+    # to trigger gemma4's empty-response/no-tool-calls stall (matches ollama/ollama#15428's
+    # long-prompt failure shape). Retrieval/combination tasks only need read+search tools,
+    # not form-fill/pdf-create/image-edit/redact/archive — trim to what's actually used.
+    _FS_TOOL_NAMES_FOCUSED = frozenset({
+        "read_file", "read_document", "read_many_files", "read_pdf",
+        "list_directory", "file_tree", "file_info",
+        "grep_files", "find_files", "find_recent", "find_largest",
+        "parse_file", "parse_document",
+        "semantic_file_search", "fulltext_search",
+    })
+    _FS_TOOL_SCHEMAS_FOCUSED = [t for t in ALL_TOOLS if t["function"]["name"] in _FS_TOOL_NAMES_FOCUSED]
+
     _IDE_TOOL_NAMES = tools_with_tags("fs", "ide_extra")
     _IDE_TOOL_SCHEMAS = [t for t in ALL_TOOLS if t["function"]["name"] in _IDE_TOOL_NAMES]
 
@@ -1205,7 +1230,7 @@ def _run_impl(
         active_tools = []
     elif intent == "filesystem":
         # Always needs FS read tools regardless of context
-        active_tools = _FS_TOOL_SCHEMAS
+        active_tools = _FS_TOOL_SCHEMAS_FOCUSED if force_local_agent else _FS_TOOL_SCHEMAS
         # gemma4 for filesystem (better tool use, already set above)
     elif intent == "automation":
         active_tools = _tool(
@@ -1298,8 +1323,13 @@ def _run_impl(
     elif intent == "whatsapp_search":
         active_tools = _tool("whatsapp_search", "whatsapp_status")
     elif intent == "spotlight":
+        # spotlight_search/find_recent/archive_grep find files by name/metadata;
+        # semantic_file_search/fulltext_search find by content — _SPOTLIGHT_RE
+        # also catches "search my files for X" phrasing, which means content
+        # search, so both tool families need to be on the table here.
         active_tools = _tool(
             "spotlight_search", "find_recent", "archive_grep",
+            "semantic_file_search", "fulltext_search",
         )
     elif intent == "dev_tools":
         active_tools = [
@@ -1413,15 +1443,27 @@ def _run_impl(
         elif _MEMORY_TRIGGER_RE.search(query):
             active_tools = _tool("remember", "forget")
 
-    # Build IDE system prompt: coding agent with full read/write/bash access
+    # Build system prompt announcing project_root: every caller that sets project_root
+    # scopes filesystem tools to it (see _fs.set_project_root above), unconditionally —
+    # but only the real IDE flow used to announce that root to the model. Any other
+    # caller (e.g. force_local_agent + project_root, as chat_ui.py's /run and /run_dual
+    # endpoints both allow) left the model guessing the root from the query text alone
+    # and hallucinating paths. Announce it whenever project_root is set; keep the
+    # bash/active-file specifics IDE-only since those tools/context aren't guaranteed
+    # to exist outside that flow.
     system_prompt = None
-    if _ide_override and project_root:
+    if project_root:
         system_prompt = (
-            f"You are a coding agent with read/write filesystem access and bash execution.\n"
-            f"The project is at {project_root}.\n"
+            f"You are a coding agent with read/write filesystem access"
+            + (" and bash execution" if _ide_override else "")
+            + f".\nThe project is at {project_root}.\n"
             f"Rules:\n"
-            f"- The active file path and its content are already provided in [Active file:]. "
-            f"Read it from there — do NOT call read_file on it again.\n"
+        ) + (
+            (
+                f"- The active file path and its content are already provided in [Active file:]. "
+                f"Read it from there — do NOT call read_file on it again.\n"
+            ) if _ide_override else ""
+        ) + (
             f"- For single-file tasks: go directly to edit_file or write_file. "
             f"Skip file_tree and extra reads.\n"
             f"- Only call file_tree('{project_root}') when you genuinely need to understand "
@@ -1429,7 +1471,10 @@ def _run_impl(
             f"- Use append_file to add content at the END of a file (no need for old_str).\n"
             f"- Use edit_file (exact find+replace) for changes in the middle of a file.\n"
             f"- Use write_file only for brand-new files.\n"
+        ) + (
             f"- After editing, verify with bash_exec if the user asked to run/test.\n"
+            if _ide_override else ""
+        ) + (
             f"- Be concise. Report what changed, not what you read."
         )
 
@@ -1794,7 +1839,12 @@ def _run_impl(
 
     # Local-agent fast path: obvious filesystem requests should not depend on
     # model tool-call behavior. Ambiguous requests still fall through to LLM tools.
-    if intent == "filesystem":
+    # Skipped when project_root is set — that means a scoped session (IDE, coding
+    # agent, eval harness) whose query is often long free-form prose about a project,
+    # not a literal "list my downloads" command; the regex parser here mis-extracted
+    # fake paths out of that prose (confirmed live via GAIA eval: it read the phrase
+    # "project root" out of the prompt text itself as a literal folder name).
+    if intent == "filesystem" and not project_root:
         _fs_action = parse_local_fs_action(query)
         if _fs_action is not None:
             # Check if user wants analysis (not just a raw listing)
@@ -1808,11 +1858,16 @@ def _run_impl(
                 r"\b(downloads?|documents?|desktop|google drive|icloud|dropbox|onedrive)\b",
                 query, re.I,
             ))) > 1
-            if _wants_analysis or _multi_location:
-                # Analysis requested, or multiple locations named — fall through to LangGraph agent
+            # Structural signal over keyword guessing: 2+ real paths named (multiple
+            # inputs, or an input plus a distinct write-target) means this needs
+            # multi-step reasoning no single deterministic tool call can do — true
+            # regardless of which verbs the sentence happens to use.
+            _multi_path = count_path_tokens(query) > 1
+            if _wants_analysis or _multi_location or _multi_path:
+                # Analysis requested, multiple locations, or multiple paths named — fall through to LangGraph agent
                 _log.info(
-                    "[local-agent] analysis=%s multi_location=%s, skipping direct path",
-                    bool(_wants_analysis), _multi_location,
+                    "[local-agent] analysis=%s multi_location=%s multi_path=%s, skipping direct path",
+                    bool(_wants_analysis), _multi_location, _multi_path,
                 )
             else:
                 _log.info(
@@ -1872,6 +1927,7 @@ def _run_impl(
                 chat_id=chat_id,
                 stream_callback=on_token,
                 task=_agent_task,
+                project_root=project_root,
             )
             if on_token:
                 on_token(result)
@@ -1913,6 +1969,7 @@ def _run_impl(
                 chat_id=chat_id,
                 stream_callback=on_token,
                 task="code",
+                project_root=project_root,
             )
             if on_token:
                 on_token(result)
