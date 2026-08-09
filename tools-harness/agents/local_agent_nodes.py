@@ -37,7 +37,7 @@ _cloud_lock = threading.Lock()
 _CLOUD_COOLDOWN = 300
 
 # System prompt for local-agent (reused from harness.py)
-def _build_system_prompt(task: str, tool_schemas: list[dict], home: str, project_root: str | None = None) -> str:
+def _build_system_prompt(task: str, tool_schemas: list[dict], home: str, project_root: str | None = None, skill_prompt: str | None = None) -> str:
     """Build a system prompt dynamically from tool schemas + task type.
 
     Tool descriptions are extracted live from the actual schemas — no
@@ -69,6 +69,10 @@ def _build_system_prompt(task: str, tool_schemas: list[dict], home: str, project
         lines.append(f"PROJECT ROOT: {project_root} — all file paths in this task live under here. "
                      "Use this exact path (e.g. list_directory/read_file on it directly), "
                      "never guess or invent a different folder name.")
+        lines.append("")
+
+    if skill_prompt:
+        lines.append(skill_prompt)
         lines.append("")
 
     # Critical instruction
@@ -234,11 +238,11 @@ def _build_system_prompt(task: str, tool_schemas: list[dict], home: str, project
     return "\n".join(lines)
 
 
-def _get_system_prompt(model: str, task: str = "full", query: str = "", tools: list[dict] | None = None, project_root: str | None = None) -> str:
+def _get_system_prompt(model: str, task: str = "full", query: str = "", tools: list[dict] | None = None, project_root: str | None = None, skill_prompt: str | None = None) -> str:
     """Build system prompt with memory recall prepended."""
     import os
     home = os.path.expanduser("~")
-    base = _build_system_prompt(task, tools or [], home, project_root)
+    base = _build_system_prompt(task, tools or [], home, project_root, skill_prompt)
     if query:
         from tools.memory_tools import recall_block
         mem_block = recall_block(query)
@@ -411,7 +415,7 @@ async def call_model(state: LocalAgentState) -> dict:
     # Add system prompt if not present
     if not has_system:
         _query_text = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
-        system_prompt = _get_system_prompt(model, task=state.task, query=_query_text, tools=tools, project_root=state.project_root)
+        system_prompt = _get_system_prompt(model, task=state.task, query=_query_text, tools=tools, project_root=state.project_root, skill_prompt=state.skill_prompt)
         ollama_messages.insert(0, {"role": "system", "content": system_prompt})
     _log.info("[local-agent/graph] SENDING TO OLLAMA: %d tools, first tool: %s", len(tools), tools[0]['function']['name'] if tools else 'NONE')
 

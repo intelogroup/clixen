@@ -205,6 +205,13 @@ def run_local_agent(
 
     graph = get_local_agent_graph()
 
+    from skills_hub import match_skill
+    matched = match_skill(query)
+    skill_prompt = (
+        f"[SKILL: {matched.name} — {matched.description}]\n\n{matched.system_prompt}"
+        if matched else None
+    )
+
     initial_state = {
         "messages": messages,
         "step_count": 0,
@@ -216,6 +223,7 @@ def run_local_agent(
         "verified": False,
         "verify_attempts": 0,
         "project_root": project_root,
+        "skill_prompt": skill_prompt,
     }
 
     config = {"recursion_limit": max_steps + 2}  # +2 for safety margin
@@ -399,6 +407,14 @@ def run_local_agent_streaming(
     graph = get_local_agent_graph()
 
     _max_steps = _max_steps_for(task)
+
+    from skills_hub import match_skill
+    matched = match_skill(query)
+    skill_prompt = (
+        f"[SKILL: {matched.name} — {matched.description}]\n\n{matched.system_prompt}"
+        if matched else None
+    )
+
     initial_state = {
         "messages": messages,
         "step_count": 0,
@@ -411,6 +427,7 @@ def run_local_agent_streaming(
         "task": task,
         "verified": False,
         "verify_attempts": 0,
+        "skill_prompt": skill_prompt,
     }
 
     config = {"recursion_limit": _max_steps + 2}
