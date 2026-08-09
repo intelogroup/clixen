@@ -22,6 +22,21 @@ from tools.injection_guard import wrap_external_output
 _SEARCH_TOOL_NAMES = {"web_search", "google_search", "brave_search", "tech_search"}
 
 
+def _trace_resp(tag: str, model: str, resp) -> None:
+    """Full-fidelity trace of a raw ollama response — content, thinking, done_reason,
+    eval counts — for diagnosing empty-response / silent-stall failures that content-only
+    logging hides (e.g. a response that "used up" its budget on thinking with think=False
+    still set, or one that hit done_reason='length')."""
+    msg = resp.message
+    logging.getLogger(__name__).info(
+        "[ollama_client] trace[%s] model=%s done_reason=%s eval_count=%s "
+        "prompt_eval_count=%s content=%r thinking=%r tool_calls=%s",
+        tag, model, getattr(resp, "done_reason", None), getattr(resp, "eval_count", None),
+        getattr(resp, "prompt_eval_count", None), msg.content, getattr(msg, "thinking", None),
+        [(c.function.name, c.function.arguments) for c in (msg.tool_calls or [])],
+    )
+
+
 _TEXT_TOOL_CALL_RE = re.compile(
     r'\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"arguments"\s*:\s*(\{[^{}]*\})[^{}]*\}',
     re.DOTALL,
@@ -34,7 +49,7 @@ from store.trace_store import record as _record_trace
 import threading
 
 # Tools that re-enter Ollama internally (own model call). On a single-GPU 24GB box,
-# letting several of these run concurrently stacks multiple gemma4:12b-mlx generations and
+# letting several of these run concurrently stacks multiple gemma4:12b generations and
 # evicts/OOMs the warm set. Gate them through one semaphore so at most one model-invoking
 # tool runs at a time; plain IO tools (fs, http) still overlap freely.
 # ponytail: global single-permit gate. Raise the count only if you move off shared-memory hardware.
@@ -72,7 +87,7 @@ def _parse_text_tool_call(content: str, available_tool_names: set) -> tuple[str,
 # Single source of truth for the default local model. Override per machine via
 # OLLAMA_DEFAULT_MODEL in .env (scripts/profile_hardware.py writes it). Runtime
 # sites should import this instead of hardcoding a model name.
-DEFAULT_MODEL = os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:12b-mlx")
+DEFAULT_MODEL = os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:12b")
 MAX_ROUNDS = 25
 
 # Human-readable progress labels emitted via on_token before each tool executes.
@@ -135,7 +150,7 @@ def _get_client() -> ollama.Client:
 _MODEL_NUM_CTX: dict[str, int] = {
     "gemma4": 16384,
     "gemma4:e2b": 16384,
-    "gemma4:12b-mlx": 16384,
+    "gemma4:12b": 16384,
     "qwen3:8b": 16384,
     "qwen3:4b": 16384,
     "qwen3.5:4b": 16384,
@@ -254,7 +269,7 @@ def _run_local(
     # internal reasoning before producing any output — with num_predict=200 we
     # would get empty answers. Disable for ALL gemma4 calls, not just tool
     # calls: casual chat (no tools) also caps num_predict=200 and would fail.
-    # Verified live: gemma4:12b-mlx with think=True, num_predict=300 → 0 words
+    # Verified live: gemma4:12b with think=True, num_predict=300 → 0 words
     # (345 thinking tokens consumed). With think=False → real answers.
     _is_qwen3 = model.startswith("qwen3")
     _is_gemma = model.startswith("gemma")
@@ -377,8 +392,6 @@ def warmup(models: list[str] = None):
     log = logging.getLogger(__name__)
     if models is None:
         models = [DEFAULT_MODEL]
-        if DEFAULT_MODEL != "gemma4:12b-mlx":
-            models.append("gemma4:12b-mlx")
     try:
         _hot = {m["model"] for m in _get_client().ps().get("models", [])}
     except Exception:
@@ -457,6 +470,33 @@ def chat(
     # full round budget.
     consecutive_errors = 0
 
+    # No-progress loop detector: same tool-call signature(s) repeated round over
+    # round, even with clean (non-error) results, means the model is stuck rather
+    # than making progress. `consecutive_errors` above only catches the error case.
+    _loop_signature = None
+    _loop_streak = 0
+    LOOP_WARN_STREAK = 3
+    LOOP_BREAK_STREAK = 5
+
+    # Wandering detector: a tool called with DIFFERENT args each time (spinning
+    # through variations rather than repeating one exact call) evades the exact-
+    # signature check above. Track distinct arg-signatures seen per tool name.
+    _tool_arg_sigs: dict[str, set] = {}
+    _wander_warned: set = set()
+    WANDER_WARN = 6
+    WANDER_BREAK = 12
+    _wander_break_tool = None
+
+    # Ping-pong detector: alternating between a small set of DIFFERENT tools on the
+    # same args (e.g. read_file(x) -> parse_file(x) -> read_file(x) -> ...) evades
+    # both checks above — the signature changes every round (resets _loop_streak)
+    # and each individual tool only sees one arg-set (never reaches WANDER_WARN).
+    # Track the round history and break when only a couple of signatures keep
+    # recurring with no new ones appearing.
+    _sig_history: list[str] = []
+    CYCLE_WARN_LEN = 4
+    CYCLE_BREAK_LEN = 6
+
     for _round in range(max_rounds):
         check_aborted()
         # After a tool call, tool result messages are in history. gemma4 (and some
@@ -473,6 +513,7 @@ def chat(
 
         from clients import routing_stats
         _rt0 = time.time()
+        resp = None
         try:
             if on_token and not _has_tool_results:
                 content, tool_calls, _, msg = _run_streaming(
@@ -496,6 +537,13 @@ def chat(
             routing_stats.record(model, ok=False, latency_ms=(time.time() - _rt0) * 1000)
             raise
         routing_stats.record(model, ok=True, latency_ms=(time.time() - _rt0) * 1000)
+        if resp is not None:
+            _trace_resp(f"round-{_round}", model, resp)
+        else:
+            logging.getLogger(__name__).info(
+                "[ollama_client] trace[round-%d] model=%s content=%r tool_calls=%s",
+                _round, model, content, [(c.function.name, c.function.arguments) for c in (tool_calls or [])],
+            )
 
         # Ollama/Gemma4 edge case: completely empty response (no content, no tool_calls).
         # Retry up to 2 times with an explicit nudge injected.
@@ -503,7 +551,7 @@ def chat(
             nudge_attempts = 0
             while not content.strip() and not tool_calls and nudge_attempts < 2:
                 nudge_attempts += 1
-                _log.warning("[ollama_client] Empty response received, sending nudge (attempt %d/2)", nudge_attempts)
+                logging.getLogger(__name__).warning("[ollama_client] Empty response received, sending nudge (attempt %d/2)", nudge_attempts)
                 if _has_tool_results:
                     nudge_text = "Please synthesize your final response now based on the tool results above."
                 else:
@@ -512,6 +560,7 @@ def chat(
                     {"role": "user", "content": nudge_text}
                 ]
                 resp2, _ = _run_local(model, messages_with_nudge, [], temperature=0.7, options=active_opts)
+                _trace_resp(f"nudge-{nudge_attempts}", model, resp2)
                 content = resp2.message.content or ""
                 tool_calls = resp2.message.tool_calls
                 msg = resp2.message
@@ -543,12 +592,44 @@ def chat(
                     }
                 )
                 continue
+            if not content and _has_tool_results:
+                # Nudges exhausted and still nothing — force one tool-free synthesis
+                # call instead of returning empty (same fallback used on loop-break).
+                logging.getLogger(__name__).warning(
+                    "[ollama_client] empty response after nudges exhausted on %s, forcing synthesis", model,
+                )
+                check_aborted()
+                resp3 = _get_client().chat(
+                    model=model,
+                    messages=messages,
+                    tools=None,
+                    keep_alive=-1,
+                    options=active_opts or None,
+                    think=_think,
+                )
+                _trace_resp("forced-synthesis", model, resp3)
+                content = resp3.message.content or ""
             # Synthesis via blocking (_has_tool_results): stream content to client now.
             if on_token and _has_tool_results and content:
                 on_token(content)
             return content
 
         messages.append(msg)
+
+        # Signature = sorted (name, args) pairs for this round's calls — order-independent
+        # so a legitimately reordered re-think of the same batch doesn't false-positive.
+        _sig = json.dumps(
+            sorted(
+                (c.function.name, json.dumps(c.function.arguments or {}, sort_keys=True))
+                for c in tool_calls
+            )
+        )
+        if _sig == _loop_signature:
+            _loop_streak += 1
+        else:
+            _loop_signature = _sig
+            _loop_streak = 1
+        _sig_history.append(_sig)
 
         # Emit a progress label for each tool call before blocking execution begins,
         # so the UI / Telegram shows immediate feedback instead of a frozen bubble.
@@ -599,6 +680,20 @@ def chat(
 
             _is_error = is_error_result(result)
             consecutive_errors = consecutive_errors + 1 if _is_error else 0
+
+            _arg_sig = json.dumps(call.function.arguments or {}, sort_keys=True)
+            _seen = _tool_arg_sigs.setdefault(fn_name, set())
+            _seen.add(_arg_sig)
+            if len(_seen) >= WANDER_BREAK:
+                _wander_break_tool = fn_name
+            elif len(_seen) >= WANDER_WARN and fn_name not in _wander_warned:
+                _wander_warned.add(fn_name)
+                messages.append({
+                    "role": "user",
+                    "content": f"Notice: you've called {fn_name} with {len(_seen)} different "
+                               "argument variations without success. Reconsider your approach "
+                               "instead of trying more variations.",
+                })
 
             if run_id:
                 _record_trace(run_id, {
@@ -693,6 +788,57 @@ def chat(
                            "and summarize what you found so far, noting the errors.",
             })
             break
+
+        if _loop_streak >= LOOP_BREAK_STREAK:
+            logging.getLogger(__name__).warning(
+                "[ollama_client] no-progress loop (%d identical rounds) on %s, stopping early",
+                _loop_streak, model,
+            )
+            messages.append({
+                "role": "user",
+                "content": "You've repeated the same tool call(s) with no progress. Stop and "
+                           "summarize what you found so far, noting you got stuck.",
+            })
+            break
+        if _loop_streak == LOOP_WARN_STREAK:
+            messages.append({
+                "role": "user",
+                "content": "Notice: you've called the same tool(s) with the same arguments "
+                           "several times in a row. If this isn't working, try a different "
+                           "approach instead of repeating it.",
+            })
+
+        _recent = _sig_history[-CYCLE_BREAK_LEN:]
+        if len(_recent) >= CYCLE_BREAK_LEN and len(set(_recent)) <= 2:
+            logging.getLogger(__name__).warning(
+                "[ollama_client] ping-pong loop (%d rounds cycling %d distinct calls) on %s, stopping early",
+                len(_recent), len(set(_recent)), model,
+            )
+            messages.append({
+                "role": "user",
+                "content": "You've been alternating between the same couple of tool calls with "
+                           "no new progress. Stop and answer now with what you found so far, "
+                           "noting you got stuck.",
+            })
+            break
+        elif len(_sig_history) == CYCLE_WARN_LEN and len(set(_sig_history[-CYCLE_WARN_LEN:])) <= 2:
+            messages.append({
+                "role": "user",
+                "content": "Notice: you're alternating between the same couple of tool calls "
+                           "without making new progress. Try something different or answer now.",
+            })
+
+        if _wander_break_tool:
+            logging.getLogger(__name__).warning(
+                "[ollama_client] wandering loop (%d arg variations of %s) on %s, stopping early",
+                len(_tool_arg_sigs[_wander_break_tool]), _wander_break_tool, model,
+            )
+            messages.append({
+                "role": "user",
+                "content": f"You've tried too many variations of {_wander_break_tool} without "
+                           "success. Stop and summarize what you found so far, noting you got stuck.",
+            })
+            break
     if tool_calls:
         check_aborted()
         resp = _get_client().chat(
@@ -703,6 +849,7 @@ def chat(
             options=active_opts or None,
             think=_think,
         )
+        _trace_resp("loop-break-synthesis", model, resp)
         content = resp.message.content or ""
         if on_token and content:
             on_token(content)
