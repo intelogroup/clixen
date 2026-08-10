@@ -21,7 +21,7 @@ _SESSIONS_DIR = _HERE / "store" / "sessions"
 
 _OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 _WARM_MODELS = [
-    os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:12b-mlx"),
+    os.environ.get("OLLAMA_DEFAULT_MODEL", "gemma4:12b"),
     "nomic-embed-text",
 ]
 _ENV_GROUPS = {
@@ -194,6 +194,29 @@ def check_hardware_profile() -> None:
         _warn("Hardware check failed", str(e))
 
 
+def check_ringback() -> None:
+    try:
+        import tools.connector_ringback as cr
+    except Exception as e:
+        _warn("connector_ringback failed to import", str(e))
+        return
+    if not cr._ENV_FILE.exists():
+        _warn("ringback env file missing", str(cr._ENV_FILE))
+        return
+    _ok("connector_ringback imports cleanly")
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", "ringback"],
+            capture_output=True, timeout=5,
+        )
+        if result.returncode == 0:
+            _ok("ringback docker image present")
+        else:
+            _warn("ringback docker image missing", "docker build -t ringback tools-harness/ringback/")
+    except Exception as e:
+        _warn("docker check failed", str(e))
+
+
 def main() -> None:
     print(f"\nClixen Doctor — {_OLLAMA_URL}\n")
 
@@ -211,6 +234,9 @@ def main() -> None:
 
     print("\n[ Environment ]")
     check_env()
+
+    print("\n[ Ringback ]")
+    check_ringback()
 
     print("\n[ Services ]")
     check_plists()
