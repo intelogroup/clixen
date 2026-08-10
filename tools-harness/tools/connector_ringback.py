@@ -23,6 +23,38 @@ _ENV_FILE = _RINGBACK_DIR / "voice.docker.env"
 # Cooldown enforced centrally in tools/registry.py::_execute_raw (_RATE_LIMITS)
 # before this executor ever runs — was a bespoke per-tool flock-file guard here.
 
+
+def reap_orphaned_processes() -> int:
+    """Kill leftover `docker run ... ringback` host processes from a prior
+    instance of this process that died mid-call (SIGKILL, OOM, crash). Their
+    container already exited but the `docker run` CLI client hangs forever
+    instead of reaping itself — found live 2026-08-09 as two multi-day-old
+    zombies after a core.py crash, each holding a slot but never registering
+    a fresh call. Call once at process startup, before anything else runs;
+    at that point nothing legitimate can be mid-call from this fresh PID."""
+    import subprocess
+
+    killed = 0
+    try:
+        out = subprocess.run(
+            ["pgrep", "-f", "docker run.*ringback"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        for pid_s in out.split():
+            try:
+                pid = int(pid_s)
+            except ValueError:
+                continue
+            try:
+                os.kill(pid, 9)
+                killed += 1
+                log.warning("reaped orphaned ringback docker process pid=%d", pid)
+            except ProcessLookupError:
+                pass
+    except Exception as e:
+        log.warning("ringback orphan reap failed: %s", e)
+    return killed
+
 SCHEMAS = [
     {
         "type": "function",
