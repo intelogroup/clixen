@@ -10,11 +10,9 @@ docker image, using the mcp python SDK already installed on the host.
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import logging
 import os
 import re
-import time
 from pathlib import Path
 
 log = logging.getLogger("connector_ringback")
@@ -22,47 +20,8 @@ log = logging.getLogger("connector_ringback")
 _RINGBACK_DIR = Path(__file__).resolve().parent.parent / "ringback"
 _ENV_FILE = _RINGBACK_DIR / "voice.docker.env"
 
-# Every caller (main orchestrator, notify_gate/science_scout, etc.) funnels through
-# call_my_phone(), so the cooldown lives here once instead of per-caller — a burst of
-# several qualifying findings in one job run would otherwise ring back-to-back.
-_COOLDOWN_FILE = _RINGBACK_DIR / ".last_call_ts"
-COOLDOWN_SECONDS = int(os.environ.get("RINGBACK_CALL_COOLDOWN_SECONDS", "900"))
-
-
-def _check_and_update_cooldown() -> tuple[bool, float, float]:
-    """Atomic (flock-guarded) check-and-set so two near-simultaneous callers can't
-    both pass the check before either records a timestamp. Returns
-    (allowed, seconds_since_last, previous_ts) — previous_ts lets a failed call
-    restore the old timestamp instead of burning the cooldown window on nothing."""
-    _COOLDOWN_FILE.touch(exist_ok=True)
-    with open(_COOLDOWN_FILE, "r+") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            content = f.read().strip()
-            last = float(content) if content else 0.0
-            now = time.time()
-            elapsed = now - last
-            if elapsed < COOLDOWN_SECONDS:
-                return False, elapsed, last
-            f.seek(0)
-            f.truncate()
-            f.write(str(now))
-            return True, elapsed, last
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
-
-
-def _restore_cooldown(previous_ts: float) -> None:
-    """Undo the reservation from _check_and_update_cooldown when the call itself
-    failed — a docker/network flake shouldn't burn the cooldown window on nothing."""
-    with open(_COOLDOWN_FILE, "r+") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            f.seek(0)
-            f.truncate()
-            f.write(str(previous_ts))
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+# Cooldown enforced centrally in tools/registry.py::_execute_raw (_RATE_LIMITS)
+# before this executor ever runs — was a bespoke per-tool flock-file guard here.
 
 SCHEMAS = [
     {
@@ -143,14 +102,6 @@ def call_my_phone(message: str = "") -> str:
     message = _strip_markdown(message)
     if not _ENV_FILE.exists():
         return f"[ringback error] missing {_ENV_FILE} — run the ringback docker setup first"
-    allowed, elapsed, previous_ts = _check_and_update_cooldown()
-    if not allowed:
-        remaining = max(0, COOLDOWN_SECONDS - elapsed)
-        return (
-            f"[ringback cooldown] last call was {elapsed:.0f}s ago "
-            f"(cooldown={COOLDOWN_SECONDS}s) — callable again in {remaining:.0f}s. "
-            f"Tell the user exactly when you can call back, and offer text/telegram as alternatives."
-        )
     error: Exception | None = None
     try:
         return asyncio.run(_run_call(message))
@@ -159,5 +110,4 @@ def call_my_phone(message: str = "") -> str:
         while isinstance(error, BaseExceptionGroup):
             error = error.exceptions[0]
         log.warning("ringback call failed: %s", error, exc_info=error)
-    _restore_cooldown(previous_ts)
     return f"[ringback error] {error}"
