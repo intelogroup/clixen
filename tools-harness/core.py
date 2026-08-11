@@ -1,6 +1,6 @@
 """
 Clixen Core — consolidated service entry point.
-Runs: chat_ui + email_watch + kokoro_daemon + voiceprint_daemon in one process.
+Runs: chat_ui + kokoro_daemon + voiceprint_daemon in one process.
 The task worker runs as its own launchd job (com.clixen.task_worker) so it
 survives core.py crashes and can be kickstarted independently.
 
@@ -42,12 +42,6 @@ def _run_telegram_bot():
     from telegram_bot import main as telegram_main
 
     telegram_main()
-
-
-def _run_email_watch():
-    from scripts.email_watch import main as email_main
-
-    email_main()
 
 
 def _run_kokoro_daemon():
@@ -153,7 +147,6 @@ def _run_surya_daemon():
 
 _TARGETS = {
     "chat_ui": _run_chat_ui,
-    "email_watch": _run_email_watch,
     "kokoro_daemon": _run_kokoro_daemon,
     "voiceprint_daemon": _run_voiceprint_daemon,
 }
