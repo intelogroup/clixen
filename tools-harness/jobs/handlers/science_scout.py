@@ -51,6 +51,16 @@ MAX_RESULTS_PER_QUERY = 8
 # Semantic Scholar, so keep extraction count low to avoid rate-limit waits.
 MAX_PAPERQA_EXTRACTIONS_PER_SCAN = 2
 PAPERQA_TIMEOUT_S = 20
+QUERY_BATCH_SIZE = 3
+QUERY_COOLDOWN_SCANS = 5
+_QUERY_VARIANTS = (
+    "mechanism",
+    "replication evidence",
+    "clinical translation",
+    "real world application",
+    "safety and failure modes",
+    "recent study",
+)
 
 # ponytail: same model the rest of the harness uses for cloud calls — keeps
 # paper-qa off its OpenAI default without adding a second provider to manage.
@@ -136,18 +146,131 @@ def collect_new_papers(niche_queries: list[str]) -> list[dict]:
     return papers
 
 
+def _query_pool(queries: list[str]) -> list[str]:
+    """Build a sufficiently large automatic rotation pool from seed queries."""
+    pool = []
+    seen = set()
+    for query in queries:
+        clean = " ".join(str(query or "").split())
+        if clean and clean.casefold() not in seen:
+            seen.add(clean.casefold())
+            pool.append(clean)
+    if len(pool) >= QUERY_BATCH_SIZE * (QUERY_COOLDOWN_SCANS + 1):
+        return pool
+    for base in list(pool):
+        for suffix in _QUERY_VARIANTS:
+            candidate = f"{base} {suffix}"
+            if candidate.casefold() not in seen:
+                seen.add(candidate.casefold())
+                pool.append(candidate)
+            if len(pool) >= QUERY_BATCH_SIZE * (QUERY_COOLDOWN_SCANS + 1):
+                return pool
+    return pool
+
+
+def _discover_query_candidates(seed_queries: list[str], scan_number: int) -> list[str]:
+    """Ask the planner for fresh, cross-domain science topics every scan."""
+    from clients.cloud_client import chat
+
+    recent = store.recent_query_usage(limit=30)
+    recent_text = ", ".join(row["query"] for row in recent) or "none"
+    performance = store.query_performance(limit=30)
+    performance_text = "; ".join(
+        f"{row['query']} (scans={row['scans']}, hits={row['hits']}, rate={row['hit_rate']:.2f})"
+        for row in performance
+    ) or "none"
+    claims = store.list_active_claims(limit=20)
+    claim_text = "; ".join(c["summary"] for c in claims) or "none"
+    prompt = (
+        "You are the discovery planner for a science scout. Generate six fresh, "
+        "high-signal search queries for the next scan. Maximize subject diversity: "
+        "choose different areas such as medicine, biology, materials, space, geology, "
+        "climate, energy, engineering, or algorithms. Queries must target recent "
+        "discoveries or updates, be concrete enough for a science search engine, and "
+        "not repeat or lightly reword recent queries. Return ONLY a JSON array of "
+        "strings.\n\n"
+        f"Scan number: {scan_number}\n"
+        f"Recent queries to avoid: {recent_text}\n"
+        f"Query performance: {performance_text}\n"
+        f"Existing claims to extend or challenge: {claim_text}\n"
+        f"Legacy seeds for context only: {', '.join(seed_queries[:12])}"
+    )
+    try:
+        response = chat(user_message=prompt, reasoning_effort="low")
+        text = str(response or "").strip()
+        start, end = text.find("["), text.rfind("]")
+        if start < 0 or end <= start:
+            return []
+        values = json.loads(text[start:end + 1])
+        if not isinstance(values, list):
+            return []
+        out = []
+        seen = set()
+        for value in values:
+            query = " ".join(str(value or "").split())
+            key = query.casefold()
+            if 8 <= len(query) <= 180 and key not in seen:
+                seen.add(key)
+                out.append(query)
+        return out[:6]
+    except Exception as exc:
+        _log.warning("[science_scout] query discovery failed: %s", exc)
+        return []
+
+
+def _self_review_query_pool() -> None:
+    """Periodically retire weak queries and replenish the long-lived pool."""
+    from clients.cloud_client import chat
+
+    performance = store.query_performance(limit=200)
+    if not performance:
+        return
+    prompt = (
+        "Review this science-search query performance. Retire queries that are "
+        "repeatedly unproductive or too narrow, and propose replacements that "
+        "increase subject diversity. Return ONLY JSON: "
+        '{"retire": ["..."], "add": ["..."]}. Do not retire a query with a '
+        "strong finding unless its future value is clearly exhausted.\n\n"
+        + json.dumps(performance, default=str)
+    )
+    try:
+        response = chat(user_message=prompt, reasoning_effort="low")
+        text = str(response or "").strip()
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            return
+        decision = json.loads(text[start:end + 1])
+        retire = decision.get("retire", []) if isinstance(decision, dict) else []
+        add = decision.get("add", []) if isinstance(decision, dict) else []
+        if isinstance(retire, list):
+            store.retire_queries(retire[:50])
+        if isinstance(add, list):
+            store.add_discovered_queries(add[:50])
+        _log.info("[science_scout] query pool review: retired=%d added=%d",
+                  len(retire) if isinstance(retire, list) else 0,
+                  len(add) if isinstance(add, list) else 0)
+    except Exception as exc:
+        _log.warning("[science_scout] query pool review failed: %s", exc)
+
+
 def exact_dedup(papers: list[dict]) -> list[dict]:
     fresh = []
+    batch_ids = set()
+    batch_hashes = set()
     for p in papers:
         pid = p.get("id", "")
         if not pid:
             continue
+        chash = store.content_hash(p.get("title", ""), p.get("url", ""))
+        if pid in batch_ids or chash in batch_hashes:
+            continue
         if store.paper_exists(pid):
             store.touch_paper(pid)
             continue
-        chash = store.content_hash(p.get("title", ""), p.get("url", ""))
         if store.find_by_content_hash(chash):
             continue
+        batch_ids.add(pid)
+        batch_hashes.add(chash)
         fresh.append(p)
     return fresh
 
@@ -261,10 +384,9 @@ def apply_decision(paper: dict, decision: dict, kb) -> str:
                 # ":" — dedup_key() cuts there, collapsing every distinct paper in
                 # the same niche onto one key (verified live 2026-08-04, 270/270
                 # findings that day suppressed as false dupes across ~30 niches).
-                if wm_store.is_known(call_detail):
+                if not wm_store.claim_notified(call_detail, "", "science_scout"):
                     store.log_suppressed_alert("science_scout", finding_text, "already surfaced (cross-source dedup)")
                 else:
-                    wm_store.mark_notified(call_detail, "", "science_scout")
                     decide_and_notify(
                         finding=finding_text,
                         source="science_scout", fallback_alert=True, wake_agent=True, call_phone=True, bypass_gate=True,
@@ -374,7 +496,20 @@ def _run_scan(instance: dict) -> dict:
     run_mode = cfg.get("run_mode", "scan")
 
     near_dup_max_distance = store.get_config("near_dup_max_distance", NEAR_DUP_MAX_DISTANCE)
-    niche_queries = cfg.get("niche_queries") or store.get_config("niche_queries", DEFAULT_NICHE_QUERIES)
+    configured_queries = cfg.get("niche_queries")
+    seed_queries = configured_queries or store.get_config("niche_queries", DEFAULT_NICHE_QUERIES)
+    scan_number = (store.get_config("scan_count", 0) or 0) + 1
+    if configured_queries:
+        niche_queries = seed_queries
+    else:
+        discovered = _discover_query_candidates(seed_queries, scan_number)
+        if discovered:
+            store.add_discovered_queries(discovered)
+        candidate_pool = discovered + store.discovered_queries() + seed_queries
+        niche_queries = store.select_query_batch(
+            _query_pool(candidate_pool), scan_number,
+            count=QUERY_BATCH_SIZE, cooldown_scans=QUERY_COOLDOWN_SCANS,
+        )
 
     kb = _get_knowledge_base()
     raw_papers = collect_new_papers(niche_queries)
@@ -392,10 +527,21 @@ def _run_scan(instance: dict) -> dict:
                 except Exception:
                     extract_targets[idx]["extracted_claim"] = ""
 
-    # Sequential: cluster + merge-decision + apply (kb not thread-safe)
+    # Read-only embedding/vector searches can run in parallel. Keep merge
+    # decisions and KB writes sequential because the LanceDB writer is not
+    # thread-safe. This removes one embedding/search round-trip per paper from
+    # the critical path without changing claim ordering.
+    if fresh:
+        with ThreadPoolExecutor(max_workers=min(4, len(fresh))) as ex:
+            clustered_papers = list(
+                ex.map(lambda paper: cluster_one(paper, kb, near_dup_max_distance), fresh)
+            )
+    else:
+        clustered_papers = []
+
+    # Sequential: merge decision + apply (KB writes are not thread-safe)
     processed = 0
-    for paper in fresh:
-        clustered = cluster_one(paper, kb, near_dup_max_distance)
+    for clustered in clustered_papers:
         decision = llm_merge_decision(clustered)
         apply_decision(clustered, decision, kb)
         processed += 1
@@ -418,11 +564,10 @@ def _run_scan(instance: dict) -> dict:
             store.record_niche_perf(n, has_hit)
 
     # Every 10 runs, evolve niches: drop worst performer, generate replacement
-    scan_count = store.get_config("scan_count", 0)
-    scan_count = (scan_count or 0) + 1
-    store.set_config("scan_count", scan_count)
-    if scan_count % 10 == 0:
-        _evolve_niches(niche_queries)
+    store.set_config("scan_count", scan_number)
+    if scan_number % 10 == 0:
+        _self_review_query_pool()
+        _evolve_niches(seed_queries)
 
     result = {
         "success": True,
@@ -433,6 +578,10 @@ def _run_scan(instance: dict) -> dict:
     }
 
     if run_mode == "weekly_report":
+        report_fingerprint = store.active_claims_fingerprint()
+        if store.get_meta("last_weekly_report_fingerprint") == report_fingerprint:
+            result["weekly_report_skipped"] = True
+            return result
         summary = regenerate_exec_summary()
         try:
             from jobs.notify_gate import decide_and_notify
@@ -440,6 +589,7 @@ def _run_scan(instance: dict) -> dict:
                 finding=summary, source="science_scout", fallback_alert=True,
                 on_suppress=lambda finding, reason: store.log_suppressed_alert("science_scout", finding, reason),
             )
+            store.set_meta("last_weekly_report_fingerprint", report_fingerprint)
         except Exception as e:
             _warn_failed("weekly notification failed", e)
         result["summary"] = summary
