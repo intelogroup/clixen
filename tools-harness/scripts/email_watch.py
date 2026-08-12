@@ -49,15 +49,18 @@ def _chunk_text(text: str, size: int = 3800) -> List[str]:
     return chunks
 
 
-def _send_telegram(token: str, chat_id: str, text: str, sleep_s: float = 0.3) -> None:
+def _send_telegram(token: str, chat_id: str, text: str, sleep_s: float = 0.3, parse_mode: str | None = None) -> None:
     import urllib.parse
     import urllib.request
     import time
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    clean = _strip_asterisks(text)
+    clean = text if parse_mode else _strip_asterisks(text)
     for chunk in _chunk_text(clean):
-        data = urllib.parse.urlencode({"chat_id": chat_id, "text": chunk}).encode()
+        params = {"chat_id": chat_id, "text": chunk}
+        if parse_mode:
+            params["parse_mode"] = parse_mode
+        data = urllib.parse.urlencode(params).encode()
         req = urllib.request.Request(url, data=data)
         with urllib.request.urlopen(req, timeout=30) as resp:
             resp.read()
@@ -118,14 +121,14 @@ def _summarize(email_text: str, model: str) -> dict:
     if is_cloud_model(model):
         # Cloud-first (2026-07-31): cloud-prefixed models go straight to the
         # cloud path — skipping the ollama call avoids a guaranteed 404 (local
-        # gemma4:12b-mlx is not reliably loaded in this env) and the fallback
+        # gemma4:12b is not reliably loaded in this env) and the fallback
         # hop that would follow.
         raw = cloud_chat(user_message=prompt, max_rounds=1, bypass_budget=True)
     else:
         try:
             raw = ollama_chat(prompt, model=model)
         except Exception:
-            # Local model unreachable/unloaded (e.g. gemma4:12b-mlx 404) — fall back
+            # Local model unreachable/unloaded (e.g. gemma4:12b 404) — fall back
             # to cloud rather than crash-looping the workflow (see harness.py's
             # _check_claim_against_trace for the same pattern).
             raw = cloud_chat(user_message=prompt, max_rounds=1, bypass_budget=True)

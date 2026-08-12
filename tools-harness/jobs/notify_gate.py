@@ -129,10 +129,27 @@ def decide_and_notify(
         action_label=action_label, action_url=action_url,
         action_type=action_type, action_payload=action_payload,
     )
-    _push_telegram(_summarize_for_telegram(message))
+    _push_telegram(_format_for_telegram(source, _summarize_for_telegram(message)))
     if call_phone:
         _call_linphone(message)
     return True
+
+
+def _format_for_telegram(source: str, summary: str) -> str:
+    """Legacy Telegram Markdown (bold/italic only, no escaping needed) styled
+    as a badge + divider + summary + footer card. Blue = scout, red = monitor."""
+    src = (source or "").lower()
+    if "scout" in src:
+        badge, label = "🔵", "SCOUT · Science Finding"
+    elif "monitor" in src:
+        badge, label = "🔴", "MONITOR · World Signal"
+    else:
+        badge, label = "⚪️", source or "Update"
+    return (
+        f"{badge} *{label}*\n\n"
+        f"{summary}\n\n"
+        f"_Full debrief saved to dashboard_"
+    )
 
 
 def _summarize_for_telegram(text: str) -> str:
@@ -188,7 +205,7 @@ def _push_telegram(text: str) -> None:
         return
     try:
         from scripts.email_watch import _send_telegram
-        _send_telegram(token, chat_id, text)
+        _send_telegram(token, chat_id, text, parse_mode="Markdown")
     except Exception:
         _log.warning("[notify_gate] telegram push failed", exc_info=True)
 
