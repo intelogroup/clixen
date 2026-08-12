@@ -28,6 +28,29 @@ _log = logging.getLogger(__name__)
 _STEP_REF_RE = re.compile(r"\$([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)")
 
 
+def _send_email_gated(instance: dict, email_kwargs: dict) -> str:
+    """Send via EXECUTORS["send_email"] directly, unless the automation instance
+    opted into config.requires_confirmation — then park it behind a Telegram
+    APPROVE/DENY round-trip (tools/confirmation.py + telegram_bot.py's inbound
+    regex) instead of firing an unattended cron-triggered send."""
+    config = instance.get("config") or {}
+    if not config.get("requires_confirmation"):
+        from tools.registry import EXECUTORS
+        return EXECUTORS["send_email"](email_kwargs)
+
+    from tools.confirmation import request_confirmation
+    from tools.telegram_send import send_telegram
+
+    token = request_confirmation("send_email", email_kwargs, f"email to {email_kwargs.get('to', '')!r}")
+    name = instance.get("name") or instance.get("task_name") or "automation"
+    subject = email_kwargs.get("subject", "")
+    send_telegram(
+        f"Automation '{name}' wants to send: {subject}\n"
+        f"Reply APPROVE {token} or DENY {token}"
+    )
+    return "[awaiting confirmation] email held for approval"
+
+
 def _llm_json_extract(prompt: str, schema: dict, model: str | None = None) -> dict:
     """Extract JSON per `schema` — ollama first (native JSON-mode `format`),
     cloud fallback on failure (local models aren't reliably loaded in this
@@ -157,7 +180,7 @@ def _synthesize_news_email(*, task_name, date_str, topics, source_pack, recipien
         {"role": "user", "content": prompt},
     ]
     opts = {"num_ctx": 16384, "num_predict": 2048, "temperature": 0.5, "top_p": 0.85, "repetition_penalty": 1.05}
-    # Cloud-first (2026-07-31): local gemma4:12b-mlx is not reliably loaded in
+    # Cloud-first (2026-07-31): local gemma4:12b is not reliably loaded in
     # this cloud-first env (404 on live runs) — cloud primary (with the
     # built-in OpenAI fallback in raw_completion), local ollama kept as a last
     # resort only.
@@ -728,7 +751,6 @@ def handle(instance: dict) -> dict:
             return {"success": resp.ok, "status_code": resp.status_code}
 
         if action_type == "email":
-            from tools.registry import EXECUTORS
             recipient = config.get("recipient", "")
             if not recipient:
                 return {"success": False, "error": "no recipient configured for email action"}
@@ -862,9 +884,9 @@ def handle(instance: dict) -> dict:
                         f'Manage this briefing in your automations.</td></tr>'
                         '</table></td></tr></table></body></html>'
                     )
-                    res = EXECUTORS["send_email"]({"to": recipient, "subject": subject, "body": body, "html_body": html_body})
+                    res = _send_email_gated(instance, {"to": recipient, "subject": subject, "body": body, "html_body": html_body})
                 else:
-                    res = EXECUTORS["send_email"](synthesized)
+                    res = _send_email_gated(instance, synthesized)
                 if "error" in str(res).lower():
                     return {"success": False, "detail": str(res)}
                 persist_seen(instance, last_sent_urls=seen_urls)
@@ -920,6 +942,21 @@ def handle(instance: dict) -> dict:
                     persist_seen(instance, seen_hashes=seen_hashes, seen_pmids=seen_pmids)
                     return {"success": True, "detail": "no relevant papers", "checked": True, "new_items": 0}
 
+                from store import pubmed_watch_store
+                pubmed_watch_store.save_papers(
+                    instance["id"], task_name,
+                    [
+                        {
+                            "pmid": pmid,
+                            "title": item.title,
+                            "url": item.url or (f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""),
+                            "published_date": item.published_date,
+                            "snippet": item.snippet,
+                        }
+                        for item, pmid in deduped
+                    ],
+                )
+
                 parts = []
                 for item, pmid in deduped:
                     date = f" ({item.published_date})" if item.published_date else ""
@@ -931,13 +968,13 @@ def handle(instance: dict) -> dict:
                 if intro:
                     body = intro + "\n\n" + body
 
-                EXECUTORS["send_email"]({"to": recipient, "subject": subject, "body": body})
+                _send_email_gated(instance, {"to": recipient, "subject": subject, "body": body})
 
                 persist_seen(instance, seen_hashes=seen_hashes, seen_pmids=seen_pmids)
                 return {"success": True, "detail": f"{len(deduped)} new paper(s) sent", "new_items": len(deduped)}
             else:
                 body = config.get("message") or config.get("body") or f"Automation '{task_name}' triggered."
-                result = EXECUTORS["send_email"]({"to": recipient, "subject": subject, "body": body})
+                result = _send_email_gated(instance, {"to": recipient, "subject": subject, "body": body})
                 return {"success": "error" not in str(result).lower(), "detail": str(result)}
 
         if action_type == "tool_call":
