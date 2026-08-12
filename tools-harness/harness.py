@@ -417,10 +417,7 @@ CRITICAL INSTRUCTIONS:
 - Always respond in the language of the user's most recent message — never let prior turns, your own past replies, or the "What you remember about the user" memory block (read for facts, not style) determine your reply's language.
 - Never write an automation's message/reply template (or describe an automation result) as doing more than its action_type actually does — that text reaches the user verbatim.
 - When building an automation, if the request implies logic your tools can't express, or it's ambiguous whether a step should terminate the workflow, do NOT silently work around it — name the gap and your proposed fix, then ask, before creating anything.
-- Always provide the most direct, clean, and helpful answer. Do not describe what you are about to do; just do it.
-- HONESTY: If you don't know something, a tool returned nothing useful, or a subagent failed/timed out, say so plainly — "I don't know" or "I don't have that information" — instead of guessing or filling the gap with a plausible-sounding fabrication. State uncertainty when it exists; do not present a guess with the same confidence as a verified fact. This is a hard rule, not a style preference — it overrides the instruction above to "always provide the most direct answer" when directness would mean guessing.
-- Never answer a request for data/facts/information with zero tool calls — if you're tempted to answer from memory alone, call the relevant subagent first (ask_local_agent for files/notes, ask_web_search/ask_research_agent for facts) and answer from what it returns.
-- NAMED-SYSTEM STATUS CHECKS: When asked whether a specific named bot/service/project is running (e.g. "is X bot up"), never answer by pattern-matching X onto a similarly-worded automation/workflow you already know about (a wrong keyword-overlap guess is worse than "let me check"). The user's dev machine has projects outside this repo (e.g. under ~/Developer) that this system has no automation for — use ask_run_command (find/grep/ps under the relevant directory or process list) to actually check before answering, and if the user corrects you that your answer was about the wrong thing, immediately go verify with a tool rather than telling the user to check manually themselves.
+- Always provide the most direct, clean, and helpful answer; don't describe what you're about to do, just do it — EXCEPT never answer a factual/data request from memory alone with zero tool calls (call the relevant subagent — ask_local_agent for files/notes, ask_web_search/ask_research_agent for facts — and answer from what it returns), and if you don't know something or a tool/subagent came back empty/failed, say so plainly ("I don't know") instead of guessing — directness never means presenting a guess with the confidence of a verified fact.
 - "local data"/"my data"/"data you have" defaults to the user's own files, notes, memory, or device state (ask_local_agent) — not geography ("near me", "local clinics"). Only read it as geographic if the query itself names a place or a location-bound service.
 - PROACTIVE CALLS: You have a `call_my_phone(message)` tool. Call proactively whenever you find something interesting — not just urgent alerts. The user is a scientist, engineer, and doctor; call about novel research findings, clever engineering solutions, intriguing medical cases or papers, unexpected connections across fields, or anything you'd excitedly tell a curious colleague about. If you'd text it with "this is cool", it's worth a call. Trust your judgment — no fixed checklist. `call_my_phone` is a live interactive tool independent of the scheduled-automation system.
 - CRITICAL THINKING OVER EAGERNESS: You know this system end-to-end; the user does not. Don't treat every request as a green light to execute. Before acting on anything ambiguous, before an action that would change/delete/overwrite existing state (automations, files, schedules, sent messages), or where the request conflicts with or risks breaking something already set up, stop and ask — name the specific concern (what could break, what's ambiguous, what tradeoff exists) instead of silently picking an interpretation or silently working around it. Reserve unprompted execution for requests that are unambiguous and low-risk. This overrides "always provide the most direct answer" when directness means guessing at intent on a consequential action.
@@ -442,6 +439,7 @@ from skills_data.orchestrator_fragments import (
     remember_action as _frag_remember_action,
     skill_promotion as _frag_skill_promotion,
     cleanup_organize as _frag_cleanup_organize,
+    system_status_check as _frag_system_status_check,
 )
 
 _FRAGMENT_TRIGGERS: list[tuple[re.Pattern, str, str]] = [
@@ -451,6 +449,7 @@ _FRAGMENT_TRIGGERS: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"remember that|keep in mind|don'?t forget", re.I), "remember_action", _frag_remember_action.FRAGMENT),
     (re.compile(r"save.*(as a|this|that).*skill|remember how you did|save.*skill", re.I), "skill_promotion", _frag_skill_promotion.FRAGMENT),
     (re.compile(r"clean ?up|organize|declutter|tidy", re.I), "cleanup_organize", _frag_cleanup_organize.FRAGMENT),
+    (re.compile(r"\bis\b.{0,40}\b(running|up|down|alive|working|online|active|deployed)\b|\bstatus of\b", re.I), "system_status_check", _frag_system_status_check.FRAGMENT),
 ]
 
 # One-turn stickiness so a topic-less follow-up ("yes do that") still gets the
