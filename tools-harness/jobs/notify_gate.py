@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from typing import Callable
 
@@ -29,6 +30,36 @@ _CALL_LOCK = threading.Lock()
 _DECISION_SYSTEM_PROMPT = """You decide whether a background finding is worth interrupting \
 the user for. Given the finding, respond with ONLY JSON: {"alert": true|false, "reason": \
 "one sentence"}. Alert only if it is actionable, time-sensitive, or high-value; otherwise false."""
+
+
+def _translate_for_phone(text: str) -> str:
+    """Translate background-call speech; preserve source text on any failure."""
+    # Monitor/scout phone briefings use the local Kokoro English voice by default.
+    # Set CLIXEN_CALL_LANGUAGE explicitly when a translated call is desired.
+    language = os.environ.get("CLIXEN_CALL_LANGUAGE", "en").strip().lower()
+    if not text or language in {"", "en", "none", "off"}:
+        return text
+    try:
+        from clients.cloud_client import chat
+        response = chat(
+            user_message=(
+                f"Translate this scientific or news briefing into {language}. "
+                "Preserve facts, numbers, names, uncertainty, and source labels. "
+                "Return only the translation.\n\n" + text
+            ),
+            reasoning_effort="low",
+        )
+        translated = str(response or "").strip()
+        try:
+            parsed = json.loads(translated)
+            if isinstance(parsed, dict):
+                translated = str(parsed.get("translation", "")).strip()
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        return translated or text
+    except Exception:
+        _log.warning("[notify_gate] phone translation failed; using source text", exc_info=True)
+        return text
 
 
 def decide_and_notify(
@@ -98,10 +129,32 @@ def decide_and_notify(
         action_label=action_label, action_url=action_url,
         action_type=action_type, action_payload=action_payload,
     )
-    _push_telegram(message)
+    _push_telegram(_summarize_for_telegram(message))
     if call_phone:
         _call_linphone(message)
     return True
+
+
+def _summarize_for_telegram(text: str) -> str:
+    """Compress a full finding/briefing into a short 2-3 sentence push. The
+    full text is already saved via add_notification above — this only
+    shortens what actually lands in the chat."""
+    if not text:
+        return text
+    try:
+        from clients.cloud_client import chat
+        resp = chat(
+            user_message=(
+                "Compress this into a short, useful 2-3 sentence Telegram "
+                "notification. Keep the key fact/number, drop background and "
+                "caveats. Return only the summary, no preamble.\n\n" + text
+            ),
+            reasoning_effort="low",
+        )
+        return str(resp or "").strip() or text
+    except Exception:
+        _log.warning("[notify_gate] telegram summarize failed; using source text", exc_info=True)
+        return text
 
 
 def _verify_via_agent(finding: str, source: str) -> str:
@@ -149,7 +202,7 @@ def _call_linphone(text: str) -> None:
         # text — Piper renders a literal paragraph break as a long silence gap inside
         # the single WAV, which sounds like the call audio stopping and restarting.
         # Collapse to single spaces since this is spoken, not displayed.
-        spoken = " ".join(text.split())
+        spoken = " ".join(_translate_for_phone(text).split())
         # ponytail: 1600 chars ~= 90s spoken — enough for a real scientific-depth
         # briefing (result + numbers + methodology), not just a headline. Was 400,
         # which cut every finding down to a one-line hook regardless of content.
