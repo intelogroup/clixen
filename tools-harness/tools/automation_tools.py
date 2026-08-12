@@ -322,7 +322,7 @@ PAUSE_AUTOMATION_SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "automation_id": {"type": "string", "description": "The workflow instance ID"},
+                "automation_id": {"type": "string", "description": "The workflow instance — accepts its uuid, task_name, or automation_id (e.g. 'science_scout'), whichever you have from list_automations."},
             },
             "required": ["automation_id"],
         },
@@ -337,7 +337,7 @@ RESUME_AUTOMATION_SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "automation_id": {"type": "string", "description": "The workflow instance ID"},
+                "automation_id": {"type": "string", "description": "The workflow instance — accepts its uuid, task_name, or automation_id (e.g. 'science_scout'), whichever you have from list_automations."},
             },
             "required": ["automation_id"],
         },
@@ -358,7 +358,7 @@ DELETE_AUTOMATION_SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "automation_id": {"type": "string", "description": "The workflow instance ID"},
+                "automation_id": {"type": "string", "description": "The workflow instance — accepts its uuid, task_name, or automation_id (e.g. 'science_scout'), whichever you have from list_automations."},
             },
             "required": ["automation_id"],
         },
@@ -373,7 +373,7 @@ TRIGGER_AUTOMATION_NOW_SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "automation_id": {"type": "string", "description": "The workflow instance ID"},
+                "automation_id": {"type": "string", "description": "The workflow instance — accepts its uuid, task_name, or automation_id (e.g. 'science_scout'), whichever you have from list_automations."},
             },
             "required": ["automation_id"],
         },
@@ -394,7 +394,7 @@ DELETE_WORKFLOW_PERMANENTLY_SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "workflow_id": {"type": "string", "description": "The workflow instance ID (uuid), not the automation_id/task name"},
+                "workflow_id": {"type": "string", "description": "The workflow instance — accepts its uuid, task_name, or automation_id."},
             },
             "required": ["workflow_id"],
         },
@@ -409,7 +409,7 @@ GET_AUTOMATION_SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "workflow_id": {"type": "string", "description": "The workflow instance ID (uuid)"},
+                "workflow_id": {"type": "string", "description": "The workflow instance — accepts its uuid, task_name, or automation_id."},
             },
             "required": ["workflow_id"],
         },
@@ -429,7 +429,7 @@ GET_AUTOMATION_HISTORY_SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "workflow_id": {"type": "string", "description": "The workflow instance ID (uuid)"},
+                "workflow_id": {"type": "string", "description": "The workflow instance — accepts its uuid, task_name, or automation_id."},
             },
             "required": ["workflow_id"],
         },
@@ -448,7 +448,7 @@ UPDATE_AUTOMATION_SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "workflow_id": {"type": "string", "description": "The workflow instance ID (uuid) to modify"},
+                "workflow_id": {"type": "string", "description": "The workflow instance to modify — accepts its uuid, task_name, or automation_id."},
                 "name": {"type": "string", "description": "New human-readable label (task_name)"},
                 "trigger_type": {
                     "type": "string",
@@ -678,6 +678,8 @@ def trigger_automation_now(args: dict) -> str:
     instance = workflow_store.get_workflow_instance(automation_id)
     if not instance:
         return f"Automation {automation_id!r} not found."
+    if instance.get("status") == "paused":
+        return f"Automation {instance['task_name']!r} is paused — resume it first if you want it to run."
     # Dispatch synchronously in the current process (not via worker poll cycle)
     # so the latest handler code on disk is always used. The worker process may
     # have a stale module cache — forcing sync dispatch here avoids that.

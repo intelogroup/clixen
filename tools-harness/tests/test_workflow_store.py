@@ -49,6 +49,33 @@ def test_seed_builtins_does_not_reactivate_paused():
     )
 
 
+def test_resolve_id_accepts_unique_automation_id():
+    """get_workflow_instance must resolve by automation_id when it uniquely
+    identifies one row (e.g. singleton handlers like 'science_scout') — this
+    is the identifier an agent naturally reaches for, not just uuid/task_name."""
+    ws.seed_builtins()
+    instances = ws.list_workflow_instances()
+    inst = instances[0]
+    by_automation_id = ws.get_workflow_instance(inst["automation_id"])
+    assert by_automation_id is not None
+    assert by_automation_id["id"] == inst["id"]
+
+
+def test_resolve_id_stays_ambiguous_for_shared_automation_id():
+    """automation_id is NOT unique for generic user automations (they share
+    automation_id='user.automation') — a multi-row match must not silently
+    pick an arbitrary row."""
+    ws.create_workflow_instance(
+        task_name="A", automation_id="user.automation", trigger_type="schedule",
+        action_type="notification", schedule={"interval_seconds": 3600}, config={},
+    )
+    ws.create_workflow_instance(
+        task_name="B", automation_id="user.automation", trigger_type="schedule",
+        action_type="notification", schedule={"interval_seconds": 3600}, config={},
+    )
+    assert ws.get_workflow_instance("user.automation") is None
+
+
 def test_seed_builtins_idempotent():
     """Calling seed_builtins() twice must not duplicate rows."""
     ws.seed_builtins()

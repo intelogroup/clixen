@@ -182,17 +182,30 @@ def create_workflow_instance(
 
 
 def _resolve_id(identifier: str) -> str:
-    """Accept either the instance uuid or its task_name and return the uuid.
-    CRUD tools are LLM-driven and are frequently called with the human-readable
-    name instead of the uuid — resolve once here instead of failing silently
-    at every callsite.
+    """Accept the instance uuid, its task_name, or its automation_id (when that
+    automation_id is unique — e.g. singleton handlers like "science_scout")
+    and return the uuid. CRUD tools are LLM-driven and are frequently called
+    with the human-readable/conceptual name instead of the uuid — resolve
+    once here instead of failing silently at every callsite.
+
+    automation_id is NOT unique for generic user automations (they all share
+    automation_id="user.automation"), so a multi-row automation_id match is
+    left unresolved rather than picking an arbitrary row.
     """
     with _conn() as conn:
         row = conn.execute(
             "SELECT id FROM workflow_instances WHERE id = ? OR task_name = ? COLLATE NOCASE",
             (identifier, identifier),
         ).fetchone()
-    return row["id"] if row else identifier
+        if row:
+            return row["id"]
+        rows = conn.execute(
+            "SELECT id FROM workflow_instances WHERE automation_id = ?",
+            (identifier,),
+        ).fetchall()
+        if len(rows) == 1:
+            return rows[0]["id"]
+    return identifier
 
 
 def get_workflow_instance(workflow_id: str) -> dict | None:
