@@ -43,6 +43,13 @@ def _first_path(text: str) -> str | None:
     return None
 
 
+def count_path_tokens(text: str | None) -> int:
+    """How many distinct filesystem-path-shaped tokens are named in free text —
+    the structural signal callers use to detect 0 paths (no path named) or 2+
+    paths (multiple inputs/targets) without keyword-guessing verbs."""
+    return len(_PATH_TOKEN_RE.findall(text or ""))
+
+
 def _clean_location_phrase(raw: str) -> str | None:
     """Turn a captured location phrase ("my Downloads telegram_qa_sandbox folder") into an
     absolute path. Anchored to the home dir explicitly rather than left relative — write
