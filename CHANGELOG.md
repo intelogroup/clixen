@@ -20,6 +20,12 @@ All notable changes to Clixen are documented here. Format follows
 ### Added
 - Persistent cross-session memory (`remember`/`forget` tools + per-turn recall).
 - Same-model tool-contention gate (serializes model-invoking tools on the single GPU).
+- Agent-trace self-correction loop: `scripts/trace_candidates.py` mines `trace_store.sqlite`
+  for recurring tool failures and pushes them into forgememo (`forge save --type failure`),
+  deduped against repeat pushes, nightly via `com.clixen.trace_candidates.plist`. Read side
+  in `tools/forge_principles.py` fetches forgememo's distilled clixen principles once at
+  process startup and injects them into the orchestrator's system prompt, closing the loop
+  from recorded failure back into the running agent.
 
 ## Earlier
 Highlights from prior history (see `git log` for full detail):
