@@ -43,7 +43,7 @@ def _first_path(text: str) -> str | None:
     return None
 
 
-def count_path_tokens(text: str) -> int:
+def count_path_tokens(text: str | None) -> int:
     """How many distinct filesystem-path-shaped tokens are named in free text —
     the structural signal callers use to detect 0 paths (no path named) or 2+
     paths (multiple inputs/targets) without keyword-guessing verbs."""
