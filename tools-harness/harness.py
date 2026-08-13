@@ -34,6 +34,7 @@ from tools.env_secrets import load_secrets
 load_secrets()
 
 from tools.registry import ALL_TOOLS, PLAN_TOOLS, tools_with_tags, CURRENT_CHAT_ID
+from tools.forge_principles import FORGE_PRINCIPLES_BLOCK
 from clients import ollama_client, cloud_client
 from clients.router import classify_ide, classify_message, model_for_intent, reasoning_effort_for_intent, _SPORTS_RE
 
@@ -727,6 +728,8 @@ def _run_impl(
             home_dir=_home, fragments=_orch_fragments,
             deep_research_line=_deep_research_line, deep_research_critical=_deep_research_critical,
         )
+        if FORGE_PRINCIPLES_BLOCK:
+            orchestrator_system_prompt = FORGE_PRINCIPLES_BLOCK + "\n" + orchestrator_system_prompt
         # 2026-07-13: the orchestrated branch returns (see below) before ever reaching
         # memory_recall(query) further down in run() — that call only fires on the
         # non-orchestrated fallback path. Since cloud-first routing makes orchestrator
