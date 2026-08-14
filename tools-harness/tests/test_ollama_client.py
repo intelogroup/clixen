@@ -80,12 +80,12 @@ def test_run_local_sets_gemma_tool_options():
 
 
 def test_run_local_disables_gemma_thinking_for_casual_chat():
-    """gemma4:12b-mlx/e2b have thinking enabled by default — must be off in casual chat too."""
+    """gemma4:12b/e2b have thinking enabled by default — must be off in casual chat too."""
     mock_client = Mock()
     mock_client.chat.return_value = SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=None))
 
     with patch("clients.ollama_client._get_client", return_value=mock_client):
-        _run_local("gemma4:12b-mlx", [{"role": "user", "content": "hi"}], tools=[])
+        _run_local("gemma4:12b", [{"role": "user", "content": "hi"}], tools=[])
 
     _, kwargs = mock_client.chat.call_args
     assert kwargs["think"] is False
@@ -94,9 +94,9 @@ def test_run_local_disables_gemma_thinking_for_casual_chat():
 
 
 def test_default_model_is_gemma4_12b():
-    """gemma4:12b-mlx replaced e2b as primary in June 2026 (τ2-bench 86.4% vs 29.4%)."""
+    """gemma4:12b replaced e2b as primary in June 2026 (τ2-bench 86.4% vs 29.4%)."""
     from clients.ollama_client import DEFAULT_MODEL
-    assert DEFAULT_MODEL == "gemma4:12b-mlx"
+    assert DEFAULT_MODEL == "gemma4:12b"
 
 
 def test_router_uses_cloud_model_for_agentic_tasks():
@@ -111,9 +111,9 @@ def test_router_uses_cloud_model_for_agentic_tasks():
 
 
 def test_router_model_specs_includes_12b():
-    """gemma4:12b-mlx stays in MODEL_SPECS for KV/history-budget calcs even
+    """gemma4:12b stays in MODEL_SPECS for KV/history-budget calcs even
     though it's no longer the routing default — manual override still uses it."""
     from clients.router import MODEL_SPECS
-    assert "gemma4:12b-mlx" in MODEL_SPECS
-    ctx, _ = MODEL_SPECS["gemma4:12b-mlx"]
+    assert "gemma4:12b" in MODEL_SPECS
+    ctx, _ = MODEL_SPECS["gemma4:12b"]
     assert ctx > 0

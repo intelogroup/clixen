@@ -48,7 +48,7 @@ def test_llm_stage_result_used_when_available():
     """When the LLM stage succeeds, its Classification is returned as-is."""
     from clients.router import Classification
 
-    fake = Classification(model="gemma4:12b-mlx", intent="browser", specialist_hint=None, source="llm")
+    fake = Classification(model="gemma4:12b", intent="browser", specialist_hint=None, source="llm")
     with patch("clients.router._llm_classify", return_value=fake):
         cls = classify_message("log into my bank account", channel="web")
         assert cls is fake

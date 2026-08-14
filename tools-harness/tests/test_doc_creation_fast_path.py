@@ -74,7 +74,7 @@ def test_pdf_docx_xlsx_land_on_disk(doc_env):
     tb = doc_env
     for req, ext in [("make a pdf", ".pdf"), ("make a word document", ".docx"),
                      ("make an excel sheet", ".xlsx")]:
-        text, path = tb._run_doc_agent(req, "gemma4:12b-mlx", "t", on_token=None)
+        text, path = tb._run_doc_agent(req, "gemma4:12b", "t", on_token=None)
         assert path and path.endswith(ext), (req, path)
         assert os.path.exists(path) and os.path.getsize(path) > 0
         _cleanup(path, ext)
@@ -85,7 +85,7 @@ def test_xlsx_has_real_rows(doc_env):
     # 3-row sheet (header + 2 data rows), not a single-cell dump.
     import openpyxl
     tb = doc_env
-    _text, path = tb._run_doc_agent("send today's scores as an excel sheet", "gemma4:12b-mlx", "t", on_token=None)
+    _text, path = tb._run_doc_agent("send today's scores as an excel sheet", "gemma4:12b", "t", on_token=None)
     assert path and path.endswith(".xlsx")
     ws = openpyxl.load_workbook(path).active
     rows = [tuple(str(c) for c in r) for r in ws.iter_rows(values_only=True)]
@@ -104,7 +104,7 @@ def test_error_string_converter_degrades_cleanly(doc_env, monkeypatch):
         lambda md_path, output_path, template="": "Error: python-pptx not installed",
     )
     tb = doc_env
-    text, path = tb._run_doc_agent("make a powerpoint", "gemma4:12b-mlx", "t", on_token=None)
+    text, path = tb._run_doc_agent("make a powerpoint", "gemma4:12b", "t", on_token=None)
     assert path is None
     assert "couldn" in text.lower()
 
@@ -113,7 +113,7 @@ def test_confirmation_goes_to_on_token_not_the_body(doc_env):
     # TTS should speak "Here's your PDF.", never the whole document body.
     tb = doc_env
     tokens = []
-    text, path = tb._run_doc_agent("make a pdf", "gemma4:12b-mlx", "t", on_token=tokens.append)
+    text, path = tb._run_doc_agent("make a pdf", "gemma4:12b", "t", on_token=tokens.append)
     assert tokens == ["Here's your PDF."]
     assert text == "Here's your PDF."
     _cleanup(path, ".pdf")

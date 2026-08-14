@@ -41,7 +41,7 @@ def test_git_tools_preserved_for_telegram_style_call():
     # only for the web UI's manual model dropdown, silently disabling git/repl on Telegram.
     tool_names = _run_with_captured_tools(
         query="what's the git status of the repo at ~/Developer/clixen",
-        model="gemma4:12b-mlx",
+        model="gemma4:12b",
         chat_id="123456789",
     )
     assert "git_status" in tool_names
@@ -52,7 +52,7 @@ def test_git_tools_stripped_for_manual_web_model_pick():
     # stripped there (this is the behavior the original guard was meant to protect).
     tool_names = _run_with_captured_tools(
         query="what's the git status of the repo at ~/Developer/clixen",
-        model="gemma4:12b-mlx",
+        model="gemma4:12b",
         chat_id="web_ui",
         manual_model_pick=True,
     )

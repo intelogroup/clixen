@@ -34,7 +34,7 @@ def _patch_common(monkeypatch, history):
     # stays hermetic (no real cloud call) and preserves the original test setup's intent.
     monkeypatch.setattr(
         harness, "classify_message",
-        lambda q, channel="web": Classification(model="gemma4:12b-mlx", intent="factual_qa", specialist_hint=None, source="test"),
+        lambda q, channel="web": Classification(model="gemma4:12b", intent="factual_qa", specialist_hint=None, source="test"),
     )
     monkeypatch.setattr(harness, "_guard_check", lambda q, has_history=False: None)
     monkeypatch.setattr(harness, "conv_get", lambda cid: list(history))

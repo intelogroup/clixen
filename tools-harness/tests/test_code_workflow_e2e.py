@@ -69,6 +69,11 @@ def test_phase2_code_intent_routing():
     for q in queries:
         assert _infer_local_agent_task(q) == "code", f"'{q}' should route to code"
 
+    # harness.py:_infer_local_agent_task defaults unmatched queries to "code"
+    # (not "full") — "full"'s 78-tool payload blew gemma4's 120s client timeout
+    # on prefill, confirmed live; "code" is a strict superset of "document"
+    # minus form/browser-nav tools, so it's the safer default for anything
+    # that doesn't name an explicit document/code keyword.
     non_code = [
         "what files are in Downloads",
         "how is the weather today",
@@ -76,13 +81,13 @@ def test_phase2_code_intent_routing():
         "delete file /tmp/test.txt",
     ]
     for q in non_code:
-        assert _infer_local_agent_task(q) == "full", f"'{q}' should route to full"
+        assert _infer_local_agent_task(q) == "code", f"'{q}' should route to code (unmatched-query default)"
 
-    # "fill form.pdf" routes to the dedicated "document" task type, not "full"
+    # "fill form.pdf" routes to the dedicated "document" task type, not the default
     # — a later, deliberate split (see CLAUDE.md "document"/"code"/"full" task types).
     assert _infer_local_agent_task("fill form.pdf for me") == "document"
 
-    print(f"  PASS Phase 2: code routing correct for {len(queries)} code + {len(non_code)} non-code queries")
+    print(f"  PASS Phase 2: code routing correct for {len(queries)} code + {len(non_code)} default-to-code queries")
 
 
 def test_phase2_code_intent_tool_selection():
@@ -157,6 +162,14 @@ def test_code_prompt_excludes_form_tools():
     assert "FORM WORKFLOW" not in prompt.upper(), "code prompt should not have form workflow"
 
     print(f"  PASS code prompt role is coding, not form")
+
+
+def test_compact_prompt_uses_active_tool_contract():
+    prompt = _build_system_prompt("code", get_local_agent_tools("code"), "/Users/testuser")
+    assert "ACTIVE TOOLS:" in prompt
+    assert "OPERATING RULES:" in prompt
+    assert len(prompt) < 3000
+    assert "DOCUMENT CREATION:" not in prompt
 
 
 if __name__ == "__main__":

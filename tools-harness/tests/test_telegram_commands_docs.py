@@ -42,7 +42,7 @@ def doc_mocks(monkeypatch, tmp_path):
         _write(out, b"%PDF")
         return out
 
-    def _fake_data_to_xlsx(csv_path, out):
+    def _fake_data_to_xlsx(csv_path, out, chart_spec=None):
         artifacts["xlsx"] = out
         _write(out, b"PK")
         return out
@@ -295,7 +295,7 @@ def test_analyze_screenshot_ocr_streams_and_collects(monkeypatch):
     assert result == "The answer is 42."
     assert "".join(tokens) == "The answer is 42."
     model, messages, kw = fake.chat.calls[0]
-    assert model == "gemma4:12b-mlx"
+    assert model == "gemma4:12b"
     assert kw["stream"] is True
     assert "ocr payload" in messages[0]["content"]
 

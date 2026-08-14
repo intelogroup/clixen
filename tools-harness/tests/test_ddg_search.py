@@ -84,6 +84,17 @@ def test_execute_reranks_authority_results_above_generic_base_hits():
     assert any("who.int" in url or "cdc.gov" in url or "ourworldindata.org" in url for url in urls)
 
 
+def test_real_ddgs_is_fail_closed_on_python_314(monkeypatch):
+    if sys.version_info < (3, 14):
+        pytest.skip("regression applies to Python 3.14+")
+
+    monkeypatch.delenv("CLIXEN_ALLOW_UNSAFE_DDG", raising=False)
+    result = execute("what is the height of Mount Everest?", max_results=1)
+
+    assert result.ok is False
+    assert "disabled on Python 3.14" in result.error
+
+
 def test_execute_dedupes_duplicate_urls_across_query_variants():
     base_query = "what are the latest covid-19 cases and prevalence?"
     duplicate_url = "https://data.who.int/dashboards/covid19/cases"

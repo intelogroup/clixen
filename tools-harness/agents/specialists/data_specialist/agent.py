@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
@@ -17,6 +18,9 @@ from ._helpers import DataResult, _STRUCTURED_SUFFIXES, _data_tool_schemas, _bui
 # Import for side effect: registers built-in data tool schemas/executors.
 from . import _advanced as _advanced  # noqa: F401
 from . import _schemas as _schemas  # noqa: F401
+
+
+_log = logging.getLogger("data_specialist")
 
 
 def run_data_specialist(

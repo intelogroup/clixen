@@ -63,6 +63,17 @@ class LocalAgentState(BaseModel):
         "'[SKILL: name — desc]\\n\\n{system_prompt}' — injected into the system prompt "
         "to steer multi-step planning instead of leaving gemma4 to free-plan.",
     )
+    skill_tools: list[str] | None = Field(
+        default=None,
+        description="Matched skill's declared tool subset (skills_hub.py Skill.tools) — "
+        "when set, narrows both the tools advertised to the model and the executable "
+        "allowlist to just this list, instead of the full task-scoped set.",
+    )
+    excluded_tools: list[str] = Field(
+        default_factory=list,
+        description="Tools removed after a specialist already performed that operation, "
+        "preventing redundant calls while retaining the rest of the task toolset.",
+    )
     project_root: str | None = Field(
         default=None,
         description="Scoped project/workspace root announced to the model in its system "

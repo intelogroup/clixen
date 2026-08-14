@@ -301,14 +301,21 @@ def _run_local(
     if "num_predict" not in opts:
         opts["num_predict"] = 2048 if tools else 512
 
-    resp = _get_client().chat(
-        model=model,
-        messages=messages,
-        tools=tools or None,
-        keep_alive=-1,
-        options=opts or None,
-        think=_think,
-    )
+    try:
+        resp = _get_client().chat(
+            model=model,
+            messages=messages,
+            tools=tools or None,
+            keep_alive=-1,
+            options=opts or None,
+            think=_think,
+        )
+    except ollama.ResponseError as e:
+        if e.status_code == 404 or "not found" in str(e).lower():
+            raise RuntimeError(
+                f"Ollama model '{model}' not found — run `ollama pull {model}`."
+            ) from e
+        raise
     elapsed = time.time() - start
     return resp, elapsed
 

@@ -74,6 +74,15 @@ def test_exact_dedup_never_reenters_raw_papers(clean_db):
     assert len(fresh3) == 1
 
 
+def test_exact_dedup_drops_duplicate_content_within_one_scan(clean_db):
+    first = {"id": "https://example.test/1", "title": "Same paper", "url": "https://example.test/paper", "niche": "microplastics"}
+    duplicate = {"id": "https://example.test/2", "title": "Same paper", "url": "https://example.test/paper", "niche": "microplastics"}
+
+    fresh = science_scout.exact_dedup([first, duplicate])
+
+    assert fresh == [first]
+
+
 def test_update_decision_bumps_evidence_not_new_row(clean_db, kb):
     claim_id = store.create_claim("PETase variant degrades PET faster", "Observed", ["microplastics"])
     kb.store("PETase variant degrades PET faster", source="science_claim", query=claim_id)
@@ -148,6 +157,46 @@ def test_handle_uses_config_niche_queries(clean_db, kb, monkeypatch):
     monkeypatch.setattr(science_scout, "collect_new_papers", lambda niches: [])
     result = science_scout.handle({"id": "wf-cfg", "config": {"niche_queries": ["custom niche"]}})
     assert result["niches_scanned"] == ["custom niche"]
+
+
+def test_automatic_query_batch_rotates_with_cooldown(clean_db):
+    queries = [f"query {i}" for i in range(18)]
+    first = store.select_query_batch(queries, scan_number=1, count=3, cooldown_scans=5)
+    second = store.select_query_batch(queries, scan_number=2, count=3, cooldown_scans=5)
+    for scan in range(3, 7):
+        store.select_query_batch(queries, scan_number=scan, count=3, cooldown_scans=5)
+    again = store.select_query_batch(queries, scan_number=7, count=3, cooldown_scans=5)
+
+    assert len(set(first) & set(second)) == 0
+    assert len(set(first) & set(again)) > 0
+
+
+def test_query_discovery_planner_returns_fresh_diverse_candidates(clean_db, monkeypatch):
+    monkeypatch.setattr(
+        "clients.cloud_client.chat",
+        lambda **kwargs: '["malaria vaccine updates 2026", "NASA discoveries 2026", "algorithms detecting minerals under Earth"]',
+    )
+
+    found = science_scout._discover_query_candidates(["old seed"], scan_number=4)
+
+    assert found == [
+        "malaria vaccine updates 2026",
+        "NASA discoveries 2026",
+        "algorithms detecting minerals under Earth",
+    ]
+
+
+def test_query_pool_self_review_retires_and_adds(clean_db, monkeypatch):
+    store.select_query_batch(["weak query"], 1, count=1, cooldown_scans=5)
+    monkeypatch.setattr(
+        "clients.cloud_client.chat",
+        lambda **kwargs: '{"retire": ["weak query"], "add": ["deep Earth mineral discovery"]}',
+    )
+
+    science_scout._self_review_query_pool()
+
+    assert store.select_query_batch(["weak query"], 2, count=1, cooldown_scans=5) == []
+    assert "deep Earth mineral discovery" in store.discovered_queries()
 
 
 def test_paperqa_extraction_failure_falls_back_to_snippet(monkeypatch):

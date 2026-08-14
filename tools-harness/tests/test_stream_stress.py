@@ -21,8 +21,16 @@ from fastapi.testclient import TestClient
 from chat_ui import (
     app, _workspace_state, _dev_auto_auth_setup, _hash_password,
     _active_streams, _active_streams_lock, abort_active_stream, register_active_stream,
+    _LOCALHOST_TOKEN,
 )
 from clients.cancellation import QueryAbortedException
+
+_AUTH_HEADERS = {"x-clixen-token": _LOCALHOST_TOKEN} if _LOCALHOST_TOKEN else {}
+
+
+def TestClient(app):  # noqa: N802 — shadows fastapi.testclient.TestClient with token preset
+    from fastapi.testclient import TestClient as _TestClient
+    return _TestClient(app, headers=_AUTH_HEADERS)
 
 
 # ── Session-wide isolation: never touch the real workspace_state.json ──────
@@ -82,7 +90,7 @@ def _mock_harness_ok(query, chat_id=None, on_token=None, **kw):
     """harness_run that returns success with a few tokens."""
     on_token("hello")
     on_token(" world")
-    return ("hello world", "gemma4:12b-mlx", "casual")
+    return ("hello world", "gemma4:12b", "casual")
 
 
 def _mock_websearch_ok(query, on_token=None):
@@ -210,7 +218,7 @@ def test_cross_stream_isolation(reset_auth):
             on_token(f"b_{i}")
             time.sleep(0.01)
         stream_b_complete.set()
-        return ("done B", "gemma4:12b-mlx", "casual")
+        return ("done B", "gemma4:12b", "casual")
 
     def harness_dispatcher(query, chat_id=None, on_token=None, **kw):
         if "stream-a" in (chat_id or ""):
@@ -285,7 +293,7 @@ def test_tool_loop_cancellation_between_rounds(reset_auth):
         try:
             chat(
                 user_message="test",
-                model="gemma4:12b-mlx",
+                model="gemma4:12b",
                 tools=[{"function": {"name": "echo"}}],
                 on_token=lambda t: None,
                 options={"mock": True},
@@ -422,7 +430,7 @@ def test_concurrent_streams_different_chats(reset_auth):
         for j in range(3):
             on_token(f"msg_{chat_id}_{j}")
             time.sleep(0.02)
-        return ("done", "gemma4:12b-mlx", "casual")
+        return ("done", "gemma4:12b", "casual")
 
     with patch("chat_ui.harness_run", side_effect=mock_concurrent):
         def read_stream(cid):

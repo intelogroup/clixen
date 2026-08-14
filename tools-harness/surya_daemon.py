@@ -37,7 +37,7 @@ _manager_lock = threading.Lock()
 
 
 def _resolve_auth_token() -> str | None:
-    token = os.environ.get("SURYA_AUTH_TOKEN", os.environ.get("UNLIMITED_OCR_AUTH_TOKEN", "")).strip()
+    token = os.environ.get("SURYA_AUTH_TOKEN", "").strip()
     return token or None
 
 

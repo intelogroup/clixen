@@ -25,13 +25,13 @@ _HARNESS = Path(__file__).resolve().parent.parent
 
 # ------------------------------------------------------------------ routing
 
-_CLASSIFIERS = ("classify", "classify_telegram", "classify_ide", "classify_plan")
+_CLASSIFIERS = ("classify", "classify_telegram", "classify_plan")
 
 
 def _returned_models(fn_name: str) -> set[str]:
     """Every model literal a classifier can return, read from its source."""
     src = inspect.getsource(getattr(router, fn_name))
-    # `return CLOUD_MODEL, "x"` / `return "gemma4:12b-mlx", "ocr"`
+    # `return CLOUD_MODEL, "x"` / `return "gemma4:12b", "ocr"`
     return set(re.findall(r'return\s+([A-Za-z_0-9]+|"[^"]+"),\s*"[a-z_]+"', src))
 
 
@@ -89,11 +89,11 @@ def test_ocr_is_the_only_multimodal_route():
 
 # ------------------------------------------------------------------ toolsets
 
-# Pinned to the live values as of 2026-07-10. CLAUDE.md said 24/37/47 — stale by 4/5/5
-# tools, caught by this eval on its first run. A drift here means a tool's tags changed:
-# either intentional (update this dict + CLAUDE.md) or a tool silently entered/left a
-# task's toolset (a real regression — e.g. a browser tool leaking into `document`).
-_EXPECTED_TOOL_COUNTS = {"document": 30, "code": 45, "full": 70}
+# Pinned to the live values as of 2026-08-09 (previously 30/45/70, added fulltext_search
+# tooling + others since). A drift here means a tool's tags changed: either intentional
+# (update this dict) or a tool silently entered/left a task's toolset (a real regression —
+# e.g. a browser tool leaking into `document`).
+_EXPECTED_TOOL_COUNTS = {"document": 34, "code": 53, "full": 78}
 
 
 @pytest.mark.parametrize("task,expected", _EXPECTED_TOOL_COUNTS.items())
@@ -118,7 +118,7 @@ def test_step_caps():
 
 
 def test_code_toolset_has_git_diff_and_status():
-    """Moved out of ide_extra so the coding agent can read its own diff without a subagent."""
+    """The local agent can read its own diff without a subagent."""
     names = {t["function"]["name"] for t in local_agent_tools.get_local_agent_tools("code")}
     assert {"git_diff", "git_status"} <= names
 
@@ -131,8 +131,12 @@ _NEEDS_CONFIRM = [
     "git push origin main",
     "git reset --hard HEAD~1",
     "git checkout -b feature",
+    # rm is confirm-gated regardless of path (registry._RM_COMMAND_RE matches any
+    # rm invocation) — a relative-path rm is one typo from ../ or / , so it's
+    # treated the same as an absolute one, just not hard-denied like "rm -rf /".
+    "rm -rf ./build",
 ]
-_ALLOWED = ["ls -la", "git status", "git diff HEAD", "pytest -q", "rm -rf ./build"]
+_ALLOWED = ["ls -la", "git status", "git diff HEAD", "pytest -q"]
 
 
 @pytest.mark.parametrize("cmd", _IRREVERSIBLE)

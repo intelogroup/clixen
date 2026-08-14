@@ -948,7 +948,16 @@ def _run_tool_loop(
     return _strip_leak_artifacts(content)
 
 
-def raw_completion(model: str, messages: list, tools: list, temperature: float = 0.7, bypass_budget: bool = False):
+def raw_completion(
+    model: str,
+    messages: list,
+    tools: list,
+    temperature: float = 0.7,
+    bypass_budget: bool = False,
+    retry: bool = True,
+    fallback: bool = True,
+    timeout: float | None = None,
+):
     """
     Single (non-looping) chat completion for callers that run their own
     tool-execution loop externally (the LangGraph local-agent — see
@@ -970,6 +979,16 @@ def raw_completion(model: str, messages: list, tools: list, temperature: float =
         _log.info("[cloud_client] raw_completion %s's provider is dead, using OpenAI fallback %s", model, OPENAI_FALLBACK_MODEL)
         model = OPENAI_FALLBACK_MODEL
     client, real_model = _resolve(model)
+    if not retry or timeout is not None:
+        # OpenAI's client has its own retry loop, independent of our wrapper.
+        # Use a request-scoped client so short-lived callers such as query
+        # rewriting can abandon safely without a late retry storm.
+        options = {}
+        if not retry:
+            options["max_retries"] = 0
+        if timeout is not None:
+            options["timeout"] = timeout
+        client = client.with_options(**options)
 
     sent = []
     for m in messages:
@@ -992,28 +1011,35 @@ def raw_completion(model: str, messages: list, tools: list, temperature: float =
         sent.append(m)
 
     try:
-        resp = _create_with_retry(
-            client,
-            model=real_model,
-            messages=sent,
-            tools=tools or None,
-            temperature=temperature,
-        )
+        request = {
+            "model": real_model,
+            "messages": sent,
+            "tools": tools or None,
+            "temperature": temperature,
+        }
+        resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
     except Exception as e:
-        if model == OPENAI_FALLBACK_MODEL:
+        if model == OPENAI_FALLBACK_MODEL or not fallback:
             raise
         if _is_payment_error(e):
             _mark_dead(model)
         _log.warning("[cloud_client] raw_completion %s failed (%s), retrying on OpenAI fallback %s",
                      model, e, OPENAI_FALLBACK_MODEL)
         client, real_model = _resolve(OPENAI_FALLBACK_MODEL)
-        resp = _create_with_retry(
-            client,
-            model=real_model,
-            messages=sent,
-            tools=tools or None,
-            temperature=temperature,
-        )
+        if not retry or timeout is not None:
+            options = {}
+            if not retry:
+                options["max_retries"] = 0
+            if timeout is not None:
+                options["timeout"] = timeout
+            client = client.with_options(**options)
+        request = {
+            "model": real_model,
+            "messages": sent,
+            "tools": tools or None,
+            "temperature": temperature,
+        }
+        resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
     _clear_dead(model)
     _track_usage(real_model, getattr(resp, "usage", None))
     return resp.choices[0]
@@ -1113,7 +1139,7 @@ def chat(
             # used to hit check_aborted() on its very first round and raise the
             # identical QueryAbortedException immediately — the OpenRouter fallback
             # below was effectively dead code for aborts, silently cascading every
-            # abort straight to local_chat()'s LAST-resort local gemma4:12b-mlx
+            # abort straight to local_chat()'s LAST-resort local gemma4:12b
             # (unreliable past a few chained tool calls, confirmed live: truncated/
             # garbled voice replies). Clear the SAME event object (not a fresh
             # unregistered one) so a genuinely NEW abort — real barge-in — still

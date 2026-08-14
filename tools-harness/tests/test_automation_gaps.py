@@ -15,9 +15,20 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+import pytest
+
+import chat_ui
 from store import workflow_store
 from tools.automation_tools import create_automation, list_automations, update_automation
 from conftest import safe_delete_test_workflow
+
+
+@pytest.fixture(autouse=True)
+def _disable_localhost_token_gate(monkeypatch):
+    """See tests/test_chat_ui_endpoints.py's fixture of the same name — bypass
+    the E3 per-install token middleware the same way the app does when the
+    Keychain is unavailable."""
+    monkeypatch.setattr(chat_ui, "_LOCALHOST_TOKEN", None)
 
 
 def _cleanup(*wf_ids):

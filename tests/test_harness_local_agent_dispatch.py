@@ -52,7 +52,7 @@ def test_single_location_query_still_uses_direct_path():
             force_local_agent=True,
         )
     mock_agent.assert_not_called()
-    assert source == "gemma4:12b-mlx"
+    assert source == "gemma4:12b"
 
 
 def test_find_glob_pattern_strips_curly_quotes_and_punctuation():

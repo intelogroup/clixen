@@ -148,7 +148,7 @@ class TestHarnessDeicticGuard:
             # hermetic (no real cloud call).
             patch.object(
                 harness, "classify_message",
-                return_value=Classification(model="gemma4:12b-mlx", intent="analysis", specialist_hint=None, source="test"),
+                return_value=Classification(model="gemma4:12b", intent="analysis", specialist_hint=None, source="test"),
             ),
             patch.object(harness, "local_chat", return_value=mock_result) as mock_chat,
             patch.object(harness, "conv_get", return_value=[]),

@@ -49,7 +49,7 @@ def _error_key(entry: dict) -> str:
     return f"{tool}: {msg}"
 
 
-def mine(limit: int, min_count: int) -> list[dict]:
+def mine(limit: int, min_count: int, use_judge: bool = False) -> list[dict]:
     runs = trace_store.query_traces(has_error=True, limit=limit)
 
     error_counts: Counter = Counter()
@@ -65,7 +65,14 @@ def mine(limit: int, min_count: int) -> list[dict]:
         for entry in entries:
             if not entry.get("error"):
                 continue
-            key = _error_key(entry)
+            if use_judge:
+                from tools.trace_judge import judge_pattern
+                msg = (entry.get("result_summary") or "").strip()
+                if msg.startswith("[error]"):
+                    msg = msg[len("[error]"):].strip()
+                key = judge_pattern(entry.get("tool") or "?", msg)
+            else:
+                key = _error_key(entry)
             error_counts[key] += 1
             example_run.setdefault(key, run_id)
 
@@ -120,9 +127,10 @@ def main():
     ap.add_argument("--min-count", type=int, default=2, help="drop patterns seen fewer than N times")
     ap.add_argument("--limit", type=int, default=200, help="max runs to scan")
     ap.add_argument("--push", action="store_true", help="save each candidate into forgememo (forge save --type failure)")
+    ap.add_argument("--judge", action="store_true", help="cluster by local-model-judged root-cause category instead of exact-string prefix")
     args = ap.parse_args()
 
-    candidates = mine(args.limit, args.min_count)
+    candidates = mine(args.limit, args.min_count, use_judge=args.judge)
     print(json.dumps(candidates, indent=2))
     print(f"\n{len(candidates)} recurring failure patterns", file=sys.stderr)
 

@@ -113,6 +113,26 @@ def claim_next() -> dict | None:
         return job
 
 
+def reap_stale_running(max_age_seconds: int = 600) -> list[str]:
+    """Requeue jobs stuck in 'running' past max_age_seconds (wedged thread, not a
+    crash — init() already handles the crash-restart case). Returns reaped job ids."""
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat()
+    now = _now()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT id FROM jobs WHERE status = 'running' AND updated_at < ?", (cutoff,)
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if ids:
+            con.executemany(
+                "UPDATE jobs SET status = 'queued', updated_at = ? WHERE id = ?",
+                [(now, jid) for jid in ids],
+            )
+    return ids
+
+
 def checkpoint(job_id: str, step: str) -> None:
     """Record the last successfully completed step for a running job."""
     with _conn() as con:

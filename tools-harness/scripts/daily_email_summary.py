@@ -37,7 +37,7 @@ def _chat_with_fallback(prompt: str, model: str) -> str:
     try:
         return ollama_chat(prompt, model=model)
     except Exception:
-        # Local model unreachable/unloaded (e.g. gemma4:12b-mlx 404) — fall back
+        # Local model unreachable/unloaded (e.g. gemma4:12b 404) — fall back
         # to cloud rather than crash-looping the workflow (see harness.py's
         # _check_claim_against_trace / scripts/email_watch.py._summarize).
         from clients.cloud_client import chat as cloud_chat

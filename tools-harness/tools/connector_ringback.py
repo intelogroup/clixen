@@ -101,11 +101,37 @@ async def _run_call(message: str) -> str:
         env[k] = v
     env["VOICE_STUN"] = env.get("VOICE_STUN", "stun.l.google.com:19302")
 
+    docker_args = [
+        "run", "-i", "--rm", "--network", "host",
+        "-e", f"VOICE_STUN={env['VOICE_STUN']}",
+        "--env-file", str(_ENV_FILE), "ringback",
+    ]
+    # One-shot diagnostics can override the env-file TTS without editing the
+    # credential-bearing config. Used for French voice testing.
+    tts_override = os.environ.get("RINGBACK_TTS_CMD", "").strip()
+    if tts_override:
+        docker_args[-1:-1] = ["-e", f"VOICE_TTS_CMD={tts_override}"]
+    # One-shot diagnostic: play a host WAV directly instead of synthesizing text.
+    # The file is mounted read-only and is not persisted in the container.
+    play_wav = os.environ.get("RINGBACK_PLAY_WAV", "").strip()
+    if play_wav:
+        wav_path = Path(play_wav).expanduser().resolve()
+        if not wav_path.is_file():
+            raise FileNotFoundError(f"ringback WAV not found: {wav_path}")
+        copy_code = (
+            "import shutil; "
+            "shutil.copyfile('/tmp/ringback-reference.wav', '{out}')"
+        )
+        direct_wav_cmd = f'python3 -c "{copy_code}"'
+        docker_args[-1:-1] = [
+            "-v", f"{wav_path}:/tmp/ringback-reference.wav:ro",
+            "-e", f"VOICE_TTS_CMD={direct_wav_cmd}",
+            "-e", "VOICE_PLAYBACK_SETTLE_SECONDS=1.5",
+        ]
+
     params = StdioServerParameters(
         command="docker",
-        args=["run", "-i", "--rm", "--network", "host",
-              "-e", f"VOICE_STUN={env['VOICE_STUN']}",
-              "--env-file", str(_ENV_FILE), "ringback"],
+        args=docker_args,
         env=None,  # docker run reads VOICE_* from --env-file, not our env
     )
     async with stdio_client(params) as (read, write):

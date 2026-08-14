@@ -31,7 +31,15 @@ ASK_LOCAL_AGENT_SCHEMA = {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The exact query/instructions for the filesystem/local agent. Must be completely resolved and self-contained.",
+                    "description": (
+                        "The exact query/instructions for the filesystem/local agent, self-contained "
+                        "(the local agent has no memory of this conversation). If the user names a "
+                        "folder informally (e.g. 'Benoucheca perso', 'my tax docs') and you don't "
+                        "already know its real absolute path, do NOT guess or invent one — pass the "
+                        "informal name as-is and tell the local agent to locate it first (it has "
+                        "spotlight_search/find_recent for exactly this). Only include an absolute "
+                        "path here when you actually know it."
+                    ),
                 }
             },
             "required": ["query"],
@@ -396,23 +404,6 @@ ASK_SCIENCE_SCOUT_AGENT_SCHEMA = {
     },
 }
 
-ASK_DEV_AGENT_SCHEMA = {
-    "type": "function",
-    "function": {
-        "name": "ask_dev_agent",
-        "description": "Invoke the dev subagent for git operations (status, diff, log, add, commit, checkout, new worktree) or REPL/window inspection (kernel vars, reset kernel, list windows, screenshot).",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Instructions for git/repl/dev actions (e.g., 'commit these changes with message...', 'show git status').",
-                }
-            },
-            "required": ["query"],
-        },
-    },
-}
 
 ASK_MESSAGING_AGENT_SCHEMA = {
     "type": "function",
@@ -443,7 +434,12 @@ ASK_RESEARCH_AGENT_SCHEMA = {
                 "query": {
                     "type": "string",
                     "description": "The research question or lookup (e.g., 'find the SEC filing for...', 'who is playing tonight in the Premier League').",
-                }
+                },
+                "time_budget_seconds": {
+                    "type": "integer",
+                    "description": "Wall-clock budget in seconds for this subagent, 60-275, default 270. Raise for a harder multi-source lookup that timed out; stay under 275 to leave margin under the 300s chat stream stall ceiling.",
+                    "default": 270,
+                },
             },
             "required": ["query"],
         },
@@ -731,7 +727,7 @@ def _record_entity_query(parent_run_id: str, query: str) -> None:
         _ENTITY_CACHE.popitem(last=False)
 
 
-def _run_subagent(intent: str, query: str) -> str:
+def _run_subagent(intent: str, query: str, timeout: int = 120) -> str:
     """Run an intent-pipeline subagent and append a machine-readable footer.
 
     The footer tells the orchestrator WHAT the subagent actually did (which tools
@@ -766,9 +762,9 @@ def _run_subagent(intent: str, query: str) -> str:
     _pool = ThreadPoolExecutor(max_workers=1)
     try:
         fut = _pool.submit(harness._execute_intent_pipeline, intent=intent, query=query, run_id=rid)
-        res = fut.result(timeout=120)
+        res = fut.result(timeout=timeout)
     except _FutureTO:
-        res = f"[subagent timeout] {intent} subagent did not return within 120s"
+        res = f"[subagent timeout] {intent} subagent did not return within {timeout}s"
     finally:
         _pool.shutdown(wait=False)
     try:
@@ -1002,13 +998,6 @@ def exec_ask_automation_agent(args: dict) -> str:
     )
 
 
-def exec_ask_dev_agent(args: dict) -> str:
-    return _run_subagent(
-        intent="dev_tools",
-        query=args["query"],
-    )
-
-
 def exec_ask_messaging_agent(args: dict) -> str:
     return _run_subagent(
         intent="messaging",
@@ -1018,9 +1007,13 @@ def exec_ask_messaging_agent(args: dict) -> str:
 
 def exec_ask_research_agent(args: dict) -> str:
     query = _extract_search_query(args["query"])
+    budget = max(60, min(int(args.get("time_budget_seconds", 270)), 275))
+    if budget != 270:
+        query = f"{query}\n\n(if you call deep_research, pass time_budget_seconds={budget})"
     return _run_subagent(
         intent="research_connectors",
         query=query,
+        timeout=min(budget + 20, 295),  # outlive the pipeline's own budget, stay under the 300s SSE stall ceiling
     )
 
 

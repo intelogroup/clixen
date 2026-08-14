@@ -58,6 +58,37 @@ def test_trim_to_budget_fits():
         assert trimmed == history
 
 
+def test_working_context_usage_marks_seventy_percent_watermark():
+    history = [{"role": "user", "content": "word " * 20000}]
+
+    usage = conversation.working_context_usage(history, "gemma4:12b", "next request")
+
+    assert usage["limit"] == 16384
+    assert usage["watermark"] == 0.70
+    assert usage["watermark_reached"] is True
+    assert usage["used"] >= int(16384 * 0.70)
+
+
+def test_working_context_usage_stays_below_watermark_for_small_prompt():
+    usage = conversation.working_context_usage(
+        [{"role": "user", "content": "short"}], "gemma4:12b", "next request"
+    )
+
+    assert usage["watermark_reached"] is False
+    assert usage["pct"] < 70.0
+
+
+def test_compaction_policy_has_70_80_85_watermarks(monkeypatch):
+    from store import conversation
+
+    monkeypatch.setattr(conversation, "MODEL_SPECS", {"test": (1000, 10)})
+    monkeypatch.setattr(conversation, "_tok", lambda value: len(value))
+    history = [{"role": "user", "content": "x" * 550}]
+    assert conversation.compaction_policy(history, "test") == "emergency"
+    assert conversation.compaction_policy([{"role": "user", "content": "x" * 500}], "test") == "reduce_tool_output"
+    assert conversation.compaction_policy([{"role": "user", "content": "x" * 400}], "test") == "queue_compaction"
+
+
 def test_trim_to_budget_never_sends_more_than_recent_window_plus_summary():
     # 13 turns: 3 older + 10 recent (KEEP_RECENT_TURNS=10). No summary has been
     # folded (no chat_id passed / nothing cached), so only the recent window
@@ -221,7 +252,7 @@ def test_compaction_uses_dedicated_summary_model(mock_call):
         role = "user" if i % 2 == 0 else "assistant"
         conversation.append(chat_id, role, f"Message turn {i} containing some content")
 
-    conversation.compact_old_turns(chat_id, "gemma4:12b-mlx")
+    conversation.compact_old_turns(chat_id, "gemma4:12b")
     time.sleep(0.2)
 
     assert mock_call.called

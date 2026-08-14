@@ -25,7 +25,7 @@ def _resolve_pdf_path(path_str: str) -> Path:
 
 
 def pdf_to_markdown(pdf_path: str, output_dir: str | None = None) -> tuple[str, str]:
-    """Convert a PDF file to a markdown document.
+    """Convert a PDF file to a markdown document via anydoc (MIT, pdf-inspector backend).
 
     Args:
         pdf_path: Absolute or relative path to the source PDF file.
@@ -38,7 +38,8 @@ def pdf_to_markdown(pdf_path: str, output_dir: str | None = None) -> tuple[str, 
     Raises:
         FileNotFoundError: If the PDF does not exist.
     """
-    raise RuntimeError(_FITZ_REMOVED_MSG)
+    import anydoc
+
     p = Path(pdf_path)
     if not p.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
@@ -46,15 +47,7 @@ def pdf_to_markdown(pdf_path: str, output_dir: str | None = None) -> tuple[str, 
     out_dir = Path(output_dir) if output_dir is not None else p.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    with fitz.open(str(p)) as doc:
-        md_parts: list[str] = [f"# {p.stem}\n"]
-
-        for page_num, page in enumerate(doc, start=1):
-            text = page.get_text("text").strip()
-            if text:
-                md_parts.append(f"\n## Page {page_num}\n\n{text}")
-
-    md_content = "\n".join(md_parts)
+    md_content = anydoc.to_markdown(str(p))
     md_file = out_dir / f"{p.stem}.md"
     md_file.write_text(md_content, encoding="utf-8")
 

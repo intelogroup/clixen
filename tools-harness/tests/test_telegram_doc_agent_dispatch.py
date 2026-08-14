@@ -66,7 +66,7 @@ def test_local_chat_dispatches_local_model_to_ollama_only():
 
     with patch.object(harness.cloud_client, "chat") as mock_cloud, \
          patch.object(harness.ollama_client, "chat", return_value="ok") as mock_local:
-        result = harness.local_chat(user_message="hi", model="gemma4:12b-mlx", tools=[])
+        result = harness.local_chat(user_message="hi", model="gemma4:12b", tools=[])
 
     assert result == "ok"
     mock_local.assert_called_once()

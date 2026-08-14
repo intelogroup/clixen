@@ -6,7 +6,8 @@ This avoids overloading qwen3.5:4b which fails with 75+ tools.
 
 task="document"     → core tools only (filesystem + doc creation) — fastest, smallest prompt
 task="code"         → core + code tools (grep, file_tree, parse_code, edit_file_fuzzy, etc.)
-task="full" (default) → core + form + code tools — everything
+task="full" (default) → core + form + code tools
+task="browser"      → full + browser nav primitives (only when browser use is expected)
 """
 
 from tools.registry import ALL_TOOLS, tools_with_tags
@@ -28,11 +29,11 @@ _BROWSER_NAV_TOOL_NAMES = {
     "browser_load_session",
 }
 
-_LOCAL_AGENT_TOOL_NAMES = _CORE_TOOL_NAMES | _FORM_TOOL_NAMES | _CODE_TOOL_NAMES | _BROWSER_NAV_TOOL_NAMES
+_LOCAL_AGENT_TOOL_NAMES = _CORE_TOOL_NAMES | _FORM_TOOL_NAMES | _CODE_TOOL_NAMES
 
 # append_file/undo_last_edit are tagged "code" but are just as needed for safe
 # document edits (undo_last_edit pairs with edit_file, which document mode already has).
-_DOCUMENT_EXTRA_TOOL_NAMES = {"append_file", "undo_last_edit"}
+_DOCUMENT_EXTRA_TOOL_NAMES = {"append_file", "undo_last_edit", "document_scratchpad"}
 
 
 def _tool_names_for(task: str) -> set[str]:
@@ -40,6 +41,8 @@ def _tool_names_for(task: str) -> set[str]:
         return _CORE_TOOL_NAMES | _DOCUMENT_EXTRA_TOOL_NAMES
     if task == "code":
         return _CORE_TOOL_NAMES | _CODE_TOOL_NAMES
+    if task == "browser":
+        return _LOCAL_AGENT_TOOL_NAMES | _BROWSER_NAV_TOOL_NAMES
     return _LOCAL_AGENT_TOOL_NAMES
 
 

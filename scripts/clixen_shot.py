@@ -188,7 +188,7 @@ def main():
     parser.add_argument(
         "--model",
         default="",
-        help="Optional model override (e.g. gemma4:12b-mlx)."
+        help="Optional model override (e.g. gemma4:12b)."
     )
     parser.add_argument(
         "--web-search",

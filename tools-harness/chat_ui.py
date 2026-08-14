@@ -116,19 +116,6 @@ class ApprovalCreateRequest(BaseModel):
     expires_at: Optional[str] = None
 
 
-class FSWrite(BaseModel):
-    path: str
-    content: str
-
-
-class FSRun(BaseModel):
-    path: str
-
-
-class IdeIndexRequest(BaseModel):
-    path: str
-
-
 class TaskDispatchRequest(BaseModel):
     task_name: str
     params: dict = {}
@@ -1141,7 +1128,37 @@ async def upload(
         chat_id=chat_id,
         bucket=bucket,
     )
-    return {"id": file_id, "name": original_name, "mime": mime, "size": len(content)}
+    # Index the uploaded file's containing bucket asynchronously. Retrieval
+    # remains usable even if an optional index backend is unavailable.
+    def _index_upload() -> None:
+        from tools.document_manifest import mark_indexed, needs_index
+        from tools.document_index_queue import complete, enqueue
+        if not needs_index(stored_path):
+            _log.info("[upload] document already indexed: %s", original_name)
+            return
+        job_id = enqueue(stored_path, workspace=str(dest_dir))
+        succeeded = False
+        try:
+            from tools.fulltext_search import index_directory_fts
+            index_directory_fts(str(dest_dir), glob=f"*{ext}")
+        except Exception as exc:
+            _log.warning("[upload] full-text indexing failed for %s: %s", original_name, exc)
+        try:
+            from tools.semantic_files import index_directory
+            index_directory(str(dest_dir), glob=f"*{ext}", refresh=True)
+            succeeded = True
+        except Exception as exc:
+            _log.warning("[upload] semantic indexing failed for %s: %s", original_name, exc)
+        try:
+            mark_indexed(stored_path)
+        except Exception as exc:
+            _log.warning("[upload] manifest update failed for %s: %s", original_name, exc)
+        finally:
+            if job_id is not None:
+                complete(job_id, success=succeeded)
+
+    threading.Thread(target=_index_upload, daemon=True).start()
+    return {"id": file_id, "name": original_name, "mime": mime, "size": len(content), "indexing": "started"}
 
 
 def _make_preamble_filter():
@@ -1473,6 +1490,91 @@ def list_files(chat_id: str, request: Request):
     return upload_store.list_for_chat(chat_id)
 
 
+@app.get("/api/documents")
+def list_documents(request: Request, chat_id: str = "web_ui"):
+    """List locally imported documents for the desktop document workspace."""
+    _require_auth(request)
+    return {"documents": upload_store.list_for_chat(chat_id)}
+
+
+@app.get("/api/documents/search")
+def search_documents(request: Request, query: str = "", chat_id: str = "web_ui"):
+    """Retrieve bounded local evidence for the desktop document workspace."""
+    _require_auth(request)
+    if not query.strip():
+        raise HTTPException(400, "query required")
+    records = upload_store.list_for_chat(chat_id)
+    paths = [Path(record["stored_path"]) for record in records if Path(record["stored_path"]).is_file()]
+    if not paths:
+        return {"query": query, "evidence": []}
+    from tools.document_retrieve import document_retrieve
+    # Retrieval stays scoped to the upload bucket; the endpoint never accepts
+    # an arbitrary filesystem root from the browser.
+    evidence = []
+    # Query each exact uploaded path. Scanning its shared date bucket could
+    # expose another chat's file because uploads are physically bucketed by
+    # category/date, not by chat. Lexical mode also avoids unscoped global
+    # vector hits until the index gains document-level ownership metadata.
+    for path in paths:
+        raw = document_retrieve(
+            query,
+            str(path.parent),
+            path_glob=path.name,
+            limit=4,
+            search_mode="lexical",
+        )
+        try:
+            evidence.extend(json.loads(raw))
+        except (TypeError, json.JSONDecodeError):
+            continue
+    return {"query": query, "evidence": evidence[:8]}
+
+
+def _chat_document_path(chat_id: str, name: str) -> Path:
+    """Resolve a browser-selected upload without accepting an arbitrary path."""
+    for record in upload_store.list_for_chat(chat_id):
+        if record.get("original_name") == name:
+            target = Path(record["stored_path"]).expanduser().resolve()
+            if target.is_file():
+                return target
+    raise HTTPException(404, "document not found in this workspace")
+
+
+@app.get("/api/documents/versions")
+def document_versions(request: Request, name: str = "", chat_id: str = "web_ui"):
+    """Return private artifact history for a document owned by this workspace."""
+    _require_auth(request)
+    if not name.strip():
+        raise HTTPException(400, "name required")
+    target = _chat_document_path(chat_id, name)
+    from tools.document_output import list_versions
+    return {"name": name, "versions": list_versions(str(target))}
+
+
+@app.post("/api/documents/restore")
+async def request_document_restore(request: Request):
+    """Create an approval request for restoring a workspace document snapshot."""
+    _require_auth(request)
+    body = await request.json()
+    name = str(body.get("name") or "")
+    chat_id = str(body.get("chat_id") or "web_ui")
+    backup = str(body.get("backup") or "")
+    if not name.strip() or not backup.strip():
+        raise HTTPException(400, "name and backup required")
+    target = _chat_document_path(chat_id, name)
+    from tools.document_output import list_versions
+    versions = list_versions(str(target), limit=100)
+    if not any(str(row.get("backup")) == str(Path(backup).expanduser().resolve()) for row in versions):
+        raise HTTPException(400, "snapshot is not registered for this document")
+    from tools.confirmation import request_confirmation
+    token = request_confirmation(
+        "restore_document_version",
+        {"path": str(target), "backup": str(Path(backup).expanduser().resolve())},
+        f"restore_document_version(path={str(target)!r}, backup={backup!r})",
+    )
+    return {"token": token, "approved": False, "requires_approval": True}
+
+
 @app.delete("/file/{file_id}")
 def delete_file(file_id: str, request: Request):
     _require_auth(request)
@@ -1766,17 +1868,10 @@ def models_hot(request: Request):
 @app.get("/chat/context-usage")
 def chat_context_usage(chat_id: str, model: str = "deepseek/deepseek-v4-flash", request: Request = None):
     _require_auth(request)
-    from clients.router import MODEL_SPECS, _tok
+    from store.conversation import working_context_usage
 
     history = conv_get(chat_id) or []
-    used = sum(_tok(t.get("content", "")) for t in history)
-    limit, _reserved = MODEL_SPECS.get(model, (32768, 1024))
-    return {
-        "used": used,
-        "limit": limit,
-        "pct": round(min(used / limit, 1.0) * 100, 1),
-        "model": model,
-    }
+    return {"model": model, **working_context_usage(history, model)}
 
 
 @app.get("/health/ollama")
@@ -1920,125 +2015,6 @@ def reject_approval(approval_id: str, request: Request = None):
     return workflow_store.resolve_approval_request(approval_id, "rejected") or HTTPException(404)
 
 
-@app.get("/fs/git-branch")
-def fs_git_branch(path: str = "", request: Request = None):
-    _require_auth(request)
-    p = Path(path).expanduser().resolve() if path else Path.home()
-    try:
-        r = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=str(p),
-            timeout=5,
-        )
-        return {"branch": r.stdout.strip() if r.returncode == 0 else ""}
-    except Exception:
-        return {"branch": ""}
-
-
-@app.get("/fs/tree")
-def fs_tree(path: str = "", depth: int = 2, request: Request = None):
-    _require_auth(request)
-    from pathlib import Path as P
-
-    root = P(path).expanduser().resolve() if path else P.home()
-
-    def _walk(p: P, max_depth: int, cur_depth: int):
-        items = []
-        try:
-            entries = sorted(p.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
-        except (PermissionError, OSError):
-            return items
-        for e in entries:
-            if e.name.startswith(".") and e.name not in {".env", ".gitignore"}:
-                continue
-            if e.name in {
-                "__pycache__",
-                "node_modules",
-                ".git",
-                "venv",
-                ".venv",
-                "dist",
-                "build",
-                ".next",
-            }:
-                continue
-            item = {"name": e.name, "path": str(e), "type": "dir" if e.is_dir() else "file"}
-            if e.is_dir() and cur_depth < max_depth:
-                item["children"] = _walk(e, max_depth, cur_depth + 1)
-            items.append(item)
-        return items
-
-    return {"root": str(root), "items": _walk(root, depth, 0)}
-
-
-@app.get("/fs/read")
-def fs_read(path: str, request: Request = None):
-    _require_auth(request)
-    p = Path(path).expanduser().resolve()
-    try:
-        content = p.read_text(encoding="utf-8", errors="replace")
-        if len(content) > 200_000:
-            content = content[:200_000] + "\n...(truncated)"
-        return {"path": str(p), "content": content}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@app.post("/fs/write")
-def fs_write(body: FSWrite, request: Request = None):
-    _require_auth(request)
-    p = Path(body.path).expanduser().resolve()
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(body.content, encoding="utf-8")
-        return {"ok": True, "path": str(p)}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-@app.post("/fs/run")
-def fs_run(body: FSRun, request: Request = None):
-    _require_auth(request)
-    p = Path(body.path).expanduser().resolve()
-    try:
-        ext = p.suffix.lower()
-        if ext == ".py":
-            from tools.repl import run_python
-
-            output = run_python(p.read_text(errors="replace"), timeout=60)
-        else:
-            from tools.shell import bash_exec
-
-            cmd = (
-                f"bash {p}"
-                if ext in {".sh", ".bash"}
-                else (f"node {p}" if ext == ".js" else str(p))
-            )
-            output = bash_exec(cmd, cwd=str(p.parent), timeout=60)
-        return {"output": output}
-    except Exception as e:
-        return {"output": f"[error] {e}"}
-
-
-@app.post("/ide/index")
-async def ide_index(req: IdeIndexRequest, request: Request = None):
-    _require_auth(request)
-    root = req.path.strip()
-
-    def _run():
-        try:
-            from tools.semantic_files import index_directory
-
-            index_directory(root)
-        except Exception:
-            pass
-
-    threading.Thread(target=_run, daemon=True).start()
-    return {"status": "indexing", "path": root}
-
-
 @app.get("/automations")
 async def get_automation_catalog(request: Request = None):
     _require_auth(request)
@@ -2132,6 +2108,13 @@ async def run_workflow_now(workflow_id: str, request: Request = None):
     _require_auth(request)
     workflow_store.init()
     return workflow_store.trigger_workflow_instance(workflow_id) or HTTPException(404)
+
+
+@app.delete("/workflows/{workflow_id}")
+async def delete_workflow(workflow_id: str, request: Request = None):
+    _require_auth(request)
+    workflow_store.init()
+    return {"deleted": workflow_store.delete_workflow_instance(workflow_id)}
 
 
 @app.post("/tasks/dispatch")

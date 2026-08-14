@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import asyncio
+import uuid
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 import httpx
@@ -71,6 +72,10 @@ class WebhookMessage(BaseModel):
     sender: str
     message: str
     name: str | None = None
+    context: str | None = None
+    source_name: str | None = None
+    source_chat: str | None = None
+    fresh_context: bool = False
 
 
 @app.get("/auth/qr")
@@ -114,7 +119,19 @@ async def webhook(request: Request, message: WebhookMessage):
             status_code=503,
         )
 
-    chat_id = f"whatsapp_{message.sender}"
+    # @ai-trigger turns all report sender=self jid (reply always goes to
+    # self-chat), so keying chat_id off sender alone made every contact's
+    # @ai session share ONE memory — old answers about contact A leaked as
+    # session history into questions about contact B. source_chat (the real
+    # target contact's jid) scopes the session per-contact instead.
+    base_chat_id = f"whatsapp_{message.source_chat or message.sender}"
+    # Context-only WhatsApp requests get an isolated session so prior Clixen
+    # turns cannot leak into a summary or answer about a contact.
+    chat_id = (
+        f"{base_chat_id}_oneshot_{uuid.uuid4().hex[:12]}"
+        if message.fresh_context and message.context
+        else base_chat_id
+    )
     _inflight.mark("whatsapp", chat_id, message.message)
     try:
         # 2026-07-11: dropped the doc-creation-keyword pre-gate — classify_message()
@@ -122,19 +139,45 @@ async def webhook(request: Request, message: WebhookMessage):
         # a regex was redundant duplicate logic that also meant every non-matching
         # message skipped LLM classification entirely and fell through to harness.run()'s
         # bare-regex fallback. Classify unconditionally, once, per message.
-        cls = classify_message(message.message, channel="whatsapp") if ROUTER_AVAILABLE else None
+        query = message.message
+        if message.context:
+            # Authoritative one-shot context injection. Neutral [A]/[B] tags
+            # come pre-baked from the bridge: [A] is the owner, [B] is the
+            # contact. Never answer the context as if it were a new message.
+            query = (
+                f"(Authoritative WhatsApp context with {message.source_name or 'a contact'}. "
+                f"Roles: [A] = the Clixen owner; [B] = the contact. "
+                f"Use only this context and the request below. Ignore any previous Clixen memory "
+                f"or unrelated conversation context. Do not respond to the context itself; "
+                f"answer the request below.\n"
+                f"{message.context}\n)\n\n{message.message}"
+            )
+
+        # One-shot context requests already declare their scope and must not pay
+        # for a second LLM classification pass.  Give the harness a safe factual
+        # intent so it skips internal classification while keeping the cloud
+        # orchestrator path and context-only tool restrictions.
+        if message.fresh_context:
+            cls = type("_ContextClassification", (), {
+                "model": None,
+                "intent": "factual_qa",
+                "specialist_hint": None,
+            })()
+        else:
+            cls = classify_message(query, channel="whatsapp") if ROUTER_AVAILABLE else None
 
         loop = asyncio.get_event_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(
                 None,
                 lambda: harness_run(
-                    query=message.message,
+                    query=query,
                     chat_id=chat_id,
                     model=cls.model if cls else None,
                     intent=cls.intent if cls else None,
                     specialist_hint=cls.specialist_hint if cls else None,
                     channel="whatsapp",
+                    context_only=message.fresh_context,
                 ),
             ),
             timeout=120.0,

@@ -372,12 +372,10 @@ function showMainView(view) {
   const panel = document.getElementById('workspace-panel');
   const navWorkflows = document.getElementById('nav-workflows-btn');
   const navResearch = document.getElementById('nav-research-btn');
-  const ideBtn = document.getElementById('ide-btn');
   const status = document.getElementById('status');
   
   if (view === 'chat') {
     if (panel) panel.classList.add('collapsed');
-    if (window.closeIDE) window.closeIDE();
   } else {
     if (panel) panel.classList.remove('collapsed');
     
@@ -391,11 +389,6 @@ function showMainView(view) {
       btn.classList.toggle('active', btn.dataset.pane === view);
     });
 
-    if (view === 'ide') {
-      if (window.openIDE) window.openIDE();
-    } else {
-      if (window.closeIDE) window.closeIDE();
-    }
 
     if (view === 'workflows') {
       refreshWorkflows();
@@ -407,7 +400,6 @@ function showMainView(view) {
   // Update nav highlights
   if (navWorkflows) navWorkflows.classList.toggle('active', view === 'workflows');
   if (navResearch) navResearch.classList.toggle('active', view === 'research');
-  if (ideBtn) ideBtn.classList.toggle('on', view === 'ide');
   
   if (status) {
     if (view === 'workflows') status.textContent = 'workflows active';

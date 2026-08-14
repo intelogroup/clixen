@@ -49,6 +49,15 @@ SCHEMA = {
     },
 }
 
+LIST_CONTACTS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "list_whatsapp_contacts",
+        "description": "List contacts known to the connected WhatsApp bridge. Returns names, WhatsApp JIDs, and last-seen timestamps, without message contents.",
+        "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+}
+
 
 def execute(to: str, message: str) -> str:
     """Send a WhatsApp message via the bridge."""
@@ -87,3 +96,20 @@ def execute(to: str, message: str) -> str:
     except Exception as e:
         log.error("whatsapp send failed: %s", e, exc_info=True)
         return f"[whatsapp] send failed: {e}"
+
+
+def list_contacts() -> str:
+    """Return the contacts currently known by the WhatsApp bridge."""
+    try:
+        with urllib.request.urlopen(f"{_BRIDGE_URL}/contacts", timeout=_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode())
+            return json.dumps(data, ensure_ascii=False)
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read().decode())
+            error = body.get("error", str(e))
+        except Exception:
+            error = str(e)
+        return f"[whatsapp] contacts failed: {error}"
+    except Exception as e:
+        return f"[whatsapp] contacts failed: {e}"

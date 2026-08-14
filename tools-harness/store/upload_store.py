@@ -267,6 +267,19 @@ def delete(file_id: str) -> None:
     rec = get(file_id)
     if not rec:
         return
+    # Keep the upload endpoint's deletion semantics aligned with the document
+    # lifecycle tool: source removal must not leave private derived state.
+    try:
+        from tools.document_lifecycle import _remove_derived
+        _remove_derived(Path(rec["stored_path"]).expanduser().resolve())
+        from tools.document_manifest import purge
+        purge(rec["stored_path"])
+        from tools.document_output import delete_versions
+        delete_versions(rec["stored_path"])
+        from tools.document_index_queue import forget_path
+        forget_path(rec["stored_path"])
+    except Exception:
+        log.warning("derived document cleanup failed for %s", rec.get("stored_path", "?"), exc_info=True)
     try:
         Path(rec["stored_path"]).unlink(missing_ok=True)
     except Exception:

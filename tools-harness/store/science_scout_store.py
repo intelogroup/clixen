@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS niche_perf (
     last_scan     TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS query_usage (
+    query       TEXT PRIMARY KEY,
+    last_scan   INTEGER NOT NULL,
+    uses        INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS raw_papers (
     id            TEXT PRIMARY KEY,   -- url (arxiv/pubmed/journal link)
     niche         TEXT NOT NULL,
@@ -109,6 +115,113 @@ def _now() -> str:
 def content_hash(title: str, url: str) -> str:
     normalized = (title.strip() + "\n" + url.strip()).lower()
     return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def select_query_batch(queries: list[str], scan_number: int, count: int = 3,
+                       cooldown_scans: int = 5) -> list[str]:
+    """Reserve a fresh query batch, avoiding recently used queries.
+
+    Selection is transactional so overlapping scout workers cannot reserve the
+    same query batch. Never repeats a query inside the cooldown when enough
+    candidates exist; oldest queries are the fallback when the pool is small.
+    """
+    pool = []
+    seen = set()
+    for query in queries:
+        clean = " ".join(str(query or "").split())
+        key = clean.casefold()
+        if clean and key not in seen:
+            seen.add(key)
+            pool.append(clean)
+    if not pool:
+        return []
+
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        retired = {
+            str(row["value"]).casefold()
+            for row in conn.execute("SELECT value FROM meta WHERE key LIKE 'retired_query:%'")
+        }
+        pool = [q for q in pool if q.casefold() not in retired]
+        if not pool:
+            return []
+        usage = {
+            row["query"].casefold(): dict(row)
+            for row in conn.execute("SELECT query, last_scan, uses FROM query_usage")
+        }
+        eligible = [
+            q for q in pool
+            if q.casefold() not in usage
+            or scan_number - usage[q.casefold()]["last_scan"] >= cooldown_scans
+        ]
+        eligible.sort(key=lambda q: (
+            usage.get(q.casefold(), {}).get("uses", 0),
+            usage.get(q.casefold(), {}).get("last_scan", -1),
+        ))
+        selected = eligible[:count]
+        if len(selected) < min(count, len(pool)):
+            remaining = [q for q in pool if q not in selected]
+            remaining.sort(key=lambda q: usage.get(q.casefold(), {}).get("last_scan", -1))
+            selected.extend(remaining[:count - len(selected)])
+        for query in selected:
+            conn.execute(
+                "INSERT INTO query_usage(query, last_scan, uses) VALUES (?, ?, 1) "
+                "ON CONFLICT(query) DO UPDATE SET last_scan=excluded.last_scan, uses=uses+1",
+                (query, scan_number),
+            )
+        return selected
+
+
+def recent_query_usage(limit: int = 30) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT query, last_scan, uses FROM query_usage ORDER BY last_scan DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def add_discovered_queries(queries: list[str], limit: int = 5000) -> list[str]:
+    """Persist planner output without replacing existing candidates."""
+    limit = max(100, min(limit, 5000))
+    current = get_config("discovered_queries", [])
+    merged = []
+    seen = set()
+    for query in list(queries) + list(current):
+        clean = " ".join(str(query or "").split())
+        key = clean.casefold()
+        if clean and key not in seen:
+            seen.add(key)
+            merged.append(clean)
+    merged = merged[:limit]
+    set_config("discovered_queries", merged)
+    return merged
+
+
+def discovered_queries() -> list[str]:
+    return get_config("discovered_queries", [])
+
+
+def retire_queries(queries: list[str]) -> None:
+    for query in queries:
+        clean = " ".join(str(query or "").split())
+        if clean:
+            set_meta("retired_query:" + hashlib.sha256(clean.casefold().encode()).hexdigest()[:16], clean)
+
+
+def query_performance(limit: int = 200) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT u.query, u.last_scan, u.uses,
+                      COALESCE(n.scans, 0) AS scans,
+                      COALESCE(n.hits, 0) AS hits,
+                      COALESCE(n.misses, 0) AS misses,
+                      COALESCE(CAST(n.hits AS REAL) / MAX(n.hits + n.misses, 1), 0) AS hit_rate
+               FROM query_usage u LEFT JOIN niche_perf n ON n.niche = u.query
+               ORDER BY u.last_scan DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
 
 # ── raw_papers ───────────────────────────────────────────────────────────
@@ -257,6 +370,16 @@ def get_config(key: str, default):
 
 def set_config(key: str, value) -> None:
     set_meta(_CONFIG_PREFIX + key, json.dumps(value))
+
+
+def active_claims_fingerprint() -> str:
+    """Stable version of the active claim set for idempotent reports."""
+    claims = list_active_claims(limit=10000)
+    material = [
+        (c["id"], c["evidence_count"], c["evidence_level"], c["status"])
+        for c in claims
+    ]
+    return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 
 # ── suppressed_alerts (persisted so the audit can review what got buried) ──

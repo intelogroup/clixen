@@ -57,7 +57,7 @@ def test_all_hardcoded_models_exist_in_openrouter_catalog():
         catalog = {m["id"] for m in json.load(resp).get("data", [])}
 
     # Code strings carry the "openrouter/" provider alias; the catalog uses canonical
-    # ids ("google/..."). Local Ollama names ("gemma4:12b-mlx") are never in the
+    # ids ("google/..."). Local Ollama names ("gemma4:12b") are never in the
     # catalog and have no "/" route form — exclude them.
     route_models = {s for s in _hardcoded_model_strings() if "/" in s}
     normalized = {s.removeprefix("openrouter/") for s in route_models}

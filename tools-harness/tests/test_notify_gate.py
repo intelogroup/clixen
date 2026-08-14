@@ -79,6 +79,16 @@ def test_call_phone_true_places_call(notified, monkeypatch):
     assert len(calls) == 1
 
 
+def test_call_phone_translates_before_ringback_tts(monkeypatch):
+    spoken = []
+    monkeypatch.setattr(notify_gate, "_translate_for_phone", lambda text: "Bonjour, découverte importante.")
+    monkeypatch.setattr("tools.connector_ringback.call_my_phone", lambda message: spoken.append(message) or "[ringback ok]")
+
+    notify_gate._call_linphone("Important finding")
+
+    assert spoken == ["Bonjour, découverte importante."]
+
+
 def test_bypass_gate_skips_llm_and_uses_fallback(notified, monkeypatch):
     def boom(**kw):
         raise AssertionError("chat() should not be called when bypass_gate=True")

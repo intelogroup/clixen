@@ -69,7 +69,7 @@ def test_orchestrator_falls_back_from_local_model(monkeypatch):
     res, model, mode = m.run(
         query="summarize my inbox",
         chat_id="123456789",
-        model="gemma4:12b-mlx",
+        model="gemma4:12b",
     )
 
     assert mode == "orchestrator"
@@ -99,7 +99,7 @@ def test_orchestrator_bypassed_with_direct_tools(monkeypatch):
     from clients import router as _router
     from clients import cloud_client
     monkeypatch.setattr(m, "_guard_check", lambda q, has_history=False: None)
-    monkeypatch.setattr(_router, "classify_message", lambda q, channel="web", history=None: Classification(model="gemma4:12b-mlx", intent="casual", specialist_hint=None, source="test"))
+    monkeypatch.setattr(_router, "classify_message", lambda q, channel="web", history=None: Classification(model="gemma4:12b", intent="casual", specialist_hint=None, source="test"))
     chat_mock = _Recorder("Direct tools response")
     monkeypatch.setattr(cloud_client, "chat", chat_mock)
 

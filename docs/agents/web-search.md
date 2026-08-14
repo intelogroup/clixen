@@ -12,7 +12,7 @@ Backend: SearXNG self-hosted in Docker (`docker run -d --name searxng -p 8888:80
 Parallel search: SearXNG (70+ engines, Google included) + DDG run simultaneously, merged and deduplicated.
 No API keys required. DDG adds ~20-30% unique results per query, enriching the reranker.
 
-Summarizer: `gemma4:12b-mlx` (primary; `gemma4:e2b` is warmed but not primary — see CLAUDE.md model roster).
+Summarizer: `gemma4:12b` (primary; `gemma4:e2b` is warmed but not primary — see CLAUDE.md model roster).
 Format hints auto-detected: explain/compare/list/multi/benefits.
 
 See the root CLAUDE.md "Web Search Architecture" section for the current pipeline flow, Chinese-query branch, and bug-fix history — that section is kept in the always-loaded file since web search is touched often.

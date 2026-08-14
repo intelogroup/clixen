@@ -39,13 +39,19 @@ def _parse_titles(raw: str) -> list[str]:
     <dashes>
     <uuid> pattern 0.85 clixen  Some title...
       Narrative: long text
-    We only want the titles — narratives are too verbose for a system prompt.
+    The TITLE column is truncated with "..." by the CLI itself, but the
+    Narrative line below it is not — use the narrative's first sentence
+    instead so the injected lesson isn't a garbled mid-word fragment.
     """
     titles = []
     for line in raw.splitlines():
         if not line.strip() or line.startswith("ID ") or set(line.strip()) == {"-"}:
             continue
         if line.startswith("  Narrative:"):
+            narrative = line.split("Narrative:", 1)[1].strip()
+            first_sentence = narrative.split(". ", 1)[0].rstrip(".")
+            if titles and first_sentence:
+                titles[-1] = first_sentence
             continue
         parts = line.split(None, 4)
         if len(parts) == 5:

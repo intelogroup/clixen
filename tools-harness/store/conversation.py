@@ -22,8 +22,9 @@ import json
 import logging
 import re
 import threading
+import queue
 from pathlib import Path
-from clients.router import available_history_tokens, _tok
+from clients.router import MODEL_SPECS, available_history_tokens, _tok
 
 log = logging.getLogger(__name__)
 
@@ -113,6 +114,49 @@ def get_lock(chat_id: str) -> threading.Lock:
 # (a dangling assistant reply with no paired question ahead of it).
 KEEP_RECENT_TURNS = 10  # last 5 exchanges (5 user + 5 assistant turns)
 
+# Watermark for the *working* prompt. This is separate from the durable raw
+# history and from the hard trim budget below. Rolling summaries may start
+# earlier (after KEEP_RECENT_TURNS) so short conversations never lose context.
+WORKING_CONTEXT_COMPACTION_RATIO = 0.70
+WORKING_CONTEXT_REDUCE_OUTPUT_RATIO = 0.80
+WORKING_CONTEXT_EMERGENCY_RATIO = 0.85
+_WORKING_CONTEXT_SYSTEM_TOKENS = 300
+
+
+def working_context_usage(
+    history: list[dict], model: str, current_message: str = ""
+) -> dict[str, int | float | bool]:
+    """Estimate the context currently occupied by a model working prompt.
+
+    The result is intentionally an estimate: tokenization belongs to Ollama.
+    It is used as a watermark/telemetry signal, while ``trim_to_budget`` remains
+    the hard safety boundary that decides what is actually sent.
+    """
+    limit, _reserved = MODEL_SPECS.get(model, (32768, 1024))
+    used = _WORKING_CONTEXT_SYSTEM_TOKENS
+    used += sum(_tok(t.get("content", "")) for t in history or [])
+    used += _tok(current_message or "")
+    return {
+        "used": used,
+        "limit": limit,
+        "pct": round(min(used / limit, 1.0) * 100, 1),
+        "watermark": WORKING_CONTEXT_COMPACTION_RATIO,
+        "watermark_reached": used >= int(limit * WORKING_CONTEXT_COMPACTION_RATIO),
+    }
+
+
+def compaction_policy(history: list[dict], model: str, current_message: str = "") -> str:
+    """Return the deterministic action for the current working-context watermark."""
+    usage = working_context_usage(history, model, current_message)
+    pct = float(usage["pct"]) / 100
+    if pct >= WORKING_CONTEXT_EMERGENCY_RATIO:
+        return "emergency"
+    if pct >= WORKING_CONTEXT_REDUCE_OUTPUT_RATIO:
+        return "reduce_tool_output"
+    if pct >= WORKING_CONTEXT_COMPACTION_RATIO:
+        return "queue_compaction"
+    return "none"
+
 
 def get(chat_id: str) -> list[dict]:
     """Return current history for chat_id; loads from disk on first access.
@@ -154,6 +198,45 @@ def _rolling_summary_turn(chat_id: str) -> dict | None:
     }
 
 
+_ERROR_MARKERS = (
+    re.compile(r"error:", re.IGNORECASE),
+    re.compile(r"failed:", re.IGNORECASE),
+    re.compile(r"traceback \(most recent call last\)", re.IGNORECASE),
+    re.compile(r"assertionerror", re.IGNORECASE),
+    re.compile(r"exception:", re.IGNORECASE),
+)
+
+
+def compress_tool_output(text: str, max_chars: int = 400, max_tail_lines: int = 12) -> str:
+    """Shrink verbose tool output (logs, stack traces, search dumps) instead of a
+    blind head/tail char slice. Ported from atomic-agent's result-compressor.ts:
+    keep the last max_tail_lines non-blank lines, PLUS the first line matching a
+    known error marker (if any) prepended as a signature — a flat [:max_chars]
+    slice cuts off exactly the "key: <the actual error>" line most of the time,
+    since errors/tracebacks put the useful part first, not last."""
+    normalised = text.replace("\r\n", "\n").rstrip()
+    if len(normalised) <= max_chars:
+        return normalised
+
+    lines = [l for l in normalised.split("\n") if l.strip()]
+    signature = ""
+    for line in lines:
+        if any(p.search(line) for p in _ERROR_MARKERS):
+            signature = f"key: {line.strip()[:180]}"
+            break
+
+    if len(lines) <= max_tail_lines:
+        tail = "\n".join(lines)
+    else:
+        omitted = len(lines) - max_tail_lines
+        tail = f"… [omitted {omitted} lines]\n" + "\n".join(lines[-max_tail_lines:])
+
+    joined = "\n".join(p for p in (signature, tail) if p)
+    if len(joined) > max_chars:
+        joined = joined[: max_chars - 15] + "\n… [truncated]"
+    return joined
+
+
 def trim_to_budget(
     history: list[dict], model: str, current_message: str, chat_id: str = None,
     keep_recent: int = KEEP_RECENT_TURNS,
@@ -184,7 +267,7 @@ def trim_to_budget(
         is_tool = (turn.get("role") == "tool" or turn.get("role") == "function" or turn.get("name") is not None)
         is_old_in_window = idx < len(raw_recent) - 2
         if is_tool and is_old_in_window and len(turn.get("content", "")) > 400:
-            compacted_content = turn["content"][:400] + "\n... [Output truncated by context micro-compaction] ..."
+            compacted_content = compress_tool_output(turn["content"])
             compacted_turn = turn.copy()
             compacted_turn["content"] = compacted_content
             recent.append(compacted_turn)
@@ -268,6 +351,12 @@ _summary_cache.update(_load_summary_cache())
 # new_slice picks up whatever the skipped call would have folded, so nothing
 # is permanently lost, just deferred to the next turn.
 _folding_in_progress: set[str] = set()
+_compact_jobs: dict[str, str] = {}
+_compact_queue: queue.Queue[str] = queue.Queue()
+_compact_worker_started = False
+_compact_worker_lock = threading.Lock()
+_summary_persist_queue: queue.Queue[tuple[str, str]] = queue.Queue()
+_summary_persist_started = False
 
 
 _FOLD_MODEL = "openrouter/google/gemini-2.5-flash-lite"
@@ -483,13 +572,14 @@ def _fold_new_turns_into_summary(cid: str, prior_summary: str | None, new_slice:
             _summary_cache[cid] = {"summary": summary, "compacted_through": compacted_through}
             _save_summary_cache()
             _folding_in_progress.discard(cid)
-        _save_to_session_memory(cid, summary)
+        _start_summary_persist_worker()
+        _summary_persist_queue.put((cid, summary))
     finally:
         with _summary_lock:
             _folding_in_progress.discard(cid)
 
 
-def compact_old_turns(chat_id: str, model: str) -> None:
+def compact_old_turns(chat_id: str, model: str, current_message: str = "") -> None:
     """
     Fold any turns that have slid out of the recent KEEP_RECENT_TURNS window
     into the chat's rolling summary. Called after every turn (same call sites
@@ -501,6 +591,7 @@ def compact_old_turns(chat_id: str, model: str) -> None:
     cid = str(chat_id)
     with _cache_lock:
         history = _store.get(cid, [])
+    policy = compaction_policy(history, model, current_message)
     older = history[:-KEEP_RECENT_TURNS] if len(history) > KEEP_RECENT_TURNS else []
     if not older:
         return
@@ -510,20 +601,80 @@ def compact_old_turns(chat_id: str, model: str) -> None:
         new_slice = older[cached["compacted_through"]:]
         if not new_slice:
             return
-        if cid in _folding_in_progress:
-            # A fold for this chat is already running. Don't spawn a second
-            # one — two overlapping folds can finish out of order and the
-            # slower one clobbers the faster one's newer state (compacted_through
-            # regresses, silently re-processing/losing turns). Skip; the next
-            # call's new_slice will include whatever this one would have folded.
+        if cid in _compact_jobs:
+            # The worker will observe the newest history after this job.
             return
-        _folding_in_progress.add(cid)
+        _compact_jobs[cid] = model
+    if policy == "emergency":
+        # At 85% the next prompt must not wait behind the daemon queue.
+        with _summary_lock:
+            cached = _summary_cache.get(cid, {"summary": None, "compacted_through": 0})
+        _fold_new_turns_into_summary(cid, cached.get("summary"), new_slice, len(older))
+        with _summary_lock:
+            _compact_jobs.pop(cid, None)
+        return
+    _start_compaction_worker()
+    _compact_queue.put(cid)
 
-    threading.Thread(
-        target=_fold_new_turns_into_summary,
-        args=(cid, cached["summary"], new_slice, len(older)),
-        daemon=True,
-    ).start()
+
+def _start_compaction_worker() -> None:
+    global _compact_worker_started
+    with _compact_worker_lock:
+        if _compact_worker_started:
+            return
+        _compact_worker_started = True
+        threading.Thread(target=_compaction_worker, name="conversation-compactor", daemon=True).start()
+
+
+def _start_summary_persist_worker() -> None:
+    global _summary_persist_started
+    with _compact_worker_lock:
+        if _summary_persist_started:
+            return
+        _summary_persist_started = True
+        threading.Thread(target=_summary_persist_worker, name="summary-persist", daemon=True).start()
+
+
+def _summary_persist_worker() -> None:
+    while True:
+        cid, summary = _summary_persist_queue.get()
+        try:
+            _save_to_session_memory(cid, summary)
+        except Exception:
+            log.exception("summary persistence failed for %s", cid)
+        finally:
+            _summary_persist_queue.task_done()
+
+
+def _compaction_worker() -> None:
+    while True:
+        cid = _compact_queue.get()
+        try:
+            with _summary_lock:
+                model = _compact_jobs.pop(cid, "gemma4:12b")
+                cached = _summary_cache.get(cid, {"summary": None, "compacted_through": 0})
+            with _cache_lock:
+                history = list(_store.get(cid, []))
+            older = history[:-KEEP_RECENT_TURNS] if len(history) > KEEP_RECENT_TURNS else []
+            new_slice = older[cached["compacted_through"]:]
+            if new_slice:
+                _fold_new_turns_into_summary(cid, cached["summary"], new_slice, len(older))
+            # A burst can add turns while the fold runs. Requeue exactly once;
+            # the next loop reads the latest compacted cursor.
+            with _summary_lock:
+                still_pending = cid in _compact_jobs
+                cached_now = _summary_cache.get(cid, {"compacted_through": 0})
+            with _cache_lock:
+                history_now = list(_store.get(cid, []))
+            older_now = history_now[:-KEEP_RECENT_TURNS] if len(history_now) > KEEP_RECENT_TURNS else []
+            if not still_pending and len(older_now) > cached_now.get("compacted_through", 0):
+                with _summary_lock:
+                    _compact_jobs[cid] = model
+                _compact_queue.put(cid)
+        except Exception:
+            log.exception("conversation compaction worker failed for %s", cid)
+        finally:
+            _compact_queue.task_done()
 
 
 def _save_to_session_memory(cid: str, summary: str) -> None:
@@ -581,8 +732,21 @@ def expire_old_raw(ttl_seconds: float = RAW_TTL_SECONDS) -> int:
             except OSError:
                 continue
             if age > ttl_seconds:
-                p.unlink(missing_ok=True)
-                deleted += 1
+                try:
+                    history = json.loads(p.read_text(encoding="utf-8"))
+                    if not isinstance(history, list):
+                        continue
+                    from store.transcript_archive import archive_raw_session
+                    # The filename is intentionally opaque, so recover the chat id
+                    # from the transcript only when callers supplied one. Legacy
+                    # files are still archived under their safe filename.
+                    archive_raw_session(p.stem, history)
+                    p.unlink(missing_ok=True)
+                    deleted += 1
+                except Exception:
+                    # Never destroy raw evidence when the encryption key/archive
+                    # is unavailable; the next retention pass can retry it.
+                    log.warning("could not archive expired raw session %s", p, exc_info=True)
         if deleted:
             log.info("expired %d raw session file(s) older than %.0fh", deleted, ttl_seconds / 3600)
     except Exception as e:

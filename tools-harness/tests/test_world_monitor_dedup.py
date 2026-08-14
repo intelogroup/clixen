@@ -66,3 +66,33 @@ def test_is_known_mark_notified_roundtrip(tmp_path, monkeypatch):
     # unrelated finding still unknown
     assert not store.is_known("Global simulations of neutron-star merger remnants reveal "
                               "Tayler-Spruit dynamo activation and magnetorotational instability.")
+
+
+def test_claim_notified_is_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "wm.db")
+    store.init()
+
+    assert store.claim_notified("Nuclear fusion milestone: NIF achieves record energy gain", "r", "monitor")
+    assert not store.claim_notified("Nuclear fusion milestone: NIF achieves record energy gain", "r", "monitor")
+
+
+def test_evolved_queries_rotate_with_cooldown(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "wm.db")
+    store.init()
+    store.add_evolved_queries(["all:alpha AND all:research", "all:beta AND all:research", "all:gamma AND all:research"])
+
+    first = store.reserve_evolved_queries(store.get_evolved_queries(), scan_number=1, count=2, cooldown_scans=6)
+    second = store.reserve_evolved_queries(store.get_evolved_queries(), scan_number=2, count=2, cooldown_scans=6)
+
+    assert len(first) == 2
+    assert second == ["all:gamma AND all:research"]
+    assert set(first).isdisjoint(second)
+    assert store.reserve_evolved_queries(store.get_evolved_queries(), scan_number=3, count=2, cooldown_scans=6) == []
+    assert set(store.reserve_evolved_queries(store.get_evolved_queries(), scan_number=7, count=2, cooldown_scans=6)) == set(first)
+
+
+def test_start_scan_is_persistent(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "wm.db")
+    store.init()
+    assert store.start_scan() == 1
+    assert store.start_scan() == 2

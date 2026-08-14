@@ -57,8 +57,8 @@ def test_python_version():
     result = sa.summarize_with_model(query, items, intent="tech", domain="code")
     
     print(f"\nRESULT: {result}")
-    print(f"PASS: {'3.14' in result and '3.13' not in result}")
-    return result
+    assert "3.14.2" in result, result
+    assert "latest stable release" in result.lower(), result
 
 def test_starship():
     """Test: does summarizer return 2026 date when in evidence?"""
@@ -93,8 +93,7 @@ def test_starship():
     result = sa.summarize_with_model(query, items, intent="recent", domain="news")
     
     print(f"\nRESULT: {result}")
-    print(f"PASS: {'2026' in result and 'March 2025' not in result}")
-    return result
+    assert "2026" in result and "March 2025" not in result, result
 
 def test_f1_race():
     """Test: does summarizer extract next F1 race from evidence?"""
@@ -129,24 +128,23 @@ def test_f1_race():
     result = sa.summarize_with_model(query, items, intent="recent", domain="sports")
     
     print(f"\nRESULT: {result}")
-    print(f"PASS: {'May 3' in result or 'Miami' in result}")
-    return result
+    assert "May 3" in result or "Miami" in result, result
 
 if __name__ == "__main__":
     print("SUMMARIZER DIRECT TEST")
     print("=" * 80)
     print("Testing if gemma4 uses ONLY evidence or falls back to training data\n")
     
-    r1 = test_python_version()
-    r2 = test_starship()
-    r3 = test_f1_race()
+    test_python_version()
+    test_starship()
+    test_f1_race()
     
     print("\n\n" + "=" * 80)
     print("SUMMARY")
     print("=" * 80)
-    print(f"Test 1 (Python): {'PASS' if '3.14' in r1 else 'FAIL'}")
-    print(f"Test 2 (Starship): {'PASS' if '2026' in r2 and 'March 2025' not in r2 else 'FAIL'}")
-    print(f"Test 3 (F1): {'PASS' if 'May 3' in r3 or 'Miami' in r3 else 'FAIL'}")
+    print("Test 1 (Python): PASS")
+    print("Test 2 (Starship): PASS")
+    print("Test 3 (F1): PASS")
 
 
 # Integration: requires real Ollama/network/creds/server — auto-skipped when deps down.

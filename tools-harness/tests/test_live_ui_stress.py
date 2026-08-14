@@ -16,7 +16,7 @@ sys.path.insert(0, parent_dir)
 DEV_EMAIL = os.environ.get("DEV_EMAIL", "t@t.com")
 DEV_PASSWORD = os.environ.get("DEV_PASSWORD", "G4LDemo12356$#*!")
 BASE_URL = "http://localhost:9234"
-MODEL = os.environ.get("STRESS_MODEL", "gemma4:12b-mlx")  # Target the primary loaded model
+MODEL = os.environ.get("STRESS_MODEL", "gemma4:12b")  # Target the primary loaded model
 PROMPT = "Explain the difference between deep learning and classical machine learning in 3 sentences."
 
 async def run_single_stream(client_id: int):

@@ -36,15 +36,7 @@ load_secrets()
 from tools.registry import ALL_TOOLS, PLAN_TOOLS, tools_with_tags, CURRENT_CHAT_ID
 from tools.forge_principles import FORGE_PRINCIPLES_BLOCK
 from clients import ollama_client, cloud_client
-from clients.router import classify_ide, classify_message, model_for_intent, reasoning_effort_for_intent, _SPORTS_RE
-
-# opencode-model switch: route "make opencode use <nemotron/model>" straight to the
-# deterministic config tool instead of the automation-agent loop (which used to hang).
-# Match requires an opencode/model context AND a nemotron/tron token — so a bare
-# "refactor the opencode tool" (no nemotron) or "what model are you" (no nemotron)
-# still routes normally, but "make opencode use nemotron" (no literal "model") is caught.
-_OPENCODE_MODEL_RE = re.compile(r"opencode|\bmodel\b", re.I)
-_OPENCODE_MODEL_TOKEN_RE = re.compile(r"nemotron|nemo[-\s]?tron|\btron\b|deepseek", re.I)
+from clients.router import classify_message, model_for_intent, reasoning_effort_for_intent, _SPORTS_RE
 
 
 MAX_ROUNDS = ollama_client.MAX_ROUNDS
@@ -393,21 +385,20 @@ Your subagent tools:
 14. `ask_sheets_agent(query)`: Create, read, list, append rows to, or update cells in Google Sheets.
 {deep_research_line}
 16. `ask_automation_agent(query)`: Create, list, pause, resume, delete, or trigger scheduled automations/workflows.
-17. `ask_dev_agent(query)`: Git operations (status, diff, log, add, commit, checkout, worktree) or REPL/window inspection (kernel vars, reset kernel, list windows, screenshot).
-18. `ask_messaging_agent(query)`: Search/send iMessage, search/send WhatsApp, search Slack, or set a reminder.
-19. `ask_research_agent(query)`: Structured/academic lookups (Wikipedia, Wikidata, Crossref, OpenAlex, OpenCorporates, SEC EDGAR, GDELT news), stealthy web scraping, SearXNG search, library docs, or live sports scores/standings via the Sofascore connector (sofascore_live_scores, sofascore_get_event, sofascore_get_standings, sofascore_search_teams, etc.). Use this over ask_web_search when the source needs to be authoritative/structured (a filing, a paper, a standings table, a match score) rather than a general web answer.
+17. `ask_messaging_agent(query)`: Search/send iMessage, search/send WhatsApp, search Slack, or set a reminder.
+18. `ask_research_agent(query)`: Structured/academic lookups (Wikipedia, Wikidata, Crossref, OpenAlex, OpenCorporates, SEC EDGAR, GDELT news), stealthy web scraping, SearXNG search, library docs, or live sports scores/standings via the Sofascore connector (sofascore_live_scores, sofascore_get_event, sofascore_get_standings, sofascore_search_teams, etc.). Use this over ask_web_search when the source needs to be authoritative/structured (a filing, a paper, a standings table, a match score) rather than a general web answer.
 20. `ask_vision_agent(query)`: Take a screenshot, list windows, run OCR, parse a document, update form fields visually, or search via Spotlight.
 21. `ask_utility_agent(query)`: System health status, geocode an address, generate a local image, or analyze/organize a cluttered directory.
 22. `ask_transport_agent(query)`: Real bus/transit ETAs, Uber ride time/price estimates, trip history — prefer over ask_web_search for these.
 23. `ask_youtube_agent(query)`: Search YouTube, or get a video transcript (falls back to local whisper if no captions) — prefer over ask_web_search for these.
-24. `ask_opencode(query)`: Independent coding-CLI agent with its own fs/git access — for multi-file refactors, cross-file bug investigation, writing tests, or any coding task big enough to benefit from a second agent working independently. Be specific: file paths, expected behavior, errors, constraints. (git status/diff/log or REPL/window inspection alone → ask_dev_agent.)
-25. `ask_x_agent(query)`: Search X posts, read a specific X post, or retrieve an account's recent posts using the configured twscrape account.
-26. `ask_fetch_url(url)`: Fetch a specific URL and return its readable text content. Use this to read the content behind links found in email results, search hits, or any URL the user mentions. Fast, no LLM overhead.
+24. `ask_x_agent(query)`: Search X posts, read a specific X post, or retrieve an account's recent posts using the configured twscrape account.
+25. `ask_fetch_url(url)`: Fetch a specific URL and return its readable text content. Use this to read the content behind links found in email results, search hits, or any URL the user mentions. Fast, no LLM overhead.
 
 CRITICAL INSTRUCTIONS:
 - User's home directory: {home_dir}. Resolve relative paths (~/Documents, /documents, downloads) to absolute paths under it before passing them to subagents.
 - For SIMPLE file operations choose the direct tool: ask_read_file, ask_write_file, ask_delete_file, ask_rename_file, or ask_run_command.
 - For COMPLEX multi-step or ambiguous operations (finding files, filling forms, searching) use ask_local_agent.
+- For specialized workflows, let the selected skill provide the detailed procedure and tool subset; do not reproduce domain-specific instructions in this coordinator prompt.
 {deep_research_critical}
 - If the user's query is a simple greeting, casual conversation, or doesn't require any actions/tools, answer them directly.
 - If the user's query is context-dependent (e.g., "Same for infochir", "what about the other one", "delete it"), resolve the pronouns and reference the conversation history to construct a completely self-contained query for the subagent tool.
@@ -559,7 +550,7 @@ def _run_impl(
     tts: bool = False,
     tts_voice: str = "af_heart",
     on_token=None,  # optional Callable[[str], None] for streaming tokens
-    project_root: str = None,  # IDE: opened folder path for full-project awareness
+    project_root: str = None,  # Scoped root for file/document work
     force_web_search: bool = False,  # UI web-search toggle: always inject web_search tool
     force_local_agent: bool = False,  # UI local-agent mode: force filesystem tools
     force_plan_mode: bool = False,  # UI Plan mode: read-only analysis
@@ -569,7 +560,7 @@ def _run_impl(
     manual_model_pick: bool = False,  # web UI "Models" dropdown: user chose this model by
     # hand, as opposed to it being an internal routing detail (Telegram/WhatsApp always pass
     # a concrete model string too, but that's classify_message()'s routing choice, not a
-    # user override — must not trip the "strip IDE-only tools" guard below).
+    # user override — must not trip the manual-model tool guard below).
     intent: str = None,  # pre-computed by clients.router.classify_message(); when given,
     # skips internal classification entirely (fixes callers like Telegram/WhatsApp
     # re-deriving intent from the same text they already classified).
@@ -579,6 +570,7 @@ def _run_impl(
     run_id: str = None,  # caller-supplied trace id (subagent envelope / golden queries);
     # None = generate one. Lets orchestrator_tools read this run's trace_store entries.
     channel: str = "web",  # "web"/"telegram"/"whatsapp" — passed to classify_message()
+    context_only: bool = False,  # WhatsApp: answer from supplied context without tool/agent hops
     # when this call has to classify internally (intent is None). Callers that already
     # ran classify_message() themselves (Telegram/WhatsApp) pass intent= instead and
     # this is unused for them.
@@ -605,7 +597,6 @@ def _run_impl(
     from tools import filesystem as _fs
     _fs.set_project_root(project_root)
 
-    _is_ide = bool(chat_id) and str(chat_id).startswith("ide_")
     _is_plan = bool(chat_id) and str(chat_id).startswith("plan_") or force_plan_mode
     _is_skill_or_direct = tools is not None or force_web_search or force_local_agent
 
@@ -642,8 +633,8 @@ def _run_impl(
     # (rather than just handing it images) because that cheap flash-lite model's
     # agentic tool-use reliability is unverified (a same-family model scored 2/5 on
     # the tool-calling benchmark, see cloud_client.py) — only its raw single-shot
-    # vision was tested and confirmed good. IDE mode keeps its own gemma4 vision path.
-    if images and model is None and not _is_plan and not _is_skill_or_direct and not _is_ide:
+    # vision was tested and confirmed good.
+    if images and model is None and not _is_plan and not _is_skill_or_direct:
         history = []
         lock = None
         if chat_id is not None:
@@ -799,15 +790,13 @@ def _run_impl(
             ASK_MACOS_NATIVE_SCHEMA, ASK_EMAIL_AGENT_SCHEMA, ASK_TASKS_AGENT_SCHEMA,
             ASK_CALENDAR_AGENT_SCHEMA, ASK_DOCS_AGENT_SCHEMA, ASK_SHEETS_AGENT_SCHEMA,
             ASK_DEEP_RESEARCH_SCHEMA,
-            ASK_AUTOMATION_AGENT_SCHEMA, ASK_DEV_AGENT_SCHEMA, ASK_MESSAGING_AGENT_SCHEMA,
+            ASK_AUTOMATION_AGENT_SCHEMA, ASK_MESSAGING_AGENT_SCHEMA,
             ASK_RESEARCH_AGENT_SCHEMA, ASK_VISION_AGENT_SCHEMA, ASK_UTILITY_AGENT_SCHEMA,
             ASK_YOUTUBE_AGENT_SCHEMA, ASK_TRANSPORT_AGENT_SCHEMA,
             ASK_X_AGENT_SCHEMA,
             ASK_REDDIT_AGENT_SCHEMA, ASK_SCIENCE_SCOUT_AGENT_SCHEMA,
             QUERY_RECENT_TRACES_SCHEMA,
         )
-        from tools.opencode_tool import ASK_OPENCODE_SCHEMA
-        from tools.set_opencode_model import SCHEMA as SET_OPENCODE_MODEL_SCHEMA
         from tools.diagram_render import RENDER_DIAGRAM_SCHEMA
         from tools.telegram_send import SEND_TELEGRAM_SCHEMA
         from tools.contacts_resolver import SCHEMA as CONTACTS_RESOLVE_SCHEMA
@@ -871,11 +860,9 @@ def _run_impl(
             ASK_MACOS_NATIVE_SCHEMA, ASK_EMAIL_AGENT_SCHEMA, ASK_TASKS_AGENT_SCHEMA,
             ASK_CALENDAR_AGENT_SCHEMA, ASK_DOCS_AGENT_SCHEMA, ASK_SHEETS_AGENT_SCHEMA,
             ASK_DEEP_RESEARCH_SCHEMA,
-            ASK_AUTOMATION_AGENT_SCHEMA, ASK_DEV_AGENT_SCHEMA, ASK_MESSAGING_AGENT_SCHEMA,
+            ASK_AUTOMATION_AGENT_SCHEMA, ASK_MESSAGING_AGENT_SCHEMA,
             ASK_RESEARCH_AGENT_SCHEMA, ASK_VISION_AGENT_SCHEMA, ASK_UTILITY_AGENT_SCHEMA,
             ASK_YOUTUBE_AGENT_SCHEMA, ASK_X_AGENT_SCHEMA,
-            ASK_OPENCODE_SCHEMA,
-            SET_OPENCODE_MODEL_SCHEMA,
             ASK_TRANSPORT_AGENT_SCHEMA,
             ASK_REDDIT_AGENT_SCHEMA, ASK_SCIENCE_SCOUT_AGENT_SCHEMA,
             QUERY_RECENT_TRACES_SCHEMA,
@@ -890,7 +877,41 @@ def _run_impl(
             # Skill-promotion — cheap, no subagent isolation needed, same tier as
             # SKILLS_MATCH_SCHEMA above.
             *[t for t in ALL_TOOLS if t["function"]["name"] == "promote_task_to_skill"],
-    ]
+        ]
+
+        # WhatsApp is a messaging surface, not a second full web UI. Keep the
+        # top-level orchestrator and every specialist agent available, but do
+        # not serialize the large catalog of unrelated direct tools into every
+        # WhatsApp prompt. Those capabilities remain reachable through the
+        # ask_* agents, while WhatsApp archive operations stay direct.
+        if channel == "whatsapp":
+            _whatsapp_direct_tools = {
+                "whatsapp_search",
+                "whatsapp_status",
+                "whatsapp_recent_chats",
+                "list_whatsapp_contacts",
+                "send_whatsapp",
+                "contacts_resolve",
+                "get_current_time",
+            }
+            orchestrator_tools = [
+                tool for tool in orchestrator_tools
+                if tool["function"]["name"].startswith("ask_")
+                or tool["function"]["name"] in _whatsapp_direct_tools
+            ]
+            orchestrator_system_prompt += (
+                "\n\nWHATSAPP CHANNEL: Keep responses concise. For WhatsApp history, "
+                "use the WhatsApp archive tools and distinguish [A]=owner from "
+                "[B]=contact. For other capabilities, delegate to the appropriate "
+                "ask_* agent instead of guessing or claiming the action is complete."
+            )
+            if context_only:
+                orchestrator_tools = []
+                orchestrator_system_prompt += (
+                    "\nWHATSAPP CONTEXT-ONLY MODE: Answer from the supplied WhatsApp context and "
+                    "the user request only. Do not call tools, delegate to agents, browse, or "
+                    "use external sources. If the context does not support an inference, say so."
+                )
 
         # _is_simple_query computed earlier (before the system prompt was built)
         # so the prompt's deep_research description and this tools-array strip
@@ -941,11 +962,7 @@ def _run_impl(
         # _SPORTS_RE stays regex: a narrow, stable lexical sub-check *within* an
         # already-semantically-determined "temporal" intent, not a substitute for it.
         _forced_tool = None
-        # 2026-07-14: opencode-model switch — intercept "use nemotron/tron model" etc.
-        # before the intent gate (which would route to ask_automation_agent and loop).
-        if not images and _OPENCODE_MODEL_RE.search(query) and _OPENCODE_MODEL_TOKEN_RE.search(query):
-            _forced_tool = "set_opencode_model"
-        elif not images and intent == "automation":
+        if not images and intent == "automation":
             _forced_tool = "ask_automation_agent"
         elif not images and intent == "temporal":
             _forced_tool = "ask_research_agent" if _SPORTS_RE.search(query) else "ask_web_search"
@@ -971,6 +988,7 @@ def _run_impl(
                 _log.warning("agent inbox poll failed", exc_info=True)
 
         _round_timeout = round_timeout or (28.0 if chat_id == "brabble_voice" else None)
+        _max_orchestrator_rounds = 2 if context_only else 12
         result = local_chat(
             user_message=query,
             tools=orchestrator_tools,
@@ -978,7 +996,7 @@ def _run_impl(
             history=history,
             on_token=on_token,
             system_prompt=orchestrator_system_prompt,
-            max_rounds=12,
+            max_rounds=_max_orchestrator_rounds,
             images=images or None,
             options=_get_optimized_opts("factual_qa", orchestrator_model),
             run_id=run_id,
@@ -987,7 +1005,7 @@ def _run_impl(
         )
 
         # Verify-on-absence / verify-on-undercoverage: one retry, straight-line (no recursion/loop possible).
-        _missing = _absence_unchecked_sources(result, query, run_id, intent)
+        _missing = None if context_only else _absence_unchecked_sources(result, query, run_id, intent)
         if _missing:
             _log.warning("[verify-on-absence] run_id=%s missing=%s — retrying with nudge", run_id, sorted(_missing))
             result = local_chat(
@@ -1001,7 +1019,7 @@ def _run_impl(
                     f"but these sources were never checked: {', '.join(sorted(_missing))}. "
                     "Call them now, then give your final answer based on ALL sources."
                 ),
-                max_rounds=12,
+                max_rounds=_max_orchestrator_rounds,
                 images=images or None,
                 options=_get_optimized_opts("factual_qa", orchestrator_model),
                 run_id=run_id,
@@ -1026,7 +1044,7 @@ def _run_impl(
                             f"with the actual tool results: {_discrepancy}. Re-check the tool results and "
                             "give a corrected final answer."
                         ),
-                        max_rounds=12,
+                    max_rounds=_max_orchestrator_rounds,
                         images=images or None,
                         options=_get_optimized_opts("factual_qa", orchestrator_model),
                         run_id=run_id,
@@ -1055,10 +1073,7 @@ def _run_impl(
         result = _process_diagram_urls(result)
         return result, orchestrator_model, "orchestrator"
 
-    _is_ide = bool(chat_id) and str(chat_id).startswith("ide_")
     _is_plan = bool(chat_id) and str(chat_id).startswith("plan_") or force_plan_mode
-    _ide_auto = _is_ide and not model  # model is None or ""
-    _manual_ide = _is_ide and not _ide_auto
 
     if _is_plan:
         # Plan mode: cloud LLM + plan intent (read-only analysis)
@@ -1068,12 +1083,6 @@ def _run_impl(
         # from the same text a second time (this is what used to make Telegram/WhatsApp's
         # classify_message() opinion get silently discarded and re-classified here).
         routed_model = model or model_for_intent(intent)
-    elif _ide_auto:
-        routed_model, intent = classify_ide(query)
-    elif _manual_ide:
-        # User picked a specific model in the IDE chat — still classify for tools
-        _, intent = classify_ide(query)
-        routed_model = model
     elif model is None:
         # LLM-primary classification (classify_message: one cloud call, semantic —
         # not keyword regex), regex cascade only as its own internal fallback on
@@ -1096,15 +1105,9 @@ def _run_impl(
 
     _log.info("[router] run_id=%s chat_id=%s intent=%s model=%s", run_id, chat_id, intent, routed_model)
 
-    _ide_override = _is_ide  # used downstream for system_prompt + max_rounds
-
     # Vision: if images are attached and no model was manually selected, route to
-    # the cheap cloud vision model (verified 2026-07-05 — see cloud_client.py's
-    # CLOUD_VISION_MODEL note). IDE mode keeps gemma4 since it's local/offline by
-    # design there; only tested against synthetic OCR-style text-in-image so far,
-    # not real scanned forms — form-filling's own vision tools are untouched by
-    # this and still route through gemma4 separately.
-    if images and model is None and not _is_ide:
+    # the cheap cloud vision model.
+    if images and model is None:
         routed_model, intent = cloud_client.CLOUD_VISION_MODEL, "vision"
 
     msg_lower = query.lower()
@@ -1129,9 +1132,6 @@ def _run_impl(
     })
     _FS_TOOL_SCHEMAS_FOCUSED = [t for t in ALL_TOOLS if t["function"]["name"] in _FS_TOOL_NAMES_FOCUSED]
 
-    _IDE_TOOL_NAMES = tools_with_tags("fs", "ide_extra")
-    _IDE_TOOL_SCHEMAS = [t for t in ALL_TOOLS if t["function"]["name"] in _IDE_TOOL_NAMES]
-
     _BROWSER_TOOL_NAMES = tools_with_tags("browser")
 
     _TRANSIT_TOOL_NAMES = tools_with_tags("transit")
@@ -1139,14 +1139,10 @@ def _run_impl(
     _GIT_TOOL_NAMES = tools_with_tags("git")
     _REPL_TOOL_NAMES = tools_with_tags("repl")
 
-    # Chat mode = Telegram or web UI (not IDE). These get lighter, faster models
-    # for intents that don't need file access.
-    _chat_mode = not _is_ide
+    _chat_mode = True
 
     if intent == "library_docs":
         active_tools = _tool("get_library_docs", "local_search")
-        if not _chat_mode:
-            routed_model = ollama_client.DEFAULT_MODEL
         # chat mode: qwen3:4b handles docs well with get_library_docs tool
     elif intent == "reminder":
         active_tools = _tool("set_reminder", "get_current_time")
@@ -1325,7 +1321,10 @@ def _run_impl(
             "imessage_search", "imessage_status", "imessage_send",
         )
     elif intent == "whatsapp_search":
-        active_tools = _tool("whatsapp_search", "whatsapp_status")
+        active_tools = _tool(
+            "whatsapp_search", "whatsapp_status", "whatsapp_recent_chats",
+            "list_whatsapp_contacts",
+        )
     elif intent == "spotlight":
         # spotlight_search/find_recent/archive_grep find files by name/metadata;
         # semantic_file_search/fulltext_search find by content — _SPOTLIGHT_RE
@@ -1346,6 +1345,8 @@ def _run_impl(
         active_tools = _tool(
             "imessage_search", "imessage_status", "imessage_send",
             "whatsapp_search", "whatsapp_status", "send_whatsapp",
+            "whatsapp_recent_chats",
+            "list_whatsapp_contacts",
             "slack_search", "slack_status",
             "set_reminder", "get_current_time",
         )
@@ -1394,9 +1395,6 @@ def _run_impl(
             active_tools = _tool("take_screenshot", "ocr_image")
         else:
             active_tools = []  # analysis from training data; temporal/recent handles time-sensitive
-    elif intent == "ide":
-        # IDE chat: full read/write/bash access so the agent can explore and edit the project
-        active_tools = _IDE_TOOL_SCHEMAS
     elif intent == "document":
         active_tools = _tool("parse_document", "ocr_image")
     elif intent in ("temporal", "recent") or intent.startswith("temporal_"):
@@ -1412,14 +1410,14 @@ def _run_impl(
         # handled by the hub_tools injection below.
         active_tools = []
 
-    # Web UI manual model: strip IDE-only tools (ocr, git, repl, filesystem, ide).
+    # Web UI manual model: strip tools that require an explicit local capability.
     # These intents get classified but their tools require filesystem/kernel access
     # that chat-mode models can't use — passing them causes empty/hung responses.
     # Gated on manual_model_pick, not "model is not None" — Telegram/WhatsApp always pass a
     # concrete model string too (classify_telegram()'s routing choice), which used to trip
     # this guard and silently strip git/repl/filesystem tools from every mobile message.
     _manual_web = manual_model_pick and _chat_mode
-    if _manual_web and not force_local_agent and intent in ("git", "repl", "filesystem", "ide"):
+    if _manual_web and not force_local_agent and intent in ("git", "repl", "filesystem"):
         active_tools = []
 
     # Skills hub tools are always available for interactive intents so the agent can
@@ -1449,37 +1447,18 @@ def _run_impl(
 
     # Build system prompt announcing project_root: every caller that sets project_root
     # scopes filesystem tools to it (see _fs.set_project_root above), unconditionally —
-    # but only the real IDE flow used to announce that root to the model. Any other
+    # but only a scoped local flow should announce that root to the model. Any other
     # caller (e.g. force_local_agent + project_root, as chat_ui.py's /run and /run_dual
     # endpoints both allow) left the model guessing the root from the query text alone
     # and hallucinating paths. Announce it whenever project_root is set; keep the
-    # bash/active-file specifics IDE-only since those tools/context aren't guaranteed
+    # bash/active-file specifics scoped since those tools/context aren't guaranteed
     # to exist outside that flow.
     system_prompt = None
     if project_root:
         system_prompt = (
-            f"You are a coding agent with read/write filesystem access"
-            + (" and bash execution" if _ide_override else "")
-            + f".\nThe project is at {project_root}.\n"
-            f"Rules:\n"
-        ) + (
-            (
-                f"- The active file path and its content are already provided in [Active file:]. "
-                f"Read it from there — do NOT call read_file on it again.\n"
-            ) if _ide_override else ""
-        ) + (
-            f"- For single-file tasks: go directly to edit_file or write_file. "
-            f"Skip file_tree and extra reads.\n"
-            f"- Only call file_tree('{project_root}') when you genuinely need to understand "
-            f"the project layout (e.g. cross-file refactors, finding related files).\n"
-            f"- Use append_file to add content at the END of a file (no need for old_str).\n"
-            f"- Use edit_file (exact find+replace) for changes in the middle of a file.\n"
-            f"- Use write_file only for brand-new files.\n"
-        ) + (
-            f"- After editing, verify with bash_exec if the user asked to run/test.\n"
-            if _ide_override else ""
-        ) + (
-            f"- Be concise. Report what changed, not what you read."
+            f"You are Clixen's local file/document agent.\nThe scoped root is {project_root}.\n"
+            "Use the selected skill and active tool schemas. Preserve source files unless replacement is requested. "
+            "Verify every write and report unresolved issues."
         )
 
     # Tasks and calendar — always call get_current_time before creating items with relative dates.
@@ -1843,13 +1822,15 @@ def _run_impl(
 
     # Local-agent fast path: obvious filesystem requests should not depend on
     # model tool-call behavior. Ambiguous requests still fall through to LLM tools.
-    # Skipped when project_root is set — that means a scoped session (IDE, coding
+    # Skipped when project_root is set — that means a scoped local session
     # agent, eval harness) whose query is often long free-form prose about a project,
     # not a literal "list my downloads" command; the regex parser here mis-extracted
     # fake paths out of that prose (confirmed live via GAIA eval: it read the phrase
     # "project root" out of the prompt text itself as a literal folder name).
-    if intent == "filesystem" and not project_root:
-        _fs_action = parse_local_fs_action(query)
+    if intent == "filesystem":
+        # A scoped project root disables only the single-path regex shortcut;
+        # the local-agent graph must still handle scoped filesystem work.
+        _fs_action = parse_local_fs_action(query) if not project_root else None
         if _fs_action is not None:
             # Check if user wants analysis (not just a raw listing)
             _wants_analysis = re.search(
@@ -1957,40 +1938,7 @@ def _run_impl(
                 _trace_store.record(_run_id, {"event": "local_agent_fallback", "reason": type(e).__name__})
             # Fall through to standard LLM tool loop below
 
-    # Code intents: route directly to local agent with code-optimized toolset.
-    # Task="code" gives coding system prompt + code-only tool set.
-    if intent in ("code_quick", "code_medium", "code_heavy"):
-        if on_token:
-            on_token("")
-        _agent_query = (
-            f"{query}\n\n[Specialist findings:\n{_specialist_context}]"
-            if _specialist_context else query
-        )
-        try:
-            result = run_local_agent(
-                query=_agent_query,
-                model=routed_model,
-                chat_id=chat_id,
-                stream_callback=on_token,
-                task="code",
-                project_root=project_root,
-            )
-            if on_token:
-                on_token(result)
-            if chat_id is not None:
-                with lock:
-                    conv_append(chat_id, "user", query)
-                    conv_append(chat_id, "assistant", result)
-                    compact_old_turns(chat_id, routed_model)
-            if tts:
-                _speak(result, voice=tts_voice)
-            return result, "local-agent-graph", intent
-        except Exception as e:
-            _log.error("[local-agent/code] failed: %s, falling back to LLM loop", e, exc_info=True)
-
-    # Search graph owns the whole temporal/web-search answer path.
-    # When tools + model are both explicitly set (e.g. skill dispatch), skip search
-    # graph entirely — the LLM tool loop handles the query with the given tools.
+    # The LLM tool loop handles the query with the selected tools.
     if tools and model:
         _log.info("[skill-dispatch] tools=%s model=%s — skipping search graph, using LLM tool loop", tools, model)
     elif intent in ("temporal", "web_search", "factual_qa") or intent.startswith("temporal_"):
@@ -2170,7 +2118,7 @@ def _run_impl(
         else (
             20
             if intent == "browser"
-            else (30 if (_ide_override or intent == "automation") else MAX_ROUNDS)
+            else (30 if intent == "automation" else MAX_ROUNDS)
         )
     )
     # Voice-originated subagents inherit CURRENT_CHAT_ID (read-only) from the

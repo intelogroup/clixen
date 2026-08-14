@@ -48,10 +48,20 @@ def _resolve_path(path_str: str) -> Path:
         if fallback.exists():
             p = fallback.resolve()
 
+    # When a project root is scoped, relative paths (including bare "." for "list
+    # the project") resolve against it first — a relative path trivially "exists"
+    # against the process cwd (tools-harness/), which silently won the plain-cwd
+    # resolution below and pointed the model at the wrong directory entirely.
+    _root = _PROJECT_ROOT.get()
+    if not p.is_absolute() and _root:
+        candidate = Path(_root).resolve() if path_str == "." else Path(_root) / path_str
+        if candidate.exists():
+            p = candidate.resolve()
+
     # Bare relative path ("pyproject.toml", "src/app.py"): if it doesn't exist relative to
     # the process cwd, try the open project root, then the home directory.
     if not p.is_absolute() and not p.exists():
-        for base in (_PROJECT_ROOT.get(), _HOME):
+        for base in (_root, _HOME):
             if not base:
                 continue
             candidate = Path(base) / path_str

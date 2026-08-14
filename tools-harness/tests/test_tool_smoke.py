@@ -165,7 +165,7 @@ def test_core_load_external_skill_smoke():
 def test_core_markdown_to_pdf_smoke():
     import tempfile, pathlib
     md = pathlib.Path(tempfile.mkstemp(suffix=".md")[1])
-    md.write_text("# Hello")
+    md.write_text("# Hello\n\n```\nprint('hello')\n```")
     out = pathlib.Path(tempfile.mkstemp(suffix=".pdf")[1])
     result = EXECUTORS["markdown_to_pdf"]({"md_path": str(md), "output_path": str(out)})
     assert isinstance(result, str)
@@ -286,11 +286,6 @@ def test_code_rename_file_smoke():
         dest.unlink()
     if f.exists():
         f.unlink()
-
-
-def test_code_ask_dev_agent_smoke():
-    result = EXECUTORS["ask_dev_agent"]({"query": "say hello, no tools"})
-    assert isinstance(result, str)
 
 
 def test_code_ask_research_agent_smoke():

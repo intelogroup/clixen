@@ -17,8 +17,9 @@ import { fileURLToPath } from 'url';
 import { existsSync, mkdirSync } from 'fs';
 import { createServer, Server } from 'http';
 import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { logIncoming, logOutgoing } from './whatsapp_log.js';
+import { loadContacts, logContact, logIncoming, logOutgoing, logOwnerJids, fetchRecentHistory, findContactJid, archiveAvailable } from './whatsapp_log.js';
 import {
   initialState as _reconnectInitialState,
   reconnectDelay as _reconnectDelay,
@@ -28,6 +29,7 @@ import {
 } from './whatsapp_reconnect_state.js';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ─── Anti-ban helpers ────────────────────────────────────────────────────────
 
@@ -104,7 +106,16 @@ const PORT = parseInt(process.env.WHATSAPP_BRIDGE_PORT ?? '9235', 10);
 const BOT_URL = process.env.WHATSAPP_BOT_URL ?? 'http://localhost:9236';
 const SESSION_DIR = process.env.WHATSAPP_SESSION_DIR ?? join(__dirname, '.baileys_auth');
 
-const logger = pino({ level: 'debug' });
+const logger = pino({
+  level: process.env.WHATSAPP_LOG_LEVEL ?? 'info',
+  // Baileys includes ephemeral/client pairing material in some debug records.
+  // Keep the useful lifecycle metadata while preventing those values from
+  // being persisted in launchd's messaging log.
+  redact: [
+    'helloMsg.clientHello.ephemeral',
+    'node.devicePairingData',
+  ],
+});
 
 if (!existsSync(SESSION_DIR)) mkdirSync(SESSION_DIR, { recursive: true });
 
@@ -119,6 +130,17 @@ let pairingCode: string | null = null;
 let connected = false;
 let pairingInProgress = false;
 let pairingPhoneNumber: string | null = null;
+let qrSequence = 0;
+let qrIssuedAt: number | null = null;
+type ContactRecord = {
+  jid: string;
+  lid?: string;
+  name?: string;
+  notify?: string;
+  verifiedName?: string;
+  lastSeenAt: number;
+};
+const contacts = new Map<string, ContactRecord>();
 // Hello is sent at most once per process, only on a fresh pairing (isNewLogin)
 // — never on a reconnect. The WhatsApp connection drops routinely (timedOut /
 // badSession / network blips); greeting on every 'open' used to spam the
@@ -166,18 +188,129 @@ async function getSocket(): Promise<WASocket> {
     version: await resolveWaVersion(),
     auth: authState,
     logger,
+    // Keep the existing linked-session browser profile; switching an already
+    // linked account to Desktop can trigger WhatsApp 428 termination.
     browser: Browsers.macOS('Chrome'),
     markOnlineOnConnect: false,
-    syncFullHistory: false,
+    syncFullHistory: true,
     keepAliveIntervalMs: 30_000,
     getMessage: async (key) => msgCache.get(key.id ?? '') ?? { conversation: '' },
   });
 
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('connection.update', handleConnectionUpdate);
+  sock.ev.on('contacts.upsert', handleContactsUpsert);
+  sock.ev.on('messaging-history.set', handleHistorySet);
+  sock.ev.on('messaging-history.status', (event) => {
+    logger.info({
+      tag: '[WA-HISTORY]',
+      syncType: event.syncType,
+      status: event.status,
+      explicit: event.explicit,
+    }, 'WhatsApp history sync status');
+  });
   sock.ev.on('messages.upsert', handleMessagesUpsert);
 
   return sock;
+}
+
+function isUserContactJid(jid: string): boolean {
+  return jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid');
+}
+
+function redactJid(jid: string): string {
+  const [local, domain] = jid.split('@');
+  if (!local || !domain) return '<unknown-jid>';
+  return `${local.slice(0, 3)}…${local.slice(-2)}@${domain}`;
+}
+
+function upsertContact(record: ContactRecord): void {
+  if (!isUserContactJid(record.jid)) return;
+  const current = contacts.get(record.jid);
+  contacts.set(record.jid, {
+    ...current,
+    ...record,
+    lastSeenAt: Math.max(current?.lastSeenAt ?? 0, record.lastSeenAt),
+  });
+  logContact(record).catch(() => {});
+}
+
+function handleContactsUpsert(contactUpdates: BaileysEventMap['contacts.upsert']): void {
+  for (const contact of contactUpdates) {
+    const jid = contact.id ?? '';
+    if (!jid) continue;
+    upsertContact({
+      jid,
+      lid: contact.lid ?? undefined,
+      name: contact.name ?? undefined,
+      notify: contact.notify ?? undefined,
+      verifiedName: contact.verifiedName ?? undefined,
+      lastSeenAt: Date.now(),
+    });
+  }
+  logger.info({ count: contactUpdates.length, totalContacts: contacts.size }, 'WhatsApp contacts updated');
+}
+
+function handleHistorySet(history: BaileysEventMap['messaging-history.set']): void {
+  const { messages = [], contacts: historyContacts = [], isLatest, progress } = history;
+  for (const contact of historyContacts) {
+    const jid = contact.id ?? '';
+    if (!jid) continue;
+    upsertContact({
+      jid,
+      lid: contact.lid ?? undefined,
+      name: contact.name ?? undefined,
+      notify: contact.notify ?? undefined,
+      verifiedName: contact.verifiedName ?? undefined,
+      lastSeenAt: Date.now(),
+    });
+  }
+  for (const msg of messages) {
+    const msgId = msg.key?.id;
+    if (msgId && msg.message) msgCache.set(msgId, msg.message);
+    const text = extractMessageText(msg.message);
+    if (text) logIncoming(msg, text).catch(() => {});
+  }
+  logger.info({
+    tag: '[WA-HISTORY]',
+    messageCount: messages.length,
+    contactCount: historyContacts.length,
+    isLatest,
+    progress: progress ?? null,
+  }, 'WhatsApp history batch received');
+}
+
+/**
+ * Ask the linked phone for recent messages when a contact exists in the
+ * directory but has not appeared in the local archive yet. Baileys delivers
+ * the result asynchronously through messaging-history.set.
+ */
+async function fetchOnDemandHistory(jid: string, limit = 20): Promise<number> {
+  if (!sock || !connected || !jid) return 0;
+  try {
+    await sock.fetchMessageHistory(
+      Math.min(Math.max(limit, 1), 50),
+      { remoteJid: jid, fromMe: false, id: '' },
+      Date.now(),
+    );
+    logger.info({ tag: '[WA-HISTORY]', jid: redactJid(jid), limit }, 'Requested on-demand chat history');
+  } catch (error) {
+    logger.warn({ tag: '[WA-HISTORY]', jid: redactJid(jid), error: (error as Error).message }, 'On-demand history request failed');
+    return 0;
+  }
+
+  // The history event is asynchronous. Poll the archive briefly rather than
+  // racing the event handler and sending an empty context to the AI.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const history = await fetchRecentHistory(jid, limit);
+    if (history.length) {
+      logger.info({ tag: '[WA-HISTORY]', jid: redactJid(jid), historyCount: history.length }, 'On-demand chat history archived');
+      return history.length;
+    }
+  }
+  logger.warn({ tag: '[WA-HISTORY]', jid: redactJid(jid) }, 'On-demand history returned no archive messages');
+  return 0;
 }
 
 async function handleConnectionUpdate(
@@ -195,12 +328,14 @@ async function handleConnectionUpdate(
 
   if (qr) {
     qrCode = await QRCode.toDataURL(qr);
-    logger.info('QR code updated — scan with WhatsApp on your phone');
+    qrSequence += 1;
+    qrIssuedAt = Date.now();
+    logger.info({ qrSequence, qrLength: qr.length }, 'QR code updated — scan with WhatsApp on your phone');
     if (pairingInProgress && pairingPhoneNumber && sock) {
       try {
         const code = await sock.requestPairingCode(pairingPhoneNumber);
         pairingCode = code;
-        logger.info({ code }, 'Pairing code auto-refreshed');
+        logger.info({ phoneDigits: pairingPhoneNumber.length, pairingCodeLength: code.length }, 'Pairing code auto-refreshed');
       } catch (e) {
         logger.error({ error: (e as Error).message }, 'Auto-refresh pairing code failed');
       }
@@ -216,6 +351,10 @@ async function handleConnectionUpdate(
     logger.error({
       reason,
       reasonText,
+      qrSequence,
+      qrAgeMs: qrIssuedAt === null ? null : Date.now() - qrIssuedAt,
+      pairingInProgress,
+      sessionRegistered: registered ?? null,
       disconnectError: disconnectError
         ? {
             message: (disconnectError as Error)?.message ?? String(disconnectError),
@@ -260,6 +399,8 @@ async function handleConnectionUpdate(
 
     if (sock?.user?.id) {
       const myJid = sock.user.id;
+      const myLid = (sock.user as unknown as { lid?: string }).lid ?? '';
+      logOwnerJids([myJid, myLid]).catch(() => {});
       if (isNewLogin && !welcomeSent) {
         welcomeSent = true;
         logger.info({ jid: myJid }, 'Sending hello to own number');
@@ -279,9 +420,9 @@ async function handleConnectionUpdate(
   }
 }
 
-function handleMessagesUpsert(
+async function handleMessagesUpsert(
   { messages }: BaileysEventMap['messages.upsert'],
-): void {
+): Promise<void> {
   for (const msg of messages) {
     const msgId = msg.key?.id;
     if (msgId && msg.message) msgCache.set(msgId, msg.message);
@@ -289,11 +430,10 @@ function handleMessagesUpsert(
     if (msgId && sentIds.has(msgId)) continue;
 
     const remoteJid = msg.key.remoteJid ?? '';
-    const messageText =
-      msg.message?.conversation ??
-      msg.message?.extendedTextMessage?.text ??
-      msg.message?.buttonsResponseMessage?.selectedButtonId ??
-      '';
+    if (msg.pushName && isUserContactJid(remoteJid)) {
+      upsertContact({ jid: remoteJid, name: msg.pushName, lastSeenAt: Date.now() });
+    }
+    const messageText = extractMessageText(msg.message);
 
     // Skip system/broadcast/newsletter JIDs — never reply to these
     if (
@@ -306,61 +446,198 @@ function handleMessagesUpsert(
     // Persist to local archive (~/.clixen/whatsapp.db) for offline search.
     logIncoming(msg, messageText).catch(() => {});
 
-    // Only process messages whose conversation JID is the user's own number (self-chat).
-    // This unconditional guard covers BOTH directions:
-    //   • fromMe=true  → user sent a msg to someone else (echoed by Baileys) — skip if remote ≠ own
-    //   • fromMe=false → a contact replied to the user — skip (remote = contact JID ≠ own)
-    // The bot only responds when the user messages their own number (self-chat).
-    {
-      const normalize = (jid: string) => jid.replace(/:\d+@/, '@');
-      const myPn   = normalize(sock?.user?.id  ?? '');
-      const myLid  = normalize((sock?.user as unknown as { lid?: string })?.lid ?? '');
-      const remote = normalize(remoteJid);
-      if (remote !== myPn && remote !== myLid) continue;
-    }
-
     if (!messageText) continue;
 
-    logger.info({ from: remoteJid, fromMe: msg.key.fromMe, text: messageText }, 'Incoming message');
-    handleIncomingMessage(msg).catch(e =>
+    const normalize = (jid: string) => jid.replace(/:\d+@/, '@');
+    const myPn   = normalize(sock?.user?.id  ?? '');
+    const myLid  = normalize((sock?.user as unknown as { lid?: string })?.lid ?? '');
+    const remote = normalize(remoteJid);
+    const isSelfChat = remote === myPn || remote === myLid;
+
+    // @ai/@clixen mid-conversation: fires ONLY on the owner's own outgoing text
+    // (fromMe=true) in ANY chat — never on something the other party sent, so
+    // there's no remote-command-injection surface. The reply never goes back
+    // into this chat (the other party would see it); it's routed to self-chat.
+    const isAiTrigger = msg.key.fromMe === true && !isSelfChat && AI_TRIGGER_RE.test(messageText);
+    const isPrivateAiTrigger = msg.key.fromMe === true && isSelfChat && AI_TRIGGER_RE.test(messageText);
+    let namedContactTrigger: { contactQuery: string; question: string; jid: string } | null = null;
+    if (msg.key.fromMe === true && isSelfChat && !isPrivateAiTrigger) {
+      const parsed = parseNamedContactTrigger(messageText);
+      if (parsed) {
+        const jid = await findContactJid(contactLookupQuery(parsed.contactQuery));
+        if (jid) namedContactTrigger = { ...parsed, jid };
+      }
+    }
+    const hasPrivateTrigger = isPrivateAiTrigger || Boolean(namedContactTrigger);
+
+    // Otherwise: only process messages whose conversation JID is the user's own
+    // number (self-chat). Covers both directions — fromMe=true echoed to self,
+    // or a contact replying in self-chat (shouldn't happen, but skip if not own).
+    if (!isSelfChat && !isAiTrigger) continue;
+
+    logger.info({
+      from: redactJid(remoteJid),
+      fromMe: msg.key.fromMe,
+      textLength: messageText.length,
+      isAiTrigger,
+      isPrivateAiTrigger: hasPrivateTrigger,
+      namedContact: namedContactTrigger?.contactQuery ?? null,
+    }, 'Incoming message');
+    handleIncomingMessage(msg, {
+      directChatTrigger: isAiTrigger,
+      privateChatTrigger: hasPrivateTrigger,
+      privateContactQuery: namedContactTrigger?.contactQuery,
+      privateContactJid: namedContactTrigger?.jid,
+      privateQuestion: namedContactTrigger?.question,
+    }).catch(e =>
       logger.error({ error: (e as Error).message }, 'handleIncomingMessage threw'),
     );
   }
 }
 
-async function handleIncomingMessage(msg: proto.IWebMessageInfo): Promise<void> {
-  const remoteJid = msg.key?.remoteJid!;
-  const messageText =
-    msg.message?.conversation ??
-    msg.message?.extendedTextMessage?.text ??
+function extractMessageText(message: proto.IMessage | null | undefined): string {
+  return message?.conversation ??
+    message?.extendedTextMessage?.text ??
+    message?.buttonsResponseMessage?.selectedButtonId ??
+    message?.listResponseMessage?.title ??
     '';
+}
+
+function quotedMessageText(msg: proto.IWebMessageInfo): string {
+  const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+  return extractMessageText(quoted);
+}
+
+async function handleIncomingMessage(
+  msg: proto.IWebMessageInfo,
+  options: {
+    directChatTrigger?: boolean;
+    privateChatTrigger?: boolean;
+    privateContactQuery?: string;
+    privateContactJid?: string;
+    privateQuestion?: string;
+  } = {},
+): Promise<void> {
+  const isAiTrigger = options.directChatTrigger === true;
+  const isPrivateAiTrigger = options.privateChatTrigger === true;
+  const remoteJid = msg.key?.remoteJid!;
+  let stage = 'start';
+  const messageText =
+    extractMessageText(msg.message);
+  const quotedText = quotedMessageText(msg);
+
+  // AI-trigger fires from inside a real contact chat, but the reply is never
+  // sent back into that chat — it always goes to self-chat, so the other
+  // party never sees the answer (or that one exists).
+  const targetJid = isAiTrigger || isPrivateAiTrigger ? selfJid() : remoteJid;
 
   if (msg.key) {
     try { await sock!.readMessages([msg.key as Parameters<WASocket['readMessages']>[0][number]]); } catch (_) {}
   }
-  try { await sock!.sendPresenceUpdate('composing', remoteJid); } catch (_) {}
+  try { await sock!.sendPresenceUpdate('composing', targetJid); } catch (_) {}
 
   try {
+    let payload: Record<string, unknown> = {
+      sender: canonicalJid(remoteJid),
+      message: messageText,
+      name: msg.pushName ?? remoteJid.split('@')[0],
+    };
+
+    if (isPrivateAiTrigger) {
+      stage = 'parse-private-command';
+      const privateRequest = messageText.replace(AI_TRIGGER_RE, '').trim();
+      const match = options.privateContactQuery && options.privateQuestion
+        ? [, options.privateContactQuery, options.privateQuestion]
+        : privateRequest.match(/^(.+?)\s*(?::|—|–)\s*(.+)$/);
+      if (!match) {
+        logger.warn({ tag: '[WA-PRIVATE]', stage, textLength: messageText.length }, 'Invalid private @ai format');
+        await sock!.sendMessage(targetJid, {
+          text: 'Format privé : @ai Nom du contact: ta demande\nExemple : @ai Solini: résume cette conversation',
+        });
+        return;
+      }
+      const [, contactQuery, question] = match;
+      stage = 'resolve-contact';
+      const contactJid = options.privateContactJid
+        ?? await findContactJid(contactQuery)
+        ?? await resolveMacContactJid(contactQuery);
+      logger.info({
+        tag: '[WA-PRIVATE]',
+        stage,
+        queryLength: contactQuery.trim().length,
+        resolved: Boolean(contactJid),
+      }, 'Private @ai contact resolution');
+      if (!contactJid) {
+        logger.warn({ tag: '[WA-PRIVATE]', stage, queryLength: contactQuery.trim().length }, 'Private @ai contact not found');
+        await sock!.sendMessage(targetJid, {
+          text: `Je ne trouve pas le contact « ${contactQuery.trim()} » dans l’historique WhatsApp.`,
+        });
+        return;
+      }
+      stage = 'load-history';
+      let history = await fetchRecentHistory(contactJid, 20);
+      if (!history.length) {
+        stage = 'fetch-history';
+        await fetchOnDemandHistory(contactJid, 20);
+        history = await fetchRecentHistory(contactJid, 20);
+      }
+      logger.info({ tag: '[WA-PRIVATE]', stage, historyCount: history.length }, 'Private @ai history loaded');
+      const contextText = history
+        .map(h => `[${h.from_me ? 'A' : 'B'}] ${h.text}`)
+        .join('\n');
+      payload = {
+        sender: canonicalJid(selfJid()),
+        source_chat: canonicalJid(contactJid),
+        message: question.trim(),
+        context: [quotedText ? `[Quoted message] ${quotedText}` : '', contextText].filter(Boolean).join('\n'),
+        source_name: contactQuery.trim(),
+        fresh_context: true,
+      };
+    } else if (isAiTrigger) {
+      const question = messageText.replace(AI_TRIGGER_RE, '').trim();
+      let history = await fetchRecentHistory(remoteJid, 20);
+      if (!history.length) {
+        await fetchOnDemandHistory(remoteJid, 20);
+        history = await fetchRecentHistory(remoteJid, 20);
+      }
+      const sourceName = msg.pushName ?? remoteJid.split('@')[0];
+      // Neutral [A]/[B] tags, not real names — labeling turns from real
+      // USER:/ASSISTANT: makes the summarizer hallucinate a chat reply
+      // instead of treating this as inert context (same bug as conversation fold).
+      const contextText = history
+        .map(h => `[${h.from_me ? 'A' : 'B'}] ${h.text}`)
+        .join('\n');
+
+      payload = {
+        sender: canonicalJid(selfJid()),
+        source_chat: canonicalJid(remoteJid),
+        message: question || 'Summarize this conversation.',
+        context: [quotedText ? `[Quoted message] ${quotedText}` : '', contextText].filter(Boolean).join('\n'),
+        source_name: sourceName,
+        fresh_context: true,
+      };
+    }
+
     const response = await fetch(`${BOT_URL}/webhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sender: canonicalJid(remoteJid),
-        message: messageText,
-        name: msg.pushName ?? remoteJid.split('@')[0],
-      }),
+      body: JSON.stringify(payload),
     });
 
-    if (!response.ok) throw new Error(`Bot responded with ${response.status}`);
+    stage = 'bot-webhook';
+    if (!response.ok) {
+      logger.error({ tag: '[WA-PRIVATE]', stage, status: response.status }, 'AI bot webhook failed');
+      throw new Error(`Bot responded with ${response.status}`);
+    }
 
     const replyData = await response.json() as { reply?: string; message?: string };
     const replyText = replyData.reply ?? replyData.message ?? '';
 
     if (replyText) {
-      try { await sock!.sendPresenceUpdate('paused', remoteJid); } catch (_) {}
+      try { await sock!.sendPresenceUpdate('paused', targetJid); } catch (_) {}
 
-      if (isRateLimited(remoteJid)) {
-        logger.warn({ jid: remoteJid }, 'Rate limit hit — dropping reply');
+      if (isRateLimited(targetJid)) {
+        logger.warn({ jid: targetJid }, 'Rate limit hit — dropping reply');
         return;
       }
 
@@ -371,22 +648,30 @@ async function handleIncomingMessage(msg: proto.IWebMessageInfo): Promise<void> 
       // harness already did the expensive work by this point, so a blip here
       // shouldn't drop the reply the way an unretried send silently did before.
       let sent;
+      stage = 'send-private-reply';
       for (let attempt = 0; ; attempt++) {
         try {
-          sent = await sock!.sendMessage(remoteJid, { text: replyText });
+          sent = await sock!.sendMessage(targetJid, { text: replyText });
           break;
         } catch (sendErr) {
+          logger.warn({ tag: '[WA-PRIVATE]', stage, attempt: attempt + 1, error: (sendErr as Error).message }, 'WhatsApp reply send failed');
           if (attempt >= 2) throw sendErr;
           await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
         }
       }
       if (sent?.key?.id) sentIds.add(sent.key.id);
-      logOutgoing(remoteJid, replyText, sent?.key?.id).catch(() => {});
-      logger.info({ to: remoteJid, length: replyText.length }, 'Sent reply');
+      logOutgoing(targetJid, replyText, sent?.key?.id).catch(() => {});
+      logger.info({
+        tag: '[WA-PRIVATE]',
+        to: redactJid(targetJid),
+        length: replyText.length,
+        isAiTrigger,
+        isPrivateAiTrigger,
+      }, 'Sent reply');
     }
   } catch (error) {
-    try { await sock!.sendPresenceUpdate('paused', remoteJid); } catch (_) {}
-    logger.error({ error }, 'Failed to process message');
+    try { await sock!.sendPresenceUpdate('paused', targetJid); } catch (_) {}
+    logger.error({ tag: '[WA-PRIVATE]', stage, error: (error as Error).message }, 'Failed to process message');
   }
 }
 
@@ -399,6 +684,76 @@ async function handleIncomingMessage(msg: proto.IWebMessageInfo): Promise<void> 
 // to fork the conversation into two session files (whatsapp_...@lid vs
 // whatsapp_...@s.whatsapp.net). Canonicalize everything to the phone-number
 // JID so one user = one chat_id = one session file.
+// Matches "@ai" / "@clixen" at the start of a message, case-insensitive.
+const AI_TRIGGER_RE = /^@(ai|clixen)\b[\s,:-]*/i;
+const NAMED_CONTACT_TRIGGER_RE = /@([^\s:—–]+)/i;
+const CONTACT_ALIASES: Record<string, string> = { synsia: 'synsiou' };
+
+function contactLookupQuery(query: string): string {
+  return CONTACT_ALIASES[query.trim().toLocaleLowerCase()] ?? query.trim();
+}
+
+function parseNamedContactTrigger(text: string): { contactQuery: string; question: string } | null {
+  if (AI_TRIGGER_RE.test(text)) return null;
+  const match = text.match(NAMED_CONTACT_TRIGGER_RE);
+  if (!match) return null;
+  const question = [
+    text.slice(0, match.index).trim(),
+    text.slice((match.index ?? 0) + match[0].length).replace(/^[\s:—–]+/, '').trim(),
+  ].filter(Boolean).join(' ');
+  return { contactQuery: match[1].trim(), question: question || 'Summarize this conversation.' };
+}
+
+/**
+ * WhatsApp often reconnects without sending a contacts.upsert event. In that
+ * case the local WhatsApp contacts table has no display names even though the
+ * same person exists in the Mac address book. Resolve the name there, verify
+ * the phone number with WhatsApp, and persist the resulting JID for future
+ * private @ai commands.
+ */
+async function resolveMacContactJid(query: string): Promise<string | null> {
+  if (!sock || !query.trim()) return null;
+  const escaped = query.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const script = `tell application "Contacts"
+    launch
+    delay 1
+    set out to ""
+    set matches to every person whose name contains "${escaped}"
+    repeat with p in matches
+      repeat with ph in phones of p
+        set out to out & (value of ph) & "\\n"
+      end repeat
+    end repeat
+    return out
+  end tell`;
+  try {
+    const result = await execFileAsync('/usr/bin/osascript', ['-e', script], { timeout: 20_000 });
+    const numbers = String(result.stdout)
+      .split(/\r?\n/)
+      .map(value => value.replace(/\D/g, ''))
+      .filter(value => value.length >= 7);
+    if (!numbers.length) return null;
+    const matches = (await sock.onWhatsApp(...numbers)) ?? [];
+    const match = matches.find(item => item.exists && item.jid);
+    if (!match?.jid) return null;
+    upsertContact({ jid: match.jid, name: query.trim(), lastSeenAt: Date.now() });
+    return match.jid;
+  } catch (error) {
+    const errorCode = (error as NodeJS.ErrnoException).code ?? 'CONTACTS_LOOKUP_FAILED';
+    logger.warn({
+      tag: '[WA-PRIVATE]',
+      queryLength: query.trim().length,
+      errorCode,
+    }, 'Mac contact resolution failed');
+    return null;
+  }
+}
+
+function selfJid(): string {
+  const normalize = (j: string) => j.replace(/:\d+@/, '@');
+  return normalize(sock?.user?.id ?? '');
+}
+
 function canonicalJid(jid: string): string {
   const normalize = (j: string) => j.replace(/:\d+@/, '@');
   const myPn = normalize(sock?.user?.id ?? '');
@@ -411,29 +766,53 @@ function canonicalJid(jid: string): string {
 // ─── HTTP routes ─────────────────────────────────────────────────────────────
 
 app.get('/auth/qr', (_req: Request, res: Response) => {
+  logger.info({ connected, qrSequence, qrAgeMs: qrIssuedAt === null ? null : Date.now() - qrIssuedAt }, 'QR page requested');
   if (connected) {
     return res.send(`<!DOCTYPE html><html><head><title>WhatsApp Connected</title></head>
       <body style="font-family:system-ui;padding:40px;text-align:center">
         <h1>WhatsApp Connected</h1><p style="color:green">✓ Connected and ready.</p>
       </body></html>`);
   }
-  if (!qrCode) {
-    return res.send(`<!DOCTYPE html><html><head><title>WhatsApp QR</title></head>
-      <body style="font-family:system-ui;padding:40px;text-align:center">
-        <h1>WhatsApp QR Code</h1><p>Waiting for QR code...</p>
-      </body></html>`);
-  }
   res.send(`<!DOCTYPE html><html><head><title>WhatsApp QR</title></head>
     <body style="font-family:system-ui;padding:40px;text-align:center">
       <h1>WhatsApp QR Code</h1>
-      <p style="margin-bottom:20px">Scan this with WhatsApp on your phone</p>
-      <img src="${qrCode}" alt="QR Code" style="max-width:300px;border:1px solid #ccc;border-radius:8px;padding:10px">
+      <p id="status" style="margin-bottom:20px">Waiting for QR code...</p>
+      <img id="qr" src="${qrCode ?? ''}" alt="QR Code" style="max-width:300px;border:1px solid #ccc;border-radius:8px;padding:10px">
+      <p id="age" style="color:#666"></p>
       <p style="margin-top:20px;color:#666">Or use <a href="/auth/pairing-code">pairing code</a></p>
+      <script>
+        const qr = document.getElementById('qr');
+        const status = document.getElementById('status');
+        const age = document.getElementById('age');
+        async function refreshQr() {
+          try {
+            const response = await fetch('/api/qr-json', { cache: 'no-store' });
+            const data = await response.json();
+            if (data.connected) {
+              status.textContent = 'Connected — you can close this page.';
+              age.textContent = '';
+              return;
+            }
+            if (data.qr) {
+              qr.src = data.qr;
+              status.textContent = 'Scan this QR code with WhatsApp on your phone';
+              age.textContent = 'QR refreshed automatically; age: ' + Math.round((data.qrAgeMs || 0) / 1000) + 's';
+            } else {
+              status.textContent = 'Waiting for a fresh QR code...';
+            }
+          } catch (error) {
+            status.textContent = 'Bridge unavailable — retrying...';
+          }
+        }
+        refreshQr();
+        setInterval(refreshQr, 2000);
+      </script>
     </body></html>`);
 });
 
 app.get('/api/qr-json', (_req: Request, res: Response) => {
   const stuck = stuckFlag();
+  logger.debug({ connected, qrAvailable: !!qrCode, qrSequence, qrAgeMs: qrIssuedAt === null ? null : Date.now() - qrIssuedAt, stuck }, 'QR status requested');
   res.json({
     status: connected ? 'connected' : 'pending',
     qr: qrCode,
@@ -465,11 +844,11 @@ app.post('/auth/pairing-code', async (req: Request, res: Response) => {
     sock = makeWASocket({
       version: await resolveWaVersion(),
       logger,
-      auth: authState,
+    auth: authState,
       browser: Browsers.macOS('Chrome'),
       printQRInTerminal: false,
       markOnlineOnConnect: false,
-      syncFullHistory: false,
+    syncFullHistory: true,
       keepAliveIntervalMs: 30_000,
       getMessage: async (key) => msgCache.get(key.id ?? '') ?? { conversation: '' },
     });
@@ -554,12 +933,14 @@ app.get('/auth/pairing-code', (_req: Request, res: Response) => {
 
 app.post('/auth/reset', (_req: Request, res: Response) => {
   try {
+    logger.warn({ connected, qrSequence, sessionDir: SESSION_DIR }, 'Authentication session reset requested');
     if (sock) {
       try { (sock as WASocket & { ws?: { close(): void } }).ws?.close(); } catch (_) {}
       sock = null;
     }
     connected = false;
     qrCode = null;
+    qrIssuedAt = null;
     pairingCode = null;
     res.json({ status: 'reset' });
   } catch (error) {
@@ -567,7 +948,7 @@ app.post('/auth/reset', (_req: Request, res: Response) => {
   }
 });
 
-app.get('/status', (_req: Request, res: Response) => {
+app.get('/status', async (_req: Request, res: Response) => {
   const stuck = stuckFlag();
   res.json({
     status: connected ? 'connected' : 'disconnected',
@@ -578,7 +959,31 @@ app.get('/status', (_req: Request, res: Response) => {
     stuckSince: stuckSinceValue(),
     stuckReason: stuckReasonValue(),
     repairNeeded: stuck,
+    contactCount: contacts.size,
+    // false = message archive / @ai context lookup / contact resolution are all
+    // silently no-op'ing, almost always a better-sqlite3 native-module ABI
+    // mismatch (npm rebuild better-sqlite3 fixes it) — see messaging_stderr.log.
+    archiveAvailable: await archiveAvailable(),
   });
+});
+
+app.get('/contacts', (_req: Request, res: Response) => {
+  const ownJids = new Set([
+    canonicalJid(sock?.user?.id ?? ''),
+    canonicalJid((sock?.user as unknown as { lid?: string })?.lid ?? ''),
+  ].filter(Boolean));
+  const result = [...contacts.values()]
+    .filter(contact => !ownJids.has(canonicalJid(contact.jid)))
+    .sort((a, b) => (a.name ?? a.notify ?? a.jid).localeCompare(b.name ?? b.notify ?? b.jid))
+    .map(contact => ({
+      jid: contact.jid,
+      lid: contact.lid,
+      name: contact.name ?? contact.notify ?? contact.verifiedName ?? contact.jid.split('@')[0],
+      verifiedName: contact.verifiedName,
+      lastSeenAt: contact.lastSeenAt,
+    }));
+  logger.info({ count: result.length }, 'WhatsApp contacts requested');
+  res.json({ status: connected ? 'connected' : 'disconnected', contacts: result });
 });
 
 app.post('/send', async (req: Request, res: Response) => {
@@ -590,12 +995,14 @@ app.post('/send', async (req: Request, res: Response) => {
   if (!to || !message) return res.status(400).json({ error: 'Missing to or message' });
 
   try {
-    if (isRateLimited(to)) return res.status(429).json({ error: 'Rate limit exceeded' });
+    const recipientJid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    if (isRateLimited(recipientJid)) return res.status(429).json({ error: 'Rate limit exceeded' });
+    upsertContact({ jid: recipientJid, lastSeenAt: Date.now() });
     await jitter(400, 1200);
-    const sent = await sock.sendMessage(to, { text: message });
+    const sent = await sock.sendMessage(recipientJid, { text: message });
     if (sent?.key?.id) { msgCache.set(sent.key.id, { conversation: message }); sentIds.add(sent.key.id); }
-    logOutgoing(to, message, sent?.key?.id).catch(() => {});
-    res.json({ status: 'sent', to, message });
+    logOutgoing(recipientJid, message, sent?.key?.id).catch(() => {});
+    res.json({ status: 'sent', to: recipientJid, message });
   } catch (error) {
     logger.error({ error }, 'Failed to send message');
     res.status(500).json({ error: (error as Error).message });
@@ -636,6 +1043,20 @@ async function startHttpServer(): Promise<void> {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  try {
+    const savedContacts = await loadContacts();
+    for (const contact of savedContacts) upsertContact({
+      jid: contact.jid,
+      lid: contact.lid ?? undefined,
+      name: contact.name ?? undefined,
+      notify: contact.notify ?? undefined,
+      verifiedName: contact.verifiedName ?? undefined,
+      lastSeenAt: contact.lastSeenAt,
+    });
+    logger.info({ count: contacts.size }, 'Loaded persisted WhatsApp contacts from SQLite');
+  } catch (error) {
+    logger.warn({ error: (error as Error).message }, 'Failed to load persisted WhatsApp contacts');
+  }
   await getSocket();
   await startHttpServer();
 }

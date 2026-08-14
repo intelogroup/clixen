@@ -67,7 +67,7 @@ def test_run_doc_agent_synthesis_flow(mock_chat, mock_evidence, monkeypatch):
         # Trigger temporal query (forces live evidence gathering)
         msg, doc_path = tb._run_doc_agent(
             query="generate a pdf of today's match scores",
-            model="gemma4:12b-mlx",
+            model="gemma4:12b",
             chat_id="chat123",
             on_token=None,
         )
@@ -89,7 +89,7 @@ def test_run_doc_agent_empty_synthesis_fallback(mock_chat, monkeypatch):
 
     msg, doc_path = tb._run_doc_agent(
         query="make a word doc of my profile",
-        model="gemma4:12b-mlx",
+        model="gemma4:12b",
         chat_id="chat123",
         on_token=None,
     )
@@ -111,7 +111,7 @@ def test_trim_to_budget_with_low_token_limits(monkeypatch):
     # the last turn fits, but the second one (150 tokens) does not, forcing trimming.
     monkeypatch.setattr("store.conversation.available_history_tokens", lambda m: 250)
     
-    trimmed = trim_to_budget(history, "gemma4:12b-mlx", "current query")
+    trimmed = trim_to_budget(history, "gemma4:12b", "current query")
     
     # Newer messages should be preserved over older ones
     assert len(trimmed) < len(history)

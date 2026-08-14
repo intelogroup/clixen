@@ -58,6 +58,12 @@ CREATE TABLE IF NOT EXISTS meta (
     value         TEXT NOT NULL DEFAULT '',
     updated_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS query_usage (
+    query       TEXT PRIMARY KEY,
+    last_scan   INTEGER NOT NULL,
+    uses        INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -147,6 +153,36 @@ def is_known(finding_text: str) -> bool:
         return False
 
 
+def claim_notified(finding_text: str, reason: str, source_used: str) -> bool:
+    """Atomically reserve a finding for notification.
+
+    Returns False when an exact or recent near-duplicate was already reserved.
+    The reservation happens before transport so concurrent monitor/scout jobs
+    cannot both pass a check-then-insert race.
+    """
+    h = content_hash(dedup_key(finding_text))
+    now = datetime.now(timezone.utc).isoformat()
+    target = _word_set(finding_text)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=SIMILARITY_WINDOW_DAYS)).isoformat()
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM findings WHERE content_hash=?", (h,)).fetchone():
+            return False
+        if target:
+            rows = conn.execute(
+                "SELECT finding FROM findings WHERE last_seen >= ?", (cutoff,)
+            ).fetchall()
+            if any(_jaccard(target, _word_set(r["finding"])) >= SIMILARITY_THRESHOLD for r in rows):
+                return False
+        conn.execute(
+            """INSERT INTO findings
+               (content_hash, finding, reason, source_used, first_seen, last_seen, notified)
+               VALUES (?, ?, ?, ?, ?, ?, 1)""",
+            (h, finding_text, reason, source_used, now, now),
+        )
+        return True
+
+
 def mark_notified(finding_text: str, reason: str, source_used: str) -> None:
     h = content_hash(dedup_key(finding_text))
     now = datetime.now(timezone.utc).isoformat()
@@ -228,6 +264,80 @@ def set_evolved_queries(queries_json: str) -> None:
             "INSERT OR REPLACE INTO meta (key, value, updated_at) VALUES (?, ?, ?)",
             ("evolved_arxiv_queries", queries_json, now),
         )
+
+
+def add_evolved_queries(queries: list[str], limit: int = 100) -> list[str]:
+    """Append generated queries to the durable rotation pool."""
+    current = get_evolved_queries()
+    merged = []
+    seen = set()
+    for query in list(queries) + list(current):
+        clean = " ".join(str(query or "").split())
+        key = clean.casefold()
+        if clean and key not in seen:
+            seen.add(key)
+            merged.append(clean)
+    merged = merged[:max(1, limit)]
+    set_evolved_queries(json.dumps(merged))
+    return merged
+
+
+def start_scan() -> int:
+    """Atomically advance and return the monitor scan number."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT value FROM meta WHERE key='scan_count'").fetchone()
+        number = int(row["value"] or 0) + 1 if row else 1
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value, updated_at) VALUES (?, ?, ?)",
+            ("scan_count", str(number), now),
+        )
+        return number
+
+
+def reserve_evolved_queries(queries: list[str], scan_number: int, count: int = 3,
+                            cooldown_scans: int = 6) -> list[str]:
+    """Atomically reserve generated arXiv queries for this scan.
+
+    Query text is normalized case-insensitively. Recently reserved queries are
+    skipped while enough alternatives exist; concurrent monitor workers cannot
+    reserve the same query batch.
+    """
+    pool = []
+    seen = set()
+    for query in queries:
+        clean = " ".join(str(query or "").split())
+        key = clean.casefold()
+        if clean and key not in seen:
+            seen.add(key)
+            pool.append(clean)
+    if not pool:
+        return []
+
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        usage = {
+            row["query"].casefold(): dict(row)
+            for row in conn.execute("SELECT query, last_scan, uses FROM query_usage")
+        }
+        eligible = [
+            q for q in pool
+            if q.casefold() not in usage
+            or scan_number - usage[q.casefold()]["last_scan"] >= cooldown_scans
+        ]
+        eligible.sort(key=lambda q: (
+            usage.get(q.casefold(), {}).get("uses", 0),
+            usage.get(q.casefold(), {}).get("last_scan", -1),
+        ))
+        selected = eligible[:count]
+        for query in selected:
+            conn.execute(
+                "INSERT INTO query_usage(query, last_scan, uses) VALUES (?, ?, 1) "
+                "ON CONFLICT(query) DO UPDATE SET last_scan=excluded.last_scan, uses=uses+1",
+                (query, scan_number),
+            )
+        return selected
 
 
 def get_evolved_queries() -> list[str]:

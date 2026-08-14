@@ -8,6 +8,7 @@ Local LLM harness + chat app, on-device (Apple M4, 24 GB unified memory).
 - **Repo vs package name**: repo dir is `clixen`; launchd label prefix renamed to `com.clixen.*` (2026-08-03)
 - **`AGENTS.md`**: deeper agent-dev reference — tool inventory, specialist dispatch, browser automation, connectors, voice. Points into `docs/agents/*.md` for full depth.
 - **Standalone script runs**: use `~/Developer/clixen/.venv/bin/python`, not system python — it has `mcp` and all deps; system python is too old/missing packages for some modules.
+- **Type check**: `npm run typecheck` (`tsc --noEmit`) — run after any `.ts`/`.tsx` edit, no build step needed.
 
 ## Design Principles
 - **Prefer prompt/code/system design over regex routing.** Regex is fine for one bounded, precise thing; use good prompts, clean code, and clean APIs for intent classification/routing/parsing.
@@ -25,6 +26,8 @@ Local LLM harness + chat app, on-device (Apple M4, 24 GB unified memory).
 | `tools/websearch.py` | Web search pipeline (guard→rewrite→search→rerank→summarize) |
 | `tools/connector_{doordash,uber,ringback}.py` | Service connectors (BrowserOS-driven, or ringback's real SIP call) |
 | `agents/local_agent_*.py` | LangGraph local agent — graph, nodes, tool filter |
+| `tools/semantic_files.py` | LanceDB meaning-based search (`semantic_file_search`, `index_directory`) — nomic-embed-text via Ollama |
+| `tools/fulltext_search.py` | Tantivy BM25 keyword search (`fulltext_search`, `index_directory_fts`) — chunked 1500/200 like semantic_files, no embedding calls |
 | `store/conversation.py` | Per-chat sliding window history |
 | `skills_hub.py` + `skills_data/*.py` | ~200 interactive skills, native + auto-discovered external |
 | `core.py` | Runs chat_ui+telegram_bot+email_watch+task_worker as threads in **one** process. Restart after any imported-code edit: `launchctl kickstart -k gui/$(id -u)/com.clixen.core` |
@@ -39,7 +42,7 @@ Cloud-first (2026-07): main agent defaults to cloud via OpenRouter — local gem
 | `deepseek/deepseek-v4-flash` | Cloud | **Default** — chat + agentic tool use |
 | `openrouter/anthropic/claude-haiku-4.5` | Cloud | Fallback on error / 3 consecutive tool errors |
 | `openrouter/google/gemini-3.1-flash-lite` | Cloud | Primary vision (`harness.py` routes `vision` intent here via `CLOUD_VISION_MODEL`) |
-| `gemma4:12b-mlx` | Local | OCR intent only (narrower than vision), intent classifier, manual override, IDE-mode fallback |
+| `gemma4:12b` (GGUF) | Local | OCR/vision-capable, intent classifier, manual override, IDE-mode fallback — replaced `-mlx` tag 2026-08-08, mlx never received image bytes (Ollama runtime bug) |
 | `qwen3.5:4b` | Local | Query rewriting, history compaction |
 | `tools/local_vision.py` | Local | Replaces qwen3-vl for most screenshot analysis tasks |
 | `nomic-embed-text` | Local | Embeddings (`tools/semantic_files.py`, `store/knowledge_base.py`) |
@@ -87,14 +90,16 @@ Landed after a live failure where a subagent silently skipped a source and confi
 - **onnxruntime CoreML unstable on Apple Silicon** — Kokoro TTS defaults `CPUExecutionProvider`; don't revert without load-testing under concurrency
 
 ## Local Agent (LangGraph) — Form Filling & Coding
-Task-scoped toolset (`document`/`code`/`full`) in `agents/local_agent_tools.py`. Coding mode has diff+undo on edits, git status/diff visibility, and confirm-before-execute for destructive shell commands. Form workflow: `detect_form_fields → fill_form → detect_form_fields(filled) → confirm`. Full detail, gotchas, testing: `docs/agents/local-agent-tools.md`.
+Task-scoped toolset (`document`/`code`/`full`) in `agents/local_agent_tools.py`. Coding mode has diff+undo on edits, git status/diff visibility, and confirm-before-execute for destructive shell commands. Form workflow: `detect_form_fields → fill_form → detect_form_fields(filled) → confirm`. Skill recipes from `skills_hub.py` (`match_skill()`) are injected into the system prompt (`[SKILL: name — desc]` block) to give weak local models a known-good plan instead of free-planning. Full detail, gotchas, testing: `docs/agents/local-agent-tools.md`.
+
+### Two local agent loops — not redundant, don't merge
+- **`agents/local_agent_graph.py` (`run_local_agent`)** — LangGraph, structured plan→step→tool nodes, skill injection, diff+undo, confirm-before-destructive-shell. **This is the one being shipped in the Tauri desktop app** and the one to target for eval work going forward (`skill_eval.py`).
+- **`harness.py` (`run(force_local_agent=True)`)** — legacy flat tool-calling loop via `ollama_client.chat()`, no skill injection, no safety gates. Kept only because existing callers (telegram doc-intent synthesis, IDE mode) already route through it deliberately — telegram doc intent in particular avoids the LangGraph loop on purpose (old loop hung ~80s/round; doc intent redesigned to deterministic gather→synthesize, no agent loop at all). Don't build new eval infra or features against this path.
 
 <!-- forge-learnings:start -->
 ## Learnings (auto-maintained by /um — human edits go ABOVE this block)
-- Repo dir renamed gemma4llama→clixen; package name, README, launchd label prefix `com.clixen.*` (renamed 2026-08-03). Watch for hardcoded `/gemma4llama` paths (`tools/path_policy.py` WORKSPACE_ROOT must derive from `__file__`).
-- Messaging is ONE launchd job `com.clixen.messaging.plist` → `messaging_supervisor.sh` (telegram_bot + whatsapp_bot:9236 + whatsapp_bridge:9235). Logs: `tools-harness/messaging_std{err,out}.log`. Restart via `launchctl unload/load` (KeepAlive=true).
 - `src/g4l/` is a frozen phase-1 prototype; only `core/models.py` + `core/utils.py` are imported by production `chat_ui.py`. `tools-harness/` is the real runtime.
-- Router `classify()`/`classify_telegram()`: every branch returns cloud (`CLOUD_MODEL`) except `ocr`, which stays `gemma4:12b-mlx` (narrow local OCR path) — flipped cloud-first 2026-07, this line was stale (used to say every branch returns gemma4:12b-mlx). `harness.py`'s post-classify if/elif still re-overrides some intents back to local; separately, `vision` intent routes to cloud `CLOUD_VISION_MODEL` (Gemini), not gemma4 — see CLAUDE.md → Routing.
+- `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0` set daemon-wide (`launchctl setenv`, needs killing `ollama serve`+Ollama.app parent to take effect) — verified live, second model load fully evicts first. Helped prefill (84 tok/s), decode flat ~8.8 tok/s (12B Q4 decode is bandwidth-bound on M4, not a server-flag fix).
 - Telegram document intent (`_run_doc_agent`): deterministic gather→one `chat(tools=[])` synthesis→convert; NO agent loop (old loop hung ~80s/round). `_content_query` strips format words before web search; converters return error STRINGS not raises (verify file on disk).
 - `local_agent_nodes.py` ollama calls use `ollama.Client(timeout=120)` — unbounded before, caused silent hangs on long prompts.
 - Doc formats: pdf/docx/xlsx work (openpyxl installed); pptx needs python-pptx.
@@ -104,4 +109,6 @@ Task-scoped toolset (`document`/`code`/`full`) in `agents/local_agent_tools.py`.
 - `tools/websearch.py`: Tavily/rewrite calls previously had no enforced timeout (Tavily SDK default 60s, `_rewrite_query`'s `timeout_s` was declared but never applied) — real outliers hit 90s+. Now: 10s Tavily cap, 15s cap on the SearXNG/DDG/Brave fallback tier, and `_rewrite_query` defaults to cloud (DeepSeek) not local `qwen3.5:4b`.
 - Conversation fold (`store/conversation.py`): labeling the transcript `USER:`/`ASSISTANT:` makes the summarizer model hallucinate a conversational reply instead of extracting facts (chat-shaped input triggers a "continue this chat" prior stronger than the system prompt). Use neutral tags (`[A]`/`[B]`) + explicit "inert data, do not respond" framing.
 - Real barge-in for a cold-exec voice hook needs 4 steps together: SIGKILL the previous hook process by PID (from the lock file) → `pkill` orphaned audio subprocesses (they outlive a killed parent) → hit `/chat/abort` server-side → force-clear the lock file. Killing only the audio leaves the old process holding the lock.
+- Word (.docx) review comments live in a separate zip entry (`word/comments.xml`), not exposed by `python-docx` or `anydoc` (`anydoc.Document.notes` = footnotes, not comments — confirmed empirically, 0 notes on a doc with 269 real comments). `docx2python` (MIT) exposes them cleanly via `.comments` → `(anchor, author, date, text)` tuples. Two independent doc readers needed the fix: `office_tools.docx_to_markdown` (semantic-index path) AND `structured.py`'s hand-rolled `_read_docx` (the actual agent-facing `read_document` tool) — they don't share code. When appending comments to a truncated body, reserve the comments' char budget FIRST or `[:max_chars]` silently drops them on any doc where body alone exceeds the limit.
+- Tantivy (`tools/fulltext_search.py`, BM25 keyword search) vs LanceDB (`tools/semantic_files.py`, meaning-based vector search) are complementary, not interchangeable — don't build a heuristic router, let tool-schema descriptions do the routing (each schema explicitly names the other as the better fit for the opposite case) per the regex-routing design principle above. Verified via live no-keyword-overlap query ("sites never set money aside for keeping gear running so it fails silently" vs source text using "PSA plant", "maintenance budget", "servicing agreements"): LanceDB found the real conceptual match, Tantivy drifted onto unrelated passages sharing only incidental words. Tantivy's real edge is raw speed (10-800x faster, no embedding HTTP round-trip to Ollama) and literal/exact-term precision — initial claim of tantivy "beating" LanceDB on accuracy was wrong, based on keyword-heavy test queries that favored BM25 by construction. Also: Tantivy indexing must chunk (same 1500/200 as LanceDB) or BM25 scores dilute across whole-file blobs and surface the wrong section of a large doc; schema changes (e.g. adding `chunk_index`, switching `path` field to `tokenizer_name="raw"` for exact-term delete) require wiping the on-disk index dir — `tantivy.Index.open()` on an old-schema index doesn't auto-migrate.
 <!-- forge-learnings:end -->

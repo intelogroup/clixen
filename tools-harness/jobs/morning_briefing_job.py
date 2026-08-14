@@ -158,7 +158,7 @@ def _llm_highlight(events: list[dict], emails: list[dict], tasks: list[dict]) ->
         "Be specific, no filler words."
     )
     # Cloud-first (2026-07-31): cloud default model with built-in OpenAI fallback;
-    # local ollama kept as last resort only (gemma4:12b-mlx isn't reliably loaded).
+    # local ollama kept as last resort only (gemma4:12b isn't reliably loaded).
     try:
         from clients.cloud_client import DEFAULT_CLOUD_MODEL, raw_completion
         choice = raw_completion(

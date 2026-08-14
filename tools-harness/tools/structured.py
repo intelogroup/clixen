@@ -12,9 +12,15 @@ Tools:
 import ast
 import csv
 import html
+from email import policy as _email_policy
+from email.parser import BytesParser as _BytesParser
+from html.parser import HTMLParser as _HTMLParser
 import io
 import json
 import re
+import shutil
+import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -97,7 +103,7 @@ READ_PDF_SCHEMA = {
     "function": {
         "name": "read_pdf",
         "description": (
-            "Extract text from a PDF file, page by page. "
+            "Extract text from a PDF file as markdown (whole document in one pass). "
             "Use for research papers, reports, or any PDF document on this computer."
         ),
         "parameters": {
@@ -110,9 +116,8 @@ READ_PDF_SCHEMA = {
                 "pages": {
                     "type": "string",
                     "description": (
-                        "Page range like '1-30' or '3' (default: first 10 pages). "
-                        "Output is capped at 30000 chars total — for long documents, "
-                        "request pages in batches of ~25-30 rather than a few at a time."
+                        "Unused — kept for compatibility. The whole document is always "
+                        "converted; output is capped at 30000 chars total."
                     ),
                     "default": "1-10",
                 },
@@ -164,6 +169,17 @@ _CODE_SUFFIXES = {
 }
 _STRUCTURED_SUFFIXES = {".json", ".yaml", ".yml", ".toml", ".csv", ".env"}
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+_ZIP_MEMBER_LIMIT = 200
+_ZIP_MEMBER_BYTES = 25 * 1024 * 1024
+_ZIP_TOTAL_BYTES = 100 * 1024 * 1024
+_DOCUMENT_SUFFIXES = _IMAGE_SUFFIXES | {
+    ".pdf", ".docx", ".xlsx", ".pptx", ".rtf", ".html", ".htm", ".eml",
+    ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".toml",
+}
+_UNSUPPORTED_BINARY_SUFFIXES = {
+    ".doc", ".xls", ".ppt", ".key", ".numbers", ".msg", ".mp3", ".wav", ".m4a",
+    ".mp4", ".mov", ".avi", ".mkv", ".flac",
+}
 
 
 def read_document(
@@ -195,10 +211,18 @@ def read_document(
         text = _read_docx(p, max_chars=max_chars)
     elif suffix == ".xlsx":
         text = _read_xlsx(p, max_chars=max_chars)
+    elif suffix == ".eml":
+        text = _read_eml(p, max_chars=max_chars)
+    elif suffix in (".pptx", ".ppt"):
+        text = _read_pptx(p, max_chars=max_chars)
     elif suffix == ".pages":
         text = _read_pages(p, max_chars=max_chars)
     elif suffix in _STRUCTURED_SUFFIXES:
         text = parse_file(str(p))[:max_chars]
+    elif suffix == ".zip":
+        text = _read_zip(p, max_chars=max_chars)
+    elif suffix == ".rtf":
+        text = _read_rtf(p, max_chars=max_chars)
     elif suffix in _CODE_SUFFIXES:
         text = parse_code(str(p), include_bodies=False)[:max_chars]
     elif suffix in _IMAGE_SUFFIXES:
@@ -207,18 +231,40 @@ def read_document(
         except Exception as e:
             return f"OCR unavailable for {p}: {e}"
         text = ocr_execute(str(p), lang=lang)[:max_chars]
+    elif suffix in (".html", ".htm"):
+        text = _read_html(p, max_chars=max_chars)
+    elif suffix in _UNSUPPORTED_BINARY_SUFFIXES:
+        return (
+            f"Unsupported document format: {suffix}\nPath: {p}\n"
+            "Convert/export it to PDF, DOCX, XLSX, PPTX, RTF, or plain text first."
+        )
     elif suffix in _TEXT_SUFFIXES or _looks_like_text(p):
+        # A first-page-only read hides conclusions, appendices, and late-file
+        # values. Keep head and tail so one bounded extraction can see both
+        # document setup and terminal evidence without an extra model round.
         try:
-            from tools.filesystem import read_file
+            raw_text = p.read_text(errors="replace")
+            if len(raw_text) <= max_chars:
+                text = raw_text
+            else:
+                head_chars = max_chars // 2
+                tail_chars = max_chars - head_chars
+                text = (
+                    raw_text[:head_chars]
+                    + f"\n\n[... middle omitted: {len(raw_text) - max_chars} characters ...]\n\n"
+                    + raw_text[-tail_chars:]
+                )
         except Exception:
-            text = p.read_text(errors="replace")[:max_chars]
-        else:
-            text = read_file(str(p), limit=400)[:max_chars]
+            try:
+                from tools.filesystem import read_file
+                text = read_file(str(p), limit=max(400, max_chars // 80))[:max_chars]
+            except Exception:
+                text = ""
     else:
         return (
             f"Unsupported document format: {p.suffix or '(no extension)'}\n"
             f"Path: {p}\n"
-            "Supported: text/code files, JSON/YAML/TOML/CSV/.env, PDF, DOCX, XLSX, "
+            "Supported: text/code files, JSON/YAML/TOML/CSV/.env, PDF, DOCX, XLSX, PPTX, ZIP, "
             "Pages (read-only), and image OCR (PNG/JPG/TIFF/BMP/WebP). "
             "For Numbers, Keynote, legacy .doc/.xls, audio, or video, convert/export "
             "to a supported format first."
@@ -254,6 +300,14 @@ def _xml_text(elem: ET.Element) -> str:
     return html.unescape("".join(elem.itertext())).strip()
 
 
+def _docx_comments_markdown_safe(path: Path) -> str:
+    try:
+        from tools.office_tools import _docx_comments_markdown
+        return _docx_comments_markdown(str(path))
+    except Exception:
+        return ""
+
+
 def _read_docx(path: Path, max_chars: int) -> str:
     try:
         with zipfile.ZipFile(path) as zf:
@@ -272,15 +326,88 @@ def _read_docx(path: Path, max_chars: int) -> str:
                     if elem.tag.endswith("}p") or elem.tag.endswith("}tr"):
                         text = _xml_text(elem)
                         if text:
+                            if elem.tag.endswith("}p"):
+                                style = ""
+                                for paragraph_property in elem:
+                                    if paragraph_property.tag.endswith("}pPr"):
+                                        for style_node in paragraph_property:
+                                            if style_node.tag.endswith("}pStyle"):
+                                                style = style_node.attrib.get(
+                                                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val",
+                                                    "",
+                                                )
+                                match = re.fullmatch(r"Heading([1-6])", style, re.I)
+                                if match:
+                                    text = "#" * int(match.group(1)) + " " + text
                             lines.append(text)
                 if lines:
                     parts.append("\n".join(lines))
-            result = "\n\n".join(parts).strip()
-            return result[:max_chars] if result else f"No text found in DOCX: {path}"
+            body = "\n\n".join(parts).strip()
+            comments_md = _docx_comments_markdown_safe(path)
+            if not body and not comments_md:
+                return f"No text found in DOCX: {path}"
+
+            if comments_md:
+                # Reserve room for comments so they survive truncation of long bodies.
+                body_budget = max(0, max_chars - len(comments_md) - 2)
+                result = f"{body[:body_budget]}\n\n{comments_md}"
+            else:
+                result = body
+            return result[:max_chars]
     except zipfile.BadZipFile:
         return f"DOCX read error: not a valid .docx zip file: {path}"
     except Exception as e:
         return f"DOCX read error: {e}"
+
+
+class _TextHTMLParser(_HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        value = " ".join(data.split())
+        if value:
+            self.parts.append(value)
+
+
+def _read_html(path: Path, max_chars: int) -> str:
+    parser = _TextHTMLParser()
+    parser.feed(path.read_text(errors="replace"))
+    return "\n".join(parser.parts)[:max_chars]
+
+
+def _read_rtf(path: Path, max_chars: int) -> str:
+    """Extract readable text from common RTF without executing embedded content."""
+    raw = path.read_text(errors="replace")
+    raw = re.sub(r"\\'([0-9a-fA-F]{2})", lambda m: bytes.fromhex(m.group(1)).decode("cp1252", errors="replace"), raw)
+    raw = raw.replace(r"\par", "\n").replace(r"\line", "\n").replace(r"\tab", "\t")
+    raw = re.sub(r"\\u-?\d+\??", "", raw)
+    raw = re.sub(r"\\[a-zA-Z]+-?\d*\s?", "", raw)
+    raw = raw.replace("\\{", "{").replace("\\}", "}").replace("\\\\", "\\")
+    raw = raw.replace("{", "").replace("}", "")
+    return re.sub(r"\n{3,}", "\n\n", raw).strip()[:max_chars]
+
+
+def _read_eml(path: Path, max_chars: int) -> str:
+    message = _BytesParser(policy=_email_policy.default).parsebytes(path.read_bytes())
+    parts = [f"Subject: {message.get('subject', '')}"]
+    parts.append(f"From: {message.get('from', '')}")
+    parts.append(f"To: {message.get('to', '')}")
+    body = message.get_body(preferencelist=("plain", "html"))
+    if body is not None:
+        parts.append(body.get_content())
+    return "\n".join(part.strip() for part in parts if part and part.strip())[:max_chars]
+
+
+def _read_pptx(path: Path, max_chars: int) -> str:
+    import anydoc
+
+    try:
+        text = anydoc.to_markdown(str(path))
+    except Exception as e:
+        return f"PPTX read error: {e}"
+    return (f"PPTX: {path}\n\n{text}" if text.strip() else f"No text found in PPTX: {path}")[:max_chars]
 
 
 def _read_xlsx(path: Path, max_chars: int) -> str:
@@ -494,44 +621,63 @@ def read_pdf(path: str, pages: str = "1-10") -> str:
     if not p.exists():
         return f"File not found: {p}"
 
-    return "PDF tooling disabled: PyMuPDF (AGPL-3.0) was removed for license compliance. Pending port to pdfium-render/lopdf."
+    total = _pdf_page_count(p)
+    start, end = _parse_page_range(pages, total)
+    text = _pdftotext_pages(p, start, end)
+    if _embedded_text_len(text) >= 20:
+        return f"PDF: {p} ({total} pages total)\n\n{text}"[:30000]
+    ocr = _ocr_pdf_pages(str(p), start, end, total)
+    if ocr:
+        return ocr[:30000]
+    return f"PDF read error: no extractable text in selected pages {start}-{end}"
 
-    # Parse page range
-    try:
-        if "-" in pages:
-            start_s, end_s = pages.split("-", 1)
-            start_idx = int(start_s) - 1
-            end_idx = int(end_s)
-        else:
-            start_idx = int(pages) - 1
-            end_idx = int(pages)
-        page_range = range(start_idx, end_idx)
-    except ValueError:
-        return f"Invalid page range: {pages}. Use '1-5' or '3'."
 
-    try:
-        with fitz.open(str(p)) as doc:
-            total = len(doc)
-            parts = [f"PDF: {p}  ({total} pages total)"]
-            for i in page_range:
-                if i < 0 or i >= total:
-                    continue
-                text = doc[i].get_text("text").strip()
-                parts.append(f"\n--- Page {i + 1} ---\n{text}")
-        # ponytail: 12000 was a flat cap regardless of requested range, so
-        # bigger page requests returned the same truncated chunk — forcing
-        # many small sequential read_pdf calls to cover a long document
-        # (confirmed live: exhausted a 25-step budget on a 185-page report).
-        # 30000 chars (~7-8k tokens) lets one call cover ~20-30 typical pages.
-        result = "\n".join(parts)[:30000]
-        # Scanned PDF? pymupdf's embedded-text extraction returns ~nothing for
-        # image-only pages. Fall back to rendering pages and OCR-ing them via the
-        # Unlimited-OCR daemon (tools/ocr.py handles the daemon->PaddleOCR chain).
-        if _embedded_text_len(result) < 20:
-            return _ocr_pdf_pages(str(p), start_idx, end_idx, total) or result
-        return result
-    except Exception as e:
-        return f"PDF read error: {e}"
+def _pdf_page_count(path: Path) -> int:
+    binary = shutil.which("pdfinfo")
+    if binary:
+        result = subprocess.run([binary, str(path)], capture_output=True, text=True, check=False)
+        match = re.search(r"^Pages:\s*(\d+)", result.stdout, re.MULTILINE)
+        if match:
+            return int(match.group(1))
+    return 1
+
+
+def _parse_page_range(spec: str, total: int) -> tuple[int, int]:
+    """Parse a bounded one-based page range; default is the first ten pages."""
+    total = max(1, int(total or 1))
+    raw = str(spec or "1-10").strip().lower()
+    if raw in {"all", "*"}:
+        return 1, total
+    first = last = None
+    match = re.fullmatch(r"(\d+)(?:\s*[-:]\s*(\d+))?", raw)
+    if match:
+        first = int(match.group(1))
+        last = int(match.group(2) or first)
+    if first is None or first < 1 or last < first:
+        raise ValueError(f"invalid PDF page range: {spec!r}")
+    return min(first, total), min(last, total)
+
+
+def _pdftotext_pages(path: Path, start: int, end: int) -> str:
+    binary = shutil.which("pdftotext")
+    if not binary:
+        return ""
+    result = subprocess.run(
+        [binary, "-f", str(start), "-l", str(end), "-layout", str(path), "-"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    pages = result.stdout.split("\f")
+    rendered = []
+    for offset, page in enumerate(pages[: end - start + 1]):
+        index = start + offset
+        body = page.strip()
+        if body:
+            rendered.append(f"--- Page {index} ---\n{body}")
+    return "\n\n".join(rendered)
 
 
 # Strip the "PDF: <path> (N pages total)" header and "--- Page N ---" separators
@@ -544,42 +690,70 @@ def _embedded_text_len(text: str) -> int:
 
 
 def _ocr_pdf_pages(path: str, start: int, end: int, total: int) -> str:
-    """Render a (scanned) PDF's pages to images and OCR them via tools.ocr."""
-    import shutil
-    import tempfile
+    """Render selected scanned-PDF pages with Poppler and OCR each page."""
+    from tools import ocr as _ocr
 
-    return "PDF OCR disabled: PyMuPDF (AGPL-3.0) was removed for license compliance."
-
-    from tools import ocr as _ocr  # lazy — text PDFs never import the daemon client
-
+    binary = shutil.which("pdftoppm")
+    if not binary or not start or not end:
+        return ""
+    tmp_dir = Path(tempfile.mkdtemp(prefix="pdf_ocr_"))
     try:
-        import fitz
-        doc = fitz.open(path)
-    except Exception as e:
-        return f"PDF OCR failed: {e}"
-    try:
-        mat = fitz.Matrix(200 / 72, 200 / 72)
-        tmp_dir = Path(tempfile.mkdtemp(prefix="pdf_ocr_"))
-        parts = [f"PDF (OCR): {path}  ({total} pages total)"]
-        for i in range(start, min(end, total)):
-            pix = doc[i].get_pixmap(matrix=mat)
-            img = tmp_dir / f"page_{i + 1:04d}.png"
-            pix.save(str(img))
-            page_text = _ocr.execute(str(img), lang="en")
-            if page_text.startswith(("File not found", "Unsupported", "PaddleOCR is not installed", "OCR failed")):
-                parts.append(f"\n--- Page {i + 1} ---\n[{page_text}]")
-            else:
-                parts.append(f"\n--- Page {i + 1} ---\n{page_text}")
-        return "\n".join(parts)[:30000]
-    except Exception as e:
-        return f"PDF OCR failed: {e}"
+        subprocess.run(
+            [binary, "-f", str(start), "-l", str(end), "-png", "-r", "200", path, str(tmp_dir / "page")],
+            capture_output=True,
+            check=True,
+        )
+        parts = [f"PDF: {path} ({total} pages total)"]
+        images = sorted(tmp_dir.glob("page-*.png"))
+        for index, image in enumerate(images, start):
+            page_text = _ocr.execute(str(image), lang="en")
+            parts.append(f"--- Page {index} ---\n{page_text}")
+        return "\n\n".join(parts)
+    except Exception:
+        return ""
     finally:
-        try:
-            doc.close()
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        except Exception:
-            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
+
+def _read_zip(path: Path, max_chars: int) -> str:
+    """Inspect and selectively extract a ZIP without path traversal or bombs."""
+    try:
+        archive = zipfile.ZipFile(path)
+    except (OSError, zipfile.BadZipFile) as exc:
+        return f"ZIP read error: {exc}"
+    try:
+        members = archive.infolist()
+        if len(members) > _ZIP_MEMBER_LIMIT:
+            return f"ZIP rejected: {len(members)} members exceeds limit {_ZIP_MEMBER_LIMIT}"
+        total_size = sum(max(0, item.file_size) for item in members)
+        if total_size > _ZIP_TOTAL_BYTES:
+            return f"ZIP rejected: {total_size} uncompressed bytes exceeds limit {_ZIP_TOTAL_BYTES}"
+        lines = [f"ZIP: {path} ({len(members)} members, {total_size} uncompressed bytes)"]
+        with tempfile.TemporaryDirectory(prefix="zip_docs_") as temp:
+            for index, item in enumerate(members):
+                name = item.filename.replace("\\", "/")
+                candidate = Path(name)
+                if candidate.is_absolute() or ".." in candidate.parts:
+                    lines.append(f"- {name}: skipped unsafe path")
+                    continue
+                if item.is_dir():
+                    continue
+                if item.file_size > _ZIP_MEMBER_BYTES:
+                    lines.append(f"- {name}: skipped member over size limit")
+                    continue
+                suffix = Path(name).suffix.lower()
+                lines.append(f"- {name} ({item.file_size} bytes)")
+                if suffix not in _DOCUMENT_SUFFIXES or sum(len(line) for line in lines) >= max_chars:
+                    continue
+                payload = archive.read(item)
+                member_path = Path(temp) / f"member_{index}{suffix}"
+                member_path.write_bytes(payload)
+                extracted = read_document(str(member_path), max_chars=min(3500, max_chars))
+                extracted = extracted.replace(str(member_path), f"{path}::{name}")
+                lines.append(f"[Member {name}]\n{extracted}")
+        return "\n\n".join(lines)[:max_chars]
+    finally:
+        archive.close()
 
 def parse_code(path: str, include_bodies: bool = False) -> str:
     p = Path(path).expanduser().resolve()

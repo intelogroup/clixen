@@ -28,7 +28,7 @@ def test_dispatch_clamps_cloud_model_to_local_default():
     with patch.dict(dispatch._DISPATCHERS, {"read": fake_specialist}):
         dispatch.dispatch("read this file", model="deepseek/deepseek-v4-flash", specialist_hint="read")
 
-    assert captured["model"] == "gemma4:12b-mlx"
+    assert captured["model"] == "gemma4:12b"
 
 
 def test_dispatch_clamps_openrouter_model_to_local_default():
@@ -41,7 +41,7 @@ def test_dispatch_clamps_openrouter_model_to_local_default():
     with patch.dict(dispatch._DISPATCHERS, {"read": fake_specialist}):
         dispatch.dispatch("read this file", model="openrouter/anthropic/claude-haiku-4.5", specialist_hint="read")
 
-    assert captured["model"] == "gemma4:12b-mlx"
+    assert captured["model"] == "gemma4:12b"
 
 
 def test_dispatch_leaves_local_model_untouched():
@@ -52,9 +52,9 @@ def test_dispatch_leaves_local_model_untouched():
         return object(), {}
 
     with patch.dict(dispatch._DISPATCHERS, {"read": fake_specialist}):
-        dispatch.dispatch("read this file", model="gemma4:12b-mlx", specialist_hint="read")
+        dispatch.dispatch("read this file", model="gemma4:12b", specialist_hint="read")
 
-    assert captured["model"] == "gemma4:12b-mlx"
+    assert captured["model"] == "gemma4:12b"
 
 
 if __name__ == "__main__":

@@ -117,14 +117,14 @@ def test_cloud_cooldown_skips_cloud_after_failure():
 
     ollama_called = False
 
-    def fake_ollama(m, msgs, tools, temperature=0.0):
+    def fake_run_local(m, msgs, tools, temperature=0.0):
         nonlocal ollama_called
         ollama_called = True
-        return SimpleNamespace(message=SimpleNamespace(content="local", tool_calls=None))
+        return SimpleNamespace(message=SimpleNamespace(content="local", tool_calls=None)), 0.1
 
     with (
         patch("agents.local_agent_nodes.is_cloud_model", return_value=True),
-        patch("agents.local_agent_nodes._ollama_chat", side_effect=fake_ollama),
+        patch("agents.local_agent_nodes._run_local", side_effect=fake_run_local),
         patch("clients.cloud_client.raw_completion") as mock_raw,
     ):
         result = local_agent_nodes._chat(model, [{"role": "user", "content": "hi"}], [])
@@ -151,13 +151,13 @@ def test_cloud_cooldown_expired_allows_cloud():
 
     with (
         patch("agents.local_agent_nodes.is_cloud_model", return_value=True),
-        patch("agents.local_agent_nodes._ollama_chat") as mock_ollama,
+        patch("agents.local_agent_nodes._run_local") as mock_run_local,
         patch("clients.cloud_client.raw_completion", side_effect=fake_raw),
     ):
         result = local_agent_nodes._chat(model, [{"role": "user", "content": "hi"}], [])
 
     assert cloud_called, "should call cloud when cooldown expired"
-    mock_ollama.assert_not_called()
+    mock_run_local.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -165,24 +165,17 @@ def test_cloud_cooldown_expired_allows_cloud():
 # ---------------------------------------------------------------------------
 
 def test_ollama_chat_raises_clear_error_on_model_not_found():
-    from agents import local_agent_nodes
-    from pathlib import Path
-    import tempfile
+    from clients import ollama_client
 
-    with patch("agents.local_agent_nodes._get_client") as mock_get_client:
+    with patch("clients.ollama_client._get_client") as mock_get_client:
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        # Simulate Ollama ResponseError
-        err_type = SimpleNamespace
-        err = err_type()
-        err.message = "model 'gemma4:12b' not found"
-
-        from ollama._types import ResponseError
+        from ollama import ResponseError
         mock_client.chat.side_effect = ResponseError("model 'gemma4:12b' not found", 404)
 
         with pytest.raises(RuntimeError) as exc:
-            local_agent_nodes._ollama_chat("gemma4:12b", [{"role": "user", "content": "hi"}], [])
+            ollama_client._run_local("gemma4:12b", [{"role": "user", "content": "hi"}], [])
 
         assert "not found" in str(exc.value).lower()
         assert "ollama pull" in str(exc.value).lower()
@@ -219,8 +212,9 @@ def test_cloud_lock_does_not_deadlock_simple_read():
     model = "deepseek/deepseek-v4-flash"
     local_agent_nodes._cloud_deadline[model] = time.time() + 9999
 
+    dummy = (SimpleNamespace(message=SimpleNamespace(content="local", tool_calls=None)), 0.1)
     with patch("agents.local_agent_nodes.is_cloud_model", return_value=True):
-        with patch("agents.local_agent_nodes._ollama_chat") as mock_ollama:
+        with patch("agents.local_agent_nodes._run_local", return_value=dummy):
             result = local_agent_nodes._chat(model, [], [])
     assert result is not None
 
@@ -240,10 +234,10 @@ def test_cloud_lock_concurrent_failures_no_crash():
         except Exception as e:
             results.append(f"err:{e}")
 
-    dummy = SimpleNamespace(message=SimpleNamespace(content="local", tool_calls=None))
+    dummy = (SimpleNamespace(message=SimpleNamespace(content="local", tool_calls=None)), 0.1)
     with (
         patch("agents.local_agent_nodes.is_cloud_model", return_value=True),
-        patch("agents.local_agent_nodes._ollama_chat", return_value=dummy),
+        patch("agents.local_agent_nodes._run_local", return_value=dummy),
         patch("clients.cloud_client.raw_completion", side_effect=RuntimeError("no network")),
     ):
         threads = []

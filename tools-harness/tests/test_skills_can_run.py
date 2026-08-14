@@ -158,6 +158,25 @@ def test_doc_quality_tools_in_registry():
         assert n in EXECUTORS, f"{n} not in EXECUTORS"
 
 
+def test_nih_biosketch_skill_registered():
+    """Verify NIH biosketch routing and tool wiring."""
+    _reset_external_only()
+    skill = next((s for s in SKILLS if s.id == "nih_biosketch"), None)
+    assert skill is not None, "nih_biosketch skill not registered"
+    assert skill.category == "Research"
+    assert skill.max_rounds == 12
+    for tool in skill.tools:
+        assert tool in EXECUTORS, f"nih_biosketch requires {tool!r} not in EXECUTORS"
+
+
+def test_match_nih_biosketch():
+    _reset_external_only()
+    result = match_skill_for_task({
+        "query": "fill the new NIH Common Form biosketch and SciENcv supplement",
+    })
+    assert "nih biosketch" in result.lower(), result[:300]
+
+
 # ---------------------------------------------------------------------------
 # run_skill — execution pipeline
 # ---------------------------------------------------------------------------

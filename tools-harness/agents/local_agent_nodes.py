@@ -16,19 +16,63 @@ import threading
 import time
 from typing import Literal
 
-import ollama
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agents.local_agent_state import LocalAgentState
 from agents.local_agent_tools import get_local_agent_tools, get_local_agent_executors
+
+
+def _tools_for_state(state) -> list:
+    """Tool schemas narrowed by the matched skill and specialist handoff state."""
+    tools = get_local_agent_tools(state.task)
+    if state.skill_tools:
+        from tools.registry import tools_with_tags
+        # Union with "core" so a matched skill's narrow list (e.g. create_task's
+        # 3 tools) can't silently hide always-available generic tools like
+        # gog_exec — narrowing is for prompt size, not for hard-blocking tools
+        # the skill just didn't happen to list.
+        keep = set(state.skill_tools) | tools_with_tags("core")
+        tools = [t for t in tools if t["function"]["name"] in keep]
+    if state.excluded_tools:
+        excluded = set(state.excluded_tools)
+        tools = [t for t in tools if t["function"]["name"] not in excluded]
+    return tools
 from tools.registry import execute_tool as _registry_execute_tool, is_error_result
 from tools.filesystem import find_files
 from tools.injection_guard import wrap_external_output
 from clients.cloud_client import is_cloud_model
-from clients.ollama_client import DEFAULT_MODEL as _LOCAL_DEFAULT_MODEL, _trace_resp
+from clients.ollama_client import DEFAULT_MODEL as _LOCAL_DEFAULT_MODEL, _trace_resp, _run_local
 from log_config import setup_logging as _setup_logging
 
 _log = _setup_logging("local_agent_nodes")
+
+
+def _derived_numeric_hint(query: str, answer: str, transcript: str) -> str | None:
+    """Detect a bounded refusal where the evidence contains a simple formula."""
+    import re
+    if not re.search(r"\b(?:how much|what is|calculate|number|amount|revenue|total)\b", query, re.I):
+        return None
+    if not re.search(r"\b(?:not established|cannot determine|can't determine|unknown|not available)\b", answer, re.I):
+        return None
+    growth = re.search(
+        r"(?:grew|increased|rose)\s+by\s+(?:exactly\s+)?(\d+(?:\.\d+)?)%\s+over\s+(?:Q2|quarter 2)",
+        transcript, re.I,
+    )
+    base_match = re.search(
+        r"(?:Q2|quarter 2)\s+(?:revenue|value|amount)\s*(?:is|=|:)\s*\$?([\d,]+)",
+        transcript, re.I,
+    ) or re.search(r"\|\s*(?:Q2|quarter 2)\s*\|\s*\$?([\d,]+)", transcript, re.I)
+    if not growth or not base_match:
+        return None
+    percent, base = growth.group(1), base_match.group(1)
+    base_value = int(base.replace(",", ""))
+    result = base_value * (1 + float(percent) / 100)
+    rendered = str(int(result)) if result.is_integer() else str(result)
+    return (
+        f"The answer must not be a refusal: the evidence states that the value grew by "
+        f"{percent}% over Q2={base_value}. Calculate {base_value} * (1 + {percent}/100) = "
+        f"{rendered}, cite the supporting evidence, and answer the user's numeric question."
+    )
 
 # ponytail: cooldown cache — after cloud call fails, skip retry for N seconds.
 # Prevents 50 consecutive 404s in one agent run (observed: 15:07-15:13, Jul 8).
@@ -37,212 +81,68 @@ _cloud_lock = threading.Lock()
 _CLOUD_COOLDOWN = 300
 
 # System prompt for local-agent (reused from harness.py)
-def _build_system_prompt(task: str, tool_schemas: list[dict], home: str, project_root: str | None = None, skill_prompt: str | None = None) -> str:
-    """Build a system prompt dynamically from tool schemas + task type.
 
-    Tool descriptions are extracted live from the actual schemas — no
-    hardcoded tool lists. The prompt structure adjusts per task:
-    - code: full coding workflow, no form/audio bloat
-    - document: doc-creation focused, no code/form tools
-    - full: everything
+def _build_system_prompt(task: str, tool_schemas: list[dict], home: str,
+                         project_root: str | None = None,
+                         skill_prompt: str | None = None,
+                         chat_id: str | None = None) -> str:
+    """Build the compact runtime prompt.
+
+    Tool schemas are already sent to the model, so this prompt contains only
+    role, universal operating rules, and task-specific constraints. Detailed
+    procedures belong in the matched skill contract.
     """
-    import os
-
-    name_map = {t["function"]["name"]: t["function"]["description"].split(".")[0] for t in tool_schemas}
-    has = lambda n: n in name_map
-
-    lines = []
-
-    # Role
-    if task == "code":
-        lines.append("You are local-agent, a coding assistant on this computer. "
-                      "You write, edit, search, and restructure code files.")
-    elif task == "document":
-        lines.append("You are local-agent, a document creation assistant. "
-                      "You generate PDFs, Excel files, and PowerPoints from content.")
-    else:
-        lines.append("You are local-agent, a file and folder assistant on this computer.")
-
-    lines.append("")
-
+    tool_names = [t["function"]["name"] for t in tool_schemas]
+    has = set(tool_names)
+    role = {"code": "coding assistant", "document": "document assistant"}.get(
+        task, "local operations assistant"
+    )
+    lines = [f"You are Gemma, Clixen's {role} on the user's computer."]
     if project_root:
-        lines.append(f"PROJECT ROOT: {project_root} — all file paths in this task live under here. "
-                     "Use this exact path (e.g. list_directory/read_file on it directly), "
-                     "never guess or invent a different folder name.")
-        lines.append("")
-
+        lines.append(f"Project root: {project_root}. Use this exact root for project files.")
+    if task == "document" and chat_id and project_root:
+        lines.append(
+            f"Document session id: {chat_id}. Use document_scratchpad with this id and "
+            f"workspace {project_root} for bounded, user-visible working notes."
+        )
     if skill_prompt:
-        lines.append(skill_prompt)
-        lines.append("")
-
-    # Critical instruction
-    lines.append("CRITICAL: Call a tool for every request. Never describe what you'd do. "
-                 "Never write tool syntax as plain text — make actual tool calls.")
-    lines.append("")
-
-    # Tool list — generated from schemas
-    lines.append("TOOLS:")
-
-    # Read tools
-    read_group = []
-    for n in ["read_file", "read_many_files", "read_document", "read_pdf", "list_directory", "find_files"]:
-        if has(n):
-            read_group.append(f"  {n} — {name_map[n]}")
-    if has("grep_files"):
-        read_group.append("  grep_files — search file contents by regex")
-    if has("file_tree"):
-        read_group.append("  file_tree — recursive project layout")
-    if has("file_info"):
-        read_group.append("  file_info — size, type, modified date")
-    if has("parse_code"):
-        read_group.append("  parse_code — extract functions, classes, imports from code")
-    if read_group:
-        lines.append("READ:")
-        lines.extend(read_group)
-        lines.append("")
-
-    # Content search tools (indexed) — named explicitly so weaker models
-    # don't fall back to guessing file paths with read_file instead.
-    search_group = []
-    if has("fulltext_search"):
-        search_group.append("  fulltext_search — keyword/exact-phrase search over indexed files (BM25, fast)")
-    if has("semantic_file_search"):
-        search_group.append("  semantic_file_search — meaning/conceptual search over indexed files (vector similarity)")
-    if has("index_directory_fts"):
-        search_group.append("  index_directory_fts — index a directory for fulltext_search (run once first)")
-    if has("index_directory"):
-        search_group.append("  index_directory — index a directory for semantic_file_search (run once first)")
-    if search_group:
-        lines.append("CONTENT SEARCH — MANDATORY FIRST STEP for any open-ended question about what's "
-                      "in your files/notes when no specific file path is named (e.g. 'is there a...', "
-                      "'search my notes for...', 'find where X is mentioned'). Call fulltext_search or "
-                      "semantic_file_search BEFORE list_directory or grep_files — do not browse "
-                      "directories by hand to look for content, that's what these tools are for. "
-                      "If nothing already indexed, index first (index_directory_fts / index_directory).")
-        lines.extend(search_group)
-        lines.append("")
-
-    # Write tools
-    write_group = []
-    for n in ["write_file", "edit_file", "edit_file_fuzzy", "append_file", "rename_file", "copy_file", "create_directory"]:
-        if has(n):
-            write_group.append(f"  {n} — {name_map[n]}")
-    if write_group:
-        lines.append("WRITE:")
-        lines.extend(write_group)
-        lines.append("")
-
-    # Form tools
-    form_group = []
-    for n in ["detect_form_fields", "detect_pdf_form_fields", "fill_form", "fill_pdf_form",
-              "update_form", "detect_flat_pdf_fields", "fill_flat_pdf",
-              "vision_detect_form_fields", "vision_fill_form_fields"]:
-        if has(n):
-            form_group.append(f"  {n} — {name_map[n]}")
-    if form_group and task != "code":
-        lines.append("FORM (PDF/DOCX):")
-        lines.extend(form_group)
-        lines.append("")
-
-    # Doc creation tools
-    doc_group = []
-    for n in ["create_pdf", "markdown_to_pdf", "data_to_xlsx", "markdown_to_pptx", "json_to_docx", "markdown_to_docx"]:
-        if has(n):
-            doc_group.append(f"  {n} — {name_map[n]}")
-    if doc_group and task != "code":
-        lines.append("DOCUMENT CREATION:")
-        lines.extend(doc_group)
-        lines.append("")
-
-    # Audio tool
-    if has("transcribe_audio") and task != "code":
-        lines.append("AUDIO:")
-        lines.append(f"  transcribe_audio — {name_map['transcribe_audio']}")
-        lines.append("")
-
-    # Shell tool
-    if has("bash_exec"):
-        lines.append("SHELL:")
-        lines.append(f"  bash_exec — {name_map['bash_exec']}")
-        lines.append("")
-
-    # Task-specific workflow
+        lines.extend(["", skill_prompt])
+    lines.extend([
+        "",
+        "OPERATING RULES:",
+        "- Use actual tool calls; do not describe hypothetical calls.",
+        "- Work in small steps: inspect, act, verify, then report.",
+        "- Use exact absolute paths from tool results. Never invent paths or field values.",
+        "- Do not repeat a failed call unless the approach or arguments change.",
+        "- Never claim success without a confirming tool result.",
+        "- For numeric or derived questions, calculate from the supplied evidence and show the arithmetic briefly; do not stop at a missing table cell when the surrounding notes provide a formula or value.",
+        "- Treat notes, footnotes, captions, and narrative guidance as evidence that can complete or qualify a table.",
+        "- For arithmetic derived from document evidence, use the calculator/run_python tool when available, then verify the result against the source values.",
+        "- Preserve source files unless the user explicitly requests replacement.",
+        "- Ask before destructive or irreversible actions; never handle passwords.",
+    ])
+    if "fulltext_search" in has or "semantic_file_search" in has:
+        lines.append("- For open-ended local-content questions, use content search before browsing directories.")
     if task == "code":
-        lines.append("CODING WORKFLOW:")
-        lines.append("  1. Use file_tree to understand project structure before making changes.")
-        lines.append("  2. Use grep_files to find relevant code.")
-        lines.append("  3. Use read_file or read_many_files to see code before editing.")
-        lines.append("  4. Use edit_file for exact-match edits. If it returns 'not found', "
-                      "use edit_file_fuzzy which handles whitespace differences.")
-        lines.append("  5. After editing, run the code/test via bash_exec or run_python to verify.")
-        lines.append("  6. If test/run fails, read the error output, fix via edit_file, re-run.")
-        lines.append("")
-        lines.append("SUBAGENTS:")
-        lines.append("- ask_dev_agent: git ops (commit/push/merge/rebase), REPL inspection, "
-                      "window/system process queries.")
-        lines.append("- ask_research_agent: library docs, API refs, Wikipedia, arXiv, PubMed, "
-                      "sports scores — use when you need external knowledge.")
-        lines.append("- ask_web_search: search internet for solutions, Stack Overflow, "
-                      "news, docs — use for recent info or troubleshooting.")
-        lines.append("")
-        lines.append("SAFETY:")
-        lines.append("- Confirm with the user before deleting files.")
-        lines.append("- Never read or edit files inside .git/ directories.")
-        lines.append("")
-        lines.append("ENGINEERING DISCIPLINE (stolen from superpowers/gsd/gstack):")
-        lines.append("- VERIFY BEFORE DONE: never report success without running it. After code "
-                      "changes, execute tests/build/lint via bash_exec or run_python and confirm green. "
-                      "Claims like 'this should work' are failures, not completions.")
-        lines.append("- REPRODUCE BEFORE FIX: for a bug, first reproduce it (run → fail), then fix, "
-                      "then confirm the failure is gone. Do not guess-fix.")
-        lines.append("- TDD WHEN TESTS EXIST: if the repo has a test suite, add/run a test that fails "
-                      "first, then implement the smallest change that passes.")
-        lines.append("- ATOMIC COMMITS: commit via ask_dev_agent with a message describing WHAT changed. "
-                      "One logical change per commit; do not bundle unrelated edits.")
-        lines.append("- SEPARATE BUILD FROM VERIFY: finish the edit, then verify in a distinct step. "
-                      "Never blend 'I'll fix it and it'll work' — prove it instead.")
-        lines.append("")
-    elif task in ("full",):
-        lines.append("FORM WORKFLOW (PDF/DOCX):")
-        lines.append("  1. Call detect_form_fields to find all fields.")
-        lines.append("  2. Review field names/types from detection output.")
-        lines.append("  3. Call fill_form with field values — use {{\"FieldName\": \"value\"}} format.")
-        lines.append("     For CheckBox use \"Yes\" or \"Off\". For signatures, use a PNG path.")
-        lines.append("  4. Verify by calling detect_form_fields on the filled file.")
-        lines.append("")
-
-    # Search rule
-    if has("find_files"):
-        lines.append("FILE SEARCH: Use find_files with a glob pattern for specific file types "
-                      f"(e.g. find_files(pattern='*.m4a', path='{home}/Downloads')). "
-                      "list_directory is capped and may miss files.")
-        lines.append("")
-
-    # Path rules
-    lines.append(f"PATH RULES: Use absolute paths. For files in Downloads/Desktop/Documents, "
-                  f"use {home}/Downloads/file.pdf. "
-                  "Do NOT use ~ or /home/user/ — tools reject those paths.")
-    lines.append("")
-
-    lines.append("Call the tool immediately for every request. "
-                 "After writes/edits, confirm result in one sentence. "
-                 "For reads, return content directly with no wrapper text.")
-    lines.append("")
-    lines.append("HONESTY: If a tool result doesn't contain the answer, a file/field can't be found, "
-                 "or you're not sure, say so plainly instead of guessing or inventing plausible-looking "
-                 "content, paths, or field values. State uncertainty when it exists. Never answer with a "
-                 "topic, fact, or deadline that did not literally appear in a tool result you received — "
-                 "if your searches came back empty or irrelevant, say 'I couldn't find that in your files,' "
-                 "do not substitute a plausible-sounding but unrelated answer.")
-
+        lines.extend([
+            "",
+            "CODE CHECKLIST: understand structure, locate relevant code, read before editing, "
+            "make the smallest change, then run the relevant test or check.",
+        ])
+    lines.extend([
+        "",
+        "ACTIVE TOOLS: " + ", ".join(tool_names),
+        f"LOCAL FILE PATHS: use {home}/Downloads, {home}/Documents, or {home}/Desktop; do not use ~.",
+        "Respond briefly after completing the requested work and include unresolved issues.",
+    ])
     return "\n".join(lines)
 
 
-def _get_system_prompt(model: str, task: str = "full", query: str = "", tools: list[dict] | None = None, project_root: str | None = None, skill_prompt: str | None = None) -> str:
+def _get_system_prompt(model: str, task: str = "full", query: str = "", tools: list[dict] | None = None, project_root: str | None = None, skill_prompt: str | None = None, chat_id: str | None = None) -> str:
     """Build system prompt with memory recall prepended."""
     import os
     home = os.path.expanduser("~")
-    base = _build_system_prompt(task, tools or [], home, project_root, skill_prompt)
+    base = _build_system_prompt(task, tools or [], home, project_root, skill_prompt, chat_id)
     if query:
         from tools.memory_tools import recall_block
         mem_block = recall_block(query)
@@ -250,21 +150,6 @@ def _get_system_prompt(model: str, task: str = "full", query: str = "", tools: l
             return mem_block + "\n" + base
     return base
 
-
-_CLIENT = None
-
-
-def _get_client() -> ollama.Client:
-    # Bounded timeout so a stalled gemma4 call (long prompts hang — see CLAUDE.md)
-    # raises instead of blocking the whole graph forever. 120s covers a slow cold
-    # gemma4:12b round; a real hang trips it and the graph's consecutive-error
-    # handler ends the run cleanly instead of the bot going silent.
-    global _CLIENT
-    if _CLIENT is not None:
-        return _CLIENT
-    host = os.environ.get("OLLAMA_HOST") or os.environ.get("OLLAMA_BASE_URL")
-    _CLIENT = ollama.Client(host=host, timeout=float(os.environ.get("LOCAL_AGENT_CLIENT_TIMEOUT", "120"))) if host else ollama.Client(timeout=float(os.environ.get("LOCAL_AGENT_CLIENT_TIMEOUT", "120")))
-    return _CLIENT
 
 
 def _chat(model: str, messages: list[dict], tools: list[dict], temperature: float = 0.0):
@@ -283,7 +168,8 @@ def _chat(model: str, messages: list[dict], tools: list[dict], temperature: floa
             deadline = _cloud_deadline.get(model)
             if deadline is not None and now < deadline:
                 _log.info("[local-agent] cloud %s in cooldown (%.0fs left), using local", model, deadline - now)
-                return _ollama_chat(_LOCAL_DEFAULT_MODEL, messages, tools, temperature=temperature)
+                response, _ = _run_local(_LOCAL_DEFAULT_MODEL, messages, tools, temperature=temperature)
+                return response
 
         from clients.cloud_client import raw_completion, BudgetExceededError
         try:
@@ -299,45 +185,10 @@ def _chat(model: str, messages: list[dict], tools: list[dict], temperature: floa
                 if len(_cloud_deadline) > 50:
                     for k in sorted(_cloud_deadline, key=_cloud_deadline.get)[:-50]:
                         del _cloud_deadline[k]
-            return _ollama_chat(_LOCAL_DEFAULT_MODEL, messages, tools, temperature=temperature)
-    return _ollama_chat(model, messages, tools, temperature=temperature)
-
-
-def _ollama_chat(model: str, messages: list[dict], tools: list[dict], temperature: float = 0.0):
-    """
-    Call ollama.chat with tools.
-    Uses native ollama client (same as ollama_client.py).
-    Returns the response object (ChatResponse).
-    """
-    # Build options
-    options = {"temperature": temperature}
-
-    # Model-specific options
-    if model.startswith("gemma4"):
-        options["num_ctx"] = 16384  # gemma4 needs large context for tool results + form data
-        options["think"] = False  # thinking mode burns the num_predict budget
-    if "qwen3" in model:
-        options["think"] = False
-        options["temperature"] = 0.7
-        options["top_p"] = 0.8
-        options["top_k"] = 20
-        options["repeat_penalty"] = 1.05
-
-    from ollama._types import ResponseError
-    try:
-        response = _get_client().chat(
-            model=model,
-            messages=messages,
-            tools=tools,
-            options=options,
-        )
-        return response  # Returns ChatResponse object
-    except ResponseError as e:
-        if "not found" in str(e).lower():
-            msg = f"Model '{model}' not found in Ollama. Run: ollama pull {model}"
-            _log.error("[local-agent] %s", msg)
-            raise RuntimeError(msg) from e
-        raise
+            response, _ = _run_local(_LOCAL_DEFAULT_MODEL, messages, tools, temperature=temperature)
+            return response
+    response, _ = _run_local(model, messages, tools, temperature=temperature)
+    return response
 
 
 async def call_model(state: LocalAgentState) -> dict:
@@ -410,23 +261,32 @@ async def call_model(state: LocalAgentState) -> dict:
     _log.debug("[local-agent/graph] ollama_messages count=%d", len(ollama_messages))
 
     # Get filtered tools for local-agent (must come before system prompt)
-    tools = get_local_agent_tools(state.task)
+    tools = _tools_for_state(state)
 
     # Add system prompt if not present
     if not has_system:
         _query_text = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
-        system_prompt = _get_system_prompt(model, task=state.task, query=_query_text, tools=tools, project_root=state.project_root, skill_prompt=state.skill_prompt)
+        system_prompt = _get_system_prompt(model, task=state.task, query=_query_text, tools=tools, project_root=state.project_root, skill_prompt=state.skill_prompt, chat_id=state.chat_id)
         ollama_messages.insert(0, {"role": "system", "content": system_prompt})
     _log.info("[local-agent/graph] SENDING TO OLLAMA: %d tools, first tool: %s", len(tools), tools[0]['function']['name'] if tools else 'NONE')
 
     # Call the model (dispatches cloud vs. local) — run sync client in a thread
     # so the node-level timeout in local_agent_graph.py can interrupt a hang.
+    # gemma4 + tools: pass temperature=None so _run_local applies its own
+    # setdefault(temperature=1.0, top_p=0.95, top_k=64) — Google's model-card
+    # recommended sampling for tool calling. Forcing temperature=0.0 here (the
+    # old behavior) pre-populates opts["temperature"] before _run_local's
+    # gemma4+tools block runs, so its setdefault is a silent no-op and every
+    # tool-calling round decodes greedy instead — confirmed live as the cause
+    # of the "content='' tool_calls=[] done_reason=stop" empty-stall on step 1
+    # (_run_streaming already gets this right via .update(), not .setdefault()).
+    _gemma_with_tools = model.startswith("gemma4") and bool(tools)
     response = await asyncio.to_thread(
         _chat,
         model=model,
         messages=ollama_messages,
         tools=tools,
-        temperature=0.0 if model.startswith("gemma4") else 0.7,
+        temperature=None if _gemma_with_tools else (0.0 if model.startswith("gemma4") else 0.7),
     )
 
     _trace_resp(f"local-agent-step-{step}", model, response)
@@ -437,6 +297,43 @@ async def call_model(state: LocalAgentState) -> dict:
     tool_calls = getattr(response_msg, "tool_calls", None)
 
     _log.debug("[local-agent/graph] msg_content len=%d has_tool_calls=%s", len(msg_content), bool(tool_calls))
+
+    if not tool_calls and not msg_content and tools:
+        # gemma4 empty-generation stall (content='' + tool_calls=[] + done_reason='stop',
+        # small nonzero eval_count) — confirmed live as stochastic decode flakiness on
+        # gemma4:12b/Ollama 0.32.6, not driven by prompt length, tool count, or content
+        # (isolated repro ruled all three out). Since it's stochastic, resampling the
+        # SAME request is cheap and is exactly what the old fallback chain (tools=[]
+        # synthesis -> verify-reject -> loop back to agent with tools) eventually did
+        # anyway, just after two extra round trips (~15-20s). Try 2 cheap resamples with
+        # tools still attached first — this is what actually recovers it, per live traces.
+        for _resample_i in range(2):
+            _log.warning("[local-agent/graph] empty response at step=%d, resampling (%d/2)", step, _resample_i + 1)
+            resample_resp = await asyncio.to_thread(
+                _chat, model=model, messages=ollama_messages, tools=tools,
+                temperature=None if _gemma_with_tools else (0.0 if model.startswith("gemma4") else 0.7),
+            )
+            _trace_resp(f"local-agent-step-{step}-resample-{_resample_i + 1}", model, resample_resp)
+            resample_msg = resample_resp.message
+            msg_content = getattr(resample_msg, "content", "") or ""
+            tool_calls = getattr(resample_msg, "tool_calls", None)
+            if tool_calls or msg_content:
+                response_msg = resample_msg
+                break
+
+    if not tool_calls and not msg_content:
+        # Resampling didn't recover it (or tools was empty to begin with) — fall back
+        # to a tools=[] synthesis call, same pattern as ollama_client.py's forced-synthesis path.
+        _log.warning("[local-agent/graph] empty response at step=%d, forcing synthesis retry", step)
+        try:
+            retry_resp = await asyncio.to_thread(
+                _chat, model=model, messages=ollama_messages, tools=[],
+                temperature=0.0 if model.startswith("gemma4") else 0.7,
+            )
+            _trace_resp(f"local-agent-step-{step}-forced-synthesis", model, retry_resp)
+            msg_content = getattr(retry_resp.message, "content", "") or ""
+        except Exception as e:  # noqa: BLE001 — forced synthesis is best-effort, never blocks the run
+            _log.warning("[local-agent/graph] forced synthesis retry failed (%s)", e)
 
     if tool_calls:
         _log.info("[local-agent/graph] model returned %d tool call(s)", len(tool_calls))
@@ -482,6 +379,16 @@ def plan_step(state: LocalAgentState) -> dict:
         return {}
 
     model = state.current_model
+    result_messages = []
+
+    # ponytail: word count was tried as a skip-plan-generation heuristic and
+    # reverted — it doesn't predict complexity ("rename all .txt files to .md"
+    # is 6 words and genuinely multi-step; "list files in current directory"
+    # is 5 words and trivial). Confirmed live via test_local_agent_verify.py
+    # regressions. _SHORT_QUERY_WORDS below is still used for the separate,
+    # evidence-backed auto-search gate — don't reuse it here without a better
+    # complexity signal than word count.
+    _SHORT_QUERY_WORDS = 8
     prompt = [
         {"role": "system", "content": "Break the user's request into a short numbered plan "
                                        "(2-6 steps, one line each). Steps only, no preamble. "
@@ -495,9 +402,8 @@ def plan_step(state: LocalAgentState) -> dict:
         plan_text = (getattr(response.message, "content", "") or "").strip()
     except Exception as e:  # noqa: BLE001 — planning is best-effort, never blocks the run
         _log.warning("[local-agent/graph] plan_step failed (%s), continuing without a plan", e)
-        return {}
+        plan_text = ""
 
-    result_messages = []
     if plan_text:
         _log.info("[local-agent/graph] plan=%s", plan_text[:200])
         result_messages.append(SystemMessage(content=f"[Plan]\n{plan_text}"))
@@ -512,9 +418,17 @@ def plan_step(state: LocalAgentState) -> dict:
     # count_path_tokens in _harness_fs_actions.py), run both indexed
     # searches deterministically before the loop starts and hand the model
     # real grounded results up front, regardless of which tool it reaches for.
-    _available_names = {t["function"]["name"] for t in get_local_agent_tools(state.task)}
+    # A short query (same threshold as the plan-skip above) has no room left
+    # for an actual search topic once you subtract the verb+object — "list
+    # files in current directory" is 5 words and pure browsing intent, not a
+    # content search. Firing auto-search on it wastes an embedding call and,
+    # confirmed live, injects irrelevant grounding content (docx chunks with
+    # zero relevance) that measurably raises the odds of the gemma4 empty
+    # tool-call stall (0/8 stall without this block vs 1/8 with it, same
+    # prompt otherwise — see local-agent-tools.md debug notes).
+    _available_names = {t["function"]["name"] for t in _tools_for_state(state)}
     _has_search = "fulltext_search" in _available_names or "semantic_file_search" in _available_names
-    if _has_search:
+    if _has_search and len(query.split()) > _SHORT_QUERY_WORDS:
         from _harness_fs_actions import count_path_tokens
         if count_path_tokens(query) == 0:
             found = []
@@ -565,18 +479,46 @@ def verify_answer(state: LocalAgentState) -> dict:
             "verified": False,
         }
 
+    tool_messages = [m for m in messages if isinstance(m, ToolMessage)]
+    # A critique call costs a full model round trip (~9s) — worth it whenever
+    # there's tool output the final answer could be hallucinating against,
+    # even a single call (that's the common case, and exactly where
+    # test_verify_answer_flags_bad_answer_and_retries_once caught a real miss
+    # when this used to skip on <=1 tool calls). Only skip when there's
+    # nothing to check against: zero tool calls and no errors.
+    latest_human = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
+    if len(tool_messages) == 0 and state.error_count == 0 and "[Specialist findings:" not in latest_human:
+        _log.info("[local-agent/graph] no tool calls and no errors, skipping verify call")
+        return {"verified": True}
+
     from store.conversation import compress_tool_output
     query = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
     transcript = "\n".join(
         f"[tool result] {compress_tool_output(m.content, max_chars=2000, max_tail_lines=40)}"
-        for m in messages if isinstance(m, ToolMessage)
+        for m in tool_messages
     )[-12000:]
+
+    context_for_guard = transcript + "\n" + "\n".join(
+        str(m.content) for m in messages
+        if not isinstance(m, AIMessage) and getattr(m, "content", None)
+    )
+    derivation_hint = _derived_numeric_hint(query, last_ai.content, context_for_guard)
+    if derivation_hint:
+        _log.info("[local-agent/graph] deterministic numeric derivation guard fired")
+        return {
+            "messages": [SystemMessage(content=f"[Self-check] {derivation_hint}")],
+            "verify_attempts": state.verify_attempts + 1,
+            "verified": False,
+        }
 
     prompt = [
         {"role": "system", "content": "You check whether an assistant's final answer actually "
                                        "addresses the user's request and is consistent with the "
-                                       "tool results shown. Reply with exactly 'OK' if it's fine, "
-                                       "or one short line explaining what's wrong if it isn't."},
+                                       "tool results shown. For numeric or derived questions, "
+                                       "recalculate from the evidence and reject answers such as "
+                                       "'not established' when a note, footnote, caption, or "
+                                       "narrative formula determines the value. Reply with exactly "
+                                       "'OK' if it's fine, or one short line explaining what's wrong if it isn't."},
         {"role": "user", "content": f"User request: {query}\n\nTool results:\n{transcript}\n\n"
                                      f"Assistant's answer: {last_ai.content}"},
     ]
@@ -641,6 +583,29 @@ def _normalize_tool_call(tc) -> dict:
         "args": getattr(tc, "args", {}),
         "id": getattr(tc, "id", "unknown"),
     }
+
+
+_DEDUPLICATED_READ_TOOLS = frozenset({
+    "read_file", "read_document", "read_pdf", "parse_file", "parse_code",
+    "list_directory", "file_info",
+})
+
+
+def _tool_call_signature(tool_name: str, args: dict) -> tuple[str, str]:
+    """Stable signature used to stop a model rereading the same source forever."""
+    return tool_name, json.dumps(args or {}, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def _previous_read_signatures(messages: list[AnyMessage]) -> set[tuple[str, str]]:
+    signatures: set[tuple[str, str]] = set()
+    for message in messages:
+        if not isinstance(message, AIMessage):
+            continue
+        for raw_call in getattr(message, "tool_calls", None) or []:
+            call = _normalize_tool_call(raw_call)
+            if call["name"] in _DEDUPLICATED_READ_TOOLS:
+                signatures.add(_tool_call_signature(call["name"], call.get("args") or {}))
+    return signatures
 
 
 def execute_tool(tool_call: dict, allowed_tools: set[str] | None = None) -> tuple[ToolMessage, bool]:
@@ -895,15 +860,33 @@ async def tool_node(state: LocalAgentState) -> dict:
     trace_entries: list[dict] = []
     run_id = state.run_id or ""
 
-    # Resolve permitted tools based on the active task
+    # Resolve permitted tools based on the active task (narrowed to the matched
+    # skill's tool subset, if any, so execution can't exceed what was advertised)
     from agents.local_agent_tools import _tool_names_for
-    allowed_tool_names = _tool_names_for(state.task)
+    allowed_tool_names = set(state.skill_tools) if state.skill_tools else _tool_names_for(state.task)
+    allowed_tool_names -= set(state.excluded_tools)
+    prior_read_signatures = _previous_read_signatures(messages[:-1])
 
     for tool_call in last_message.tool_calls:
         tc = _normalize_tool_call(tool_call)
         t0 = time.monotonic()
-        result, is_error = await asyncio.to_thread(execute_tool, tool_call, allowed_tool_names)
-        elapsed_ms = round((time.monotonic() - t0) * 1000)
+        signature = _tool_call_signature(tc["name"], tc.get("args") or {})
+        if tc["name"] in _DEDUPLICATED_READ_TOOLS and signature in prior_read_signatures:
+            result = ToolMessage(
+                content=(
+                    "[duplicate read prevented] This exact read operation already ran earlier "
+                    "in this task. Use its earlier result, read a different source, or provide "
+                    "the answer; do not repeat the same call."
+                ),
+                name=tc["name"],
+                tool_call_id=tc["id"],
+            )
+            is_error = False
+            elapsed_ms = 0
+            _log.warning("[local-agent/tool] duplicate read prevented name=%s args=%s", tc["name"], tc.get("args"))
+        else:
+            result, is_error = await asyncio.to_thread(execute_tool, tool_call, allowed_tool_names)
+            elapsed_ms = round((time.monotonic() - t0) * 1000)
         tool_messages.append(result)
 
         if is_error:

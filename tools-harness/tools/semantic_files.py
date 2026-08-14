@@ -18,7 +18,7 @@ import lancedb
 import ollama
 import pyarrow as pa
 
-_OFFICE_EXTS = {".pdf", ".xlsx", ".xls", ".docx", ".doc"}
+_OFFICE_EXTS = {".pdf", ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ppt", ".csv"}
 
 _HOME = str(Path.home())
 # 2026-08-04: file index moves to the OS app-private data home (not ~/.cache,
@@ -75,6 +75,11 @@ INDEX_DIR_SCHEMA = {
                     "description": "File pattern to include (default: all text files)",
                     "default": "*",
                 },
+                "refresh": {
+                    "type": "boolean",
+                    "description": "Replace existing vectors for matching files.",
+                    "default": False,
+                },
             },
             "required": ["path"],
         },
@@ -86,10 +91,14 @@ SEMANTIC_SEARCH_SCHEMA = {
     "function": {
         "name": "semantic_file_search",
         "description": (
-            "Search indexed files by meaning — finds relevant code, docs, or text "
-            "even if the exact words don't match. Much better than grep for questions "
-            "like 'where is authentication handled?' or 'find error handling logic'. "
-            "Requires the directory to be indexed first with index_directory."
+            "FIRST TOOL to call for any open-ended question about file contents — 'is "
+            "there a note about X', 'find where Y is mentioned', 'what did we say about "
+            "Z'. Finds relevant code, docs, or text by meaning even if the exact words "
+            "don't match. Do NOT use list_directory or grep_files to hunt for this kind "
+            "of answer — call this first. For exact identifiers, error strings, names, "
+            "or quoted phrases, use fulltext_search instead — it's faster and more "
+            "precise for literal matches. Requires the directory to be indexed first "
+            "with index_directory (call that first if this returns no index found)."
         ),
         "parameters": {
             "type": "object",
@@ -129,7 +138,7 @@ _SCHEMA = pa.schema([
 
 def _get_table():
     db = lancedb.connect(_resolve_db_path())
-    if _TABLE in db.table_names():
+    if _TABLE in db.list_tables():
         return db.open_table(_TABLE)
     return db.create_table(_TABLE, schema=_SCHEMA)
 
@@ -169,6 +178,12 @@ def _extract_text(fp: Path) -> str:
         elif suffix in (".xlsx", ".xls"):
             from tools.office_tools import excel_to_markdown
             _, content = excel_to_markdown(str(fp), tmp_dir)
+        elif suffix in (".pptx", ".ppt"):
+            from tools.office_tools import pptx_to_markdown
+            _, content = pptx_to_markdown(str(fp), tmp_dir)
+        elif suffix == ".csv":
+            from tools.office_tools import csv_to_markdown
+            _, content = csv_to_markdown(str(fp), tmp_dir)
         else:
             from tools.office_tools import docx_to_markdown
             _, content = docx_to_markdown(str(fp), tmp_dir)
@@ -181,12 +196,14 @@ def _extract_text(fp: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def index_directory(path: str, glob: str = "*") -> str:
+def index_directory(path: str, glob: str = "*", refresh: bool = False) -> str:
     root = Path(path).expanduser().resolve()
     if not root.exists():
         return f"Path not found: {root}"
 
     table = _get_table()
+    from tools.lance_lock import mutation_lock
+    db_path = _resolve_db_path()
 
     # Build set of already-indexed paths to skip
     try:
@@ -206,6 +223,14 @@ def index_directory(path: str, glob: str = "*") -> str:
         if fp.suffix.lower() in _SKIP_EXTS:
             continue
         str_path = str(fp)
+        if refresh and str_path in existing:
+            escaped = str_path.replace("'", "''")
+            try:
+                with mutation_lock(db_path):
+                    table.delete(f"path = '{escaped}'")
+            except Exception:
+                pass
+            existing.discard(str_path)
         if str_path in existing:
             skipped += 1
             continue
@@ -234,11 +259,13 @@ def index_directory(path: str, glob: str = "*") -> str:
 
         # Batch write every 20 files
         if len(rows) >= 100:
-            table.add(rows)
+            with mutation_lock(db_path):
+                table.add(rows)
             rows = []
 
     if rows:
-        table.add(rows)
+        with mutation_lock(db_path):
+            table.add(rows)
 
     return (
         f"Indexed {indexed} files from {root} "
@@ -283,3 +310,12 @@ def semantic_file_search(query: str, path_filter: str = "", top_k: int = 5) -> s
         )
 
     return "\n\n---\n\n".join(parts)
+
+
+def remove_file(path: str) -> None:
+    """Remove every LanceDB chunk for one exact resolved source path."""
+    table = _get_table()
+    escaped = str(Path(path).expanduser().resolve()).replace("'", "''")
+    from tools.lance_lock import mutation_lock
+    with mutation_lock(_resolve_db_path()):
+        table.delete(f"path = '{escaped}'")

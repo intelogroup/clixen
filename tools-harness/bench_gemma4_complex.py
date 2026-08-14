@@ -1,5 +1,5 @@
 """
-gemma4:12b-mlx complex-task accuracy benchmark.
+gemma4:12b complex-task accuracy benchmark.
 
 Tests 7 categories of complex tasks that mirror real usage in tools-harness:
   1. Code generation (Python function from spec)
@@ -32,7 +32,7 @@ from typing import Any
 import ollama
 
 
-DEFAULT_MODEL = "gemma4:12b-mlx"
+DEFAULT_MODEL = "gemma4:12b"
 RESULTS_DIR = Path("/tmp/gemma4_complex_bench")
 
 

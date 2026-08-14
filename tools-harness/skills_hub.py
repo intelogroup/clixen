@@ -106,6 +106,7 @@ from skills_data import research_business as _sd_research_business  # noqa: E402
 from skills_data import knowledge_comm as _sd_knowledge_comm  # noqa: E402,F401
 from skills_data import misc as _sd_misc          # noqa: E402,F401
 from skills_data import docs as _sd_docs          # noqa: E402,F401
+from skills_data import nih as _sd_nih            # noqa: E402,F401
 from skills_data import user_generated as _sd_user_generated  # noqa: E402,F401
 
 # ---------------------------------------------------------------------------

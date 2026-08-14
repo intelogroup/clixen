@@ -345,6 +345,12 @@ def main() -> None:
                     _log.warning("health check stale or missing — system may be degraded")
                     arbiter.enqueue("system.health", "health check stale — health_writer may be down")
 
+                # Reap jobs wedged in 'running' by a hung thread (init() only
+                # covers the crash-restart case, not a live process stuck mid-job)
+                reaped = job_queue.reap_stale_running(max_age_seconds=600)
+                for jid in reaped:
+                    _log.warning("reaped stale running job %s (wedged >600s)", jid[:8])
+
                 # Poll job_queue — claim_next() claims one job at a time (no
                 # batch/limit param), so loop up to 5 claims per cycle to match
                 # the original batch size.

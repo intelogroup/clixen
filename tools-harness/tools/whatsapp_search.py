@@ -71,6 +71,28 @@ STATUS_SCHEMA = {
     },
 }
 
+RECENT_CHATS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "whatsapp_recent_chats",
+        "description": (
+            "List the user's most recent WhatsApp conversations from the local archive. "
+            "Returns contact name, latest text, direction, and timestamp. Read-only and offline."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of recent chats (1–25). Default 10.",
+                    "default": 10,
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
 
 def _open() -> sqlite3.Connection | None:
     if not DB_PATH.exists():
@@ -189,5 +211,62 @@ def status() -> str:
             f"WhatsApp archive: {n:,} messages across {contacts} contacts. "
             f"Range: {first} → {last}."
         )
+    finally:
+        conn.close()
+
+
+def recent_chats(limit: int = 10) -> str:
+    """Return one latest archived message per WhatsApp conversation."""
+    conn = _open()
+    if conn is None:
+        return _NO_DATA_HINT
+    try:
+        if not _has_table(conn, "messages") or _is_empty(conn):
+            return _NO_DATA_HINT
+        cap = max(1, min(int(limit or 10), 25))
+        rows = conn.execute(
+            """
+            WITH latest AS (
+                SELECT m.*
+                FROM messages m
+                JOIN (
+                    SELECT jid, MAX(id) AS max_id
+                    FROM messages
+                    GROUP BY jid
+                ) x ON x.max_id = m.id
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM owner_jids o WHERE
+                        CASE WHEN instr(o.jid, ':') > 0
+                             THEN substr(o.jid, 1, instr(o.jid, ':') - 1) || substr(o.jid, instr(o.jid, '@'))
+                             ELSE o.jid END
+                        = CASE WHEN instr(m.jid, ':') > 0
+                               THEN substr(m.jid, 1, instr(m.jid, ':') - 1) || substr(m.jid, instr(m.jid, '@'))
+                               ELSE m.jid END
+                )
+            )
+            SELECT latest.jid, latest.push_name, latest.from_me, latest.text, latest.ts,
+                   c.name AS contact_name, c.notify AS contact_notify
+            FROM latest
+            LEFT JOIN contacts c
+              ON c.jid = latest.jid OR c.lid = latest.jid
+            ORDER BY latest.ts DESC, latest.id DESC
+            LIMIT ?
+            """,
+            (cap,),
+        ).fetchall()
+        if not rows:
+            return "No archived WhatsApp conversations yet."
+
+        out = [f"{len(rows)} recent WhatsApp chat{'s' if len(rows) != 1 else ''}:"]
+        for row in rows:
+            name = row["contact_name"] or row["contact_notify"] or row["push_name"] or row["jid"] or "?"
+            direction = "me" if row["from_me"] else "them"
+            text = (row["text"] or "").replace("\n", " ").strip()
+            if len(text) > 240:
+                text = text[:237] + "..."
+            out.append(f"  {_ts_to_human(row['ts'])} · {name} · {direction}\n    {text}")
+        return "\n".join(out)
+    except sqlite3.OperationalError as e:
+        return f"[whatsapp recent chats error] {e}"
     finally:
         conn.close()

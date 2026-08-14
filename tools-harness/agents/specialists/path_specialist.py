@@ -410,9 +410,10 @@ def run_path_specialist(
     model_summary = ""
     error: str | None = None
 
+    _ollama_client = ollama.Client(timeout=30)
     for step in range(llm_cap):
         try:
-            response = ollama.chat(
+            response = _ollama_client.chat(
                 model=model,
                 messages=messages,
                 tools=tools,

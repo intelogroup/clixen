@@ -1087,7 +1087,7 @@ def _analyze_screenshot_ocr(query: str, ocr_text: str, on_token=None) -> str | N
                 eval_n = chunk.eval_count
         elapsed = time.time() - t0
         tok_s = (eval_n / elapsed) if elapsed else 0
-        log.info("[screenshot] gemma4:12b-mlx ocr-reason: %.1fs, %d tokens, %.1f tok/s", elapsed, eval_n, tok_s)
+        log.info("[screenshot] gemma4:12b ocr-reason: %.1fs, %d tokens, %.1f tok/s", elapsed, eval_n, tok_s)
         log.info("[screenshot] answer: %s", full.strip().replace("\n", " ")[:2000])
         return full
     except Exception as e:
@@ -1176,12 +1176,24 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         Path(photo_path).unlink(missing_ok=True)
 
 
+_APPROVE_DENY_RE = re.compile(r"^(APPROVE|DENY)\s+([a-f0-9]{6,32})$", re.IGNORECASE)
+
+
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _allowed(update):
         log.warning("Blocked user %s", update.effective_user.id)
         return
 
     query = update.message.text.strip()
+
+    m = _APPROVE_DENY_RE.match(query)
+    if m:
+        from tools.registry import execute_confirmed
+        approved = m.group(1).upper() == "APPROVE"
+        result = execute_confirmed(m.group(2), approved)
+        await update.message.reply_text(result)
+        return
+
     age = _msg_age_secs(update)
     log.info("text from %s (age %.0fs): %s", update.effective_user.id, age, query[:80])
 

@@ -38,7 +38,7 @@ def _run_agent(query: str, model: str, task: str, chat_id: str) -> str:
 
 # CLAUDE.md: "~7B minimum for agentic chains"; granite3.3:2b / phi4-mini narrate instead of
 # calling tools. This eval is what makes that number a measurement rather than a folk belief.
-_FLOOR_MODELS = ["granite3.3:2b", "gemma4:e2b", "gemma4:12b-mlx"]
+_FLOOR_MODELS = ["granite3.3:2b", "gemma4:e2b", "gemma4:12b"]
 
 
 @pytest.mark.parametrize("model", _FLOOR_MODELS)
@@ -72,7 +72,7 @@ def test_tool_chaining_capability_floor(model, clean_env, score):
 
     # Sub-7B models are *expected* to fail; the eval records the floor rather than asserting it.
     # pass_rate, not pass_at_1: one task_id with k trials — pass_at_1 only reads trial 0.
-    if model == "gemma4:12b-mlx":
+    if model == "gemma4:12b":
         assert score.pass_rate >= 0.66, f"the primary local model fell to {score.pass_rate:.0%}"
 
 
@@ -84,7 +84,7 @@ def _raw_chat(prompt: str, think: bool | None, tools=None, num_predict: int = 30
     import ollama
 
     return ollama.chat(
-        model="gemma4:12b-mlx",
+        model="gemma4:12b",
         messages=[{"role": "user", "content": prompt}],
         tools=tools,
         think=think,
@@ -262,7 +262,7 @@ def test_form_fill_chain_produces_a_filled_pdf(clean_env, score):
         work.write_bytes(fixture.read_bytes())
         _run_agent(
             f"Fill {work}: set the Name field to Jim Kalinov.",
-            model="gemma4:12b-mlx",
+            model="gemma4:12b",
             task="document",
             chat_id=f"eval-form-{trial}",
         )

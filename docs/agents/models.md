@@ -35,7 +35,7 @@ as the general reason — it's task/latency-shaped, not a hard reasoning limit.
 - **`clients/router.py`**: `classify()`/`classify_telegram()`/`classify_ide()`/
   `classify_plan()`/`model_for_intent()`/`TASK_ROUTING` all default to `CLOUD_MODEL`
   (= `cloud_client.DEFAULT_CLOUD_MODEL`) now — **except** the `ocr` intent, which stays on
-  local `gemma4:12b-mlx` because it's the only multimodal model in this stack and
+  local `gemma4:12b` because it's the only multimodal model in this stack and
   `cloud_client` doesn't handle images. The intent classifier itself
   (`_llm_classify`/`warm_classifier`) also stays on local gemma4 — that's a cheap 60-token
   classification call, not the agent answering the user.
@@ -56,7 +56,8 @@ as the general reason — it's task/latency-shaped, not a hard reasoning limit.
 
 ## Local Models (still used for classification, OCR/vision, and manual override)
 
-**gemma4:12b-mlx** (11.9B params, Q4_K_M, 7.6 GB) — the only multimodal model in this
+**gemma4:12b** (GGUF, switched from the `-mlx` tag 2026-08-08 — see CLAUDE.md Learnings,
+MLX runtime never passed image bytes to gemma4) — the only multimodal model in this
 stack (OCR/vision), the intent classifier, and reachable via manual override.
 **gemma4:e2b** (5.1B params, Q4_K_M, 7.2 GB) — warmed but not primary.
 **qwen3.5:4b** (3.4 GB) — was the Tier 2/3 automation fallback before the cloud-first
@@ -64,12 +65,12 @@ revamp; still actively wired today for `tech_brief` intent (`clients/router.py:9
 query rewriting and conversation-fold/history compaction (`tools/websearch.py`,
 `store/conversation.py`) — not fully retired.
 
-**Why 12b-mlx over e2b:** τ2-bench agentic tool use 86.4% (vs e2b 29.4%) — 3x better at tool calling. Math 89.2%, code 80%, science 84.3%. Slower (~12.6s vs 4.7s for short answers) but worth it for quality.
+**Why 12b over e2b:** τ2-bench agentic tool use 86.4% (vs e2b 29.4%) — 3x better at tool calling. Math 89.2%, code 80%, science 84.3%. Slower (~12.6s vs 4.7s for short answers) but worth it for quality.
 
 Configured in:
-- `clients/ollama_client.py:48` — `DEFAULT_MODEL = "gemma4:12b-mlx"` (still the local default when routed there)
+- `clients/ollama_client.py:48` — `DEFAULT_MODEL = "gemma4:12b"` (still the local default when routed there)
 - `clients/cloud_client.py` — `DEFAULT_CLOUD_MODEL`/`CLOUD_FALLBACK_MODEL` (the new overall default — see above)
-- `tools-harness/.env` — `OLLAMA_DEFAULT_MODEL=gemma4:12b-mlx`, `OPENROUTER_API_KEY=...`
+- `tools-harness/.env` — `OLLAMA_DEFAULT_MODEL=gemma4:12b`, `OPENROUTER_API_KEY=...`
 
 `clients/router_models.py` (a stale, unused pre-cloud-revamp `TASK_ROUTING`/`MODEL_SPECS`
 with `qwen3.5:4b` fallback tiers) was deleted 2026-07 — dead code, not wired into any
@@ -77,21 +78,21 @@ runtime path; `clients/router.py`'s own `TASK_ROUTING` is the only live one.
 
 ## gemma4 Thinking Mode (CRITICAL)
 
-`gemma4:12b-mlx` and `gemma4:e2b` both have `thinking` capability enabled by default.
+`gemma4:12b` and `gemma4:e2b` both have `thinking` capability enabled by default.
 The model spends the entire `num_predict` budget on internal reasoning before
 producing any output. With low `num_predict` caps, this means
 **empty responses**.
 
 **Fix**: `think=False` is now passed for ALL gemma4 calls in `_run_local` and
 `_run_streaming` (clients/ollama_client.py:188, 244). Same treatment as
-qwen3+tools. Verified live: gemma4:12b-mlx with think=True + num_predict=300
-returned 0 words (345 thinking tokens consumed). With think=False → real answers.
+qwen3+tools. Verified live: gemma4:12b-mlx (pre-2026-08-08 tag) with think=True +
+num_predict=300 returned 0 words (345 thinking tokens consumed). With think=False → real answers.
 
 ## Remaining Models
 
 ```
 ollama list
-gemma4:12b-mlx 7.6 GB  # Primary (chat, summarizer, quality, agentic)
+gemma4:12b     7.6 GB  # Primary (chat, summarizer, quality, agentic)
 gemma4:e2b    7.2 GB   # Warmed (low-stakes / future use)
 qwen3.5:4b    3.4 GB   # Fallback (automation when 12b-mlx busy), query rewrite, history compaction
 qwen3-vl:8b   6.1 GB   # Vision (screenshot analysis)

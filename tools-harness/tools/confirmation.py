@@ -16,56 +16,97 @@ with an "[awaiting confirmation]" placeholder and the actual execution happens
 later, driven entirely by the /confirm endpoint — a restart just means the
 pending entry is gone and a stale approval 404s instead of a hung thread.)
 
-ponytail: in-memory only, still doesn't survive a restart itself — an approval
-sent for a *token* minted before a restart 404s. Add a durable (sqlite/file)
-queue if confirmations need to survive that specific race; not built here
-since restarts happen far less often than a normal single approval round-trip.
+Pending approvals are durable SQLite records, single-use, and expire after the
+TTL. The default database is inside Clixen's private app-data vault; tests and
+deployments may override it with CLIXEN_CONFIRMATION_DB.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 import uuid
+from pathlib import Path
 
-_pending: dict[str, dict] = {}
+from tools.vault_paths import data_dir
+
 _lock = threading.Lock()
 _TTL_SECONDS = 3600  # stale, never-approved entries expire after an hour
+_DB_PATH = Path(os.environ.get(
+    "CLIXEN_CONFIRMATION_DB",
+    str(data_dir() / "confirmations.db"),
+))
+
+
+def _conn():
+    from store import dbclose
+    conn = dbclose.connect(str(_DB_PATH))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pending_confirmations ("
+        "token TEXT PRIMARY KEY, tool_name TEXT NOT NULL, arguments TEXT NOT NULL, "
+        "command TEXT NOT NULL, created_at REAL NOT NULL)"
+    )
+    return conn
+
+
+def _expire_stale(conn) -> None:
+    conn.execute(
+        "DELETE FROM pending_confirmations WHERE created_at < ?",
+        (time.time() - _TTL_SECONDS,),
+    )
 
 
 def request_confirmation(tool_name: str, arguments: dict, command: str) -> str:
     """Register a pending confirmation and return its token. Does not block."""
     token = uuid.uuid4().hex[:12]
     with _lock:
-        _expire_stale()
-        _pending[token] = {
-            "token": token,
-            "tool_name": tool_name,
-            "arguments": arguments,
-            "command": command,
-            "created_at": time.time(),
-        }
+        with _conn() as conn:
+            _expire_stale(conn)
+            conn.execute(
+                "INSERT INTO pending_confirmations(token, tool_name, arguments, command, created_at) "
+                "VALUES(?, ?, ?, ?, ?)",
+                (token, tool_name, json.dumps(arguments or {}, ensure_ascii=False), command, time.time()),
+            )
     return token
 
 
 def pop_pending(token: str) -> dict | None:
     """Remove and return the pending entry, or None if unknown/already-resolved."""
     with _lock:
-        return _pending.pop(token, None)
+        with _conn() as conn:
+            _expire_stale(conn)
+            row = conn.execute(
+                "SELECT tool_name, arguments, command, created_at FROM pending_confirmations WHERE token = ?",
+                (token,),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute("DELETE FROM pending_confirmations WHERE token = ?", (token,))
+        try:
+            arguments = json.loads(row[1])
+        except (TypeError, ValueError):
+            arguments = {}
+        return {
+            "token": token,
+            "tool_name": row[0],
+            "arguments": arguments,
+            "command": row[2],
+            "created_at": row[3],
+        }
 
 
 def list_pending() -> list[dict]:
     with _lock:
-        _expire_stale()
+        with _conn() as conn:
+            _expire_stale(conn)
+            rows = conn.execute(
+                "SELECT token, tool_name, command, created_at FROM pending_confirmations "
+                "ORDER BY created_at"
+            ).fetchall()
         return [
-            {"token": e["token"], "tool_name": e["tool_name"], "command": e["command"],
-             "waiting_seconds": round(time.time() - e["created_at"], 1)}
-            for e in _pending.values()
+            {"token": row[0], "tool_name": row[1], "command": row[2],
+             "waiting_seconds": round(time.time() - row[3], 1)}
+            for row in rows
         ]
-
-
-def _expire_stale() -> None:
-    """Caller must hold _lock."""
-    now = time.time()
-    for token in [t for t, e in _pending.items() if now - e["created_at"] > _TTL_SECONDS]:
-        _pending.pop(token, None)

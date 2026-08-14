@@ -100,7 +100,7 @@ def _compile_and_send(hn_text: str, tc_text: str) -> str:
         )},
     ]
 
-    # Cloud-first (2026-07-31): local gemma4:12b-mlx is not reliably loaded in
+    # Cloud-first (2026-07-31): local gemma4:12b is not reliably loaded in
     # this cloud-first env — the old hardcoded model 404'd every run. Cloud
     # default + built-in OpenAI fallback (raw_completion) instead.
     choice = raw_completion(

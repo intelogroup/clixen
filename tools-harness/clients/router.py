@@ -47,7 +47,7 @@ _log = logging.getLogger(__name__)
 # (context_window_tokens, reserved_for_response_tokens)
 # Context windows verified via `ollama show` on 2026-04-14.
 MODEL_SPECS: dict[str, tuple[int, int]] = {
-    "gemma4:12b-mlx": (16384, 4096),
+    "gemma4:12b": (16384, 4096),
     "qwen3:8b": (16384, 2048),
     "gemma4:e2b": (16384, 4096),
     "qwen3:4b": (16384, 2048),
@@ -63,7 +63,7 @@ MODEL_SPECS: dict[str, tuple[int, int]] = {
 # Rough token estimate: 1 token ≈ 4 chars
 
 # Pure regex constants + order-independent helpers split out for size;
-# see clients/router_patterns.py. classify()/classify_telegram()/classify_ide()
+# see clients/router_patterns.py. classify()/classify_telegram()
 # below are untouched and must not be reordered (see module docstring above).
 from clients import router_patterns as _rp
 globals().update({k: v for k, v in vars(_rp).items() if not k.startswith("__")})
@@ -492,23 +492,6 @@ def classify_telegram(message: str) -> tuple[str, str]:
     return CLOUD_MODEL, "factual_qa"
 
 
-def classify_ide(query: str) -> tuple[str, str]:
-    """
-    IDE-aware router. Reuses classify() for intent detection.
-    Uses gemma4 for everything except OCR/vision (gemma4).
-    NOTE: OCR/vision uses gemma4 (multimodal) — same as all other intents.
-    """
-    _, intent = classify(query)
-
-    if intent == "ocr":
-        from clients.ollama_client import DEFAULT_MODEL
-        return DEFAULT_MODEL, "ocr"  # IDE mode stays local/offline, deliberate
-    elif intent == "multilingual":
-        return CLOUD_MODEL, "multilingual"
-    else:
-        return CLOUD_MODEL, intent
-
-
 # ---------------------------------------------------------------------------
 # Unified classifier — single entry point for telegram_bot.py, whatsapp_bot.py,
 # and harness.py's internal dispatch. Replaces four independent classification
@@ -516,7 +499,7 @@ def classify_ide(query: str) -> tuple[str, str]:
 # specialists/dispatch.py's own regex classify(), each re-deriving intent from
 # the same message text) with ONE decision per message: an LLM call, primary,
 # with the existing regex cascades kept only as the offline/timeout fallback.
-# classify()/classify_telegram()/classify_ide() above are left untouched —
+# classify()/classify_telegram() above are left untouched —
 # they're exercised by deterministic tests with no LLM mocking, and this
 # fallback needs their exact tuned behavior, not a hand-merged approximation.
 # ---------------------------------------------------------------------------
@@ -543,7 +526,7 @@ _SPECIALIST_HINTS = frozenset(
 # (see CLAUDE.md), so every message hitting one of these intents crashed with
 # an unhandled 500 (ollama.ResponseError: model not found). Found 2026-07-01
 # via live testing "how much battery do I have left on my mac". Remapped to
-# gemma4:12b-mlx, same as the fallback default.
+# gemma4:12b, same as the fallback default.
 _INTENT_MODEL_OVERRIDES = {
     "slack": CLOUD_MODEL,
     "imessage": CLOUD_MODEL,
@@ -650,18 +633,37 @@ def _llm_classify(message: str, channel: str) -> "Classification | None":
     prompt = (
         "Classify this message into exactly one intent.\n\n"
         f"Intents:\n{_INTENT_TAXONOMY}\n\n"
-        'If intent is "filesystem", also set specialist_hint to one of: '
-        "form, video, audio, transport, scraper, data, write, research, read, path, or null.\n"
+        'If intent is "filesystem", also set specialist_hint to one of:\n'
+        "read - extract/summarize/analyze content from an existing local file (pdf, doc, contract, etc.) "
+        "the user names or has already provided; the source of truth is the file itself, not the web\n"
+        "write - create or edit a local file (report, memo, script, spreadsheet, etc.), including when "
+        "it also involves reading input files first — if a NEW file gets written, this wins over 'read'\n"
+        "research - search the web/literature for information NOT contained in a local file the user named\n"
+        "path - locate/list files or folders, no content extraction needed\n"
+        "form - fill in a PDF/DOCX form's fields\n"
+        "data - statistical/numeric analysis of a csv/xlsx/json dataset\n"
+        "video / audio - process a video or audio file\n"
+        "transport - Uber/Lyft/taxi/transit\n"
+        "scraper - fetch/scrape a specific URL\n"
+        "or null if none fit.\n"
         "Otherwise specialist_hint is null.\n\n"
         f"Message: {message}\n"
         'Output ONLY JSON: {"intent": "...", "specialist_hint": null}'
     )
 
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
+        # `with ThreadPoolExecutor(...) as pool:` defeats result(timeout=X) —
+        # __exit__'s shutdown(wait=True) blocks until the thread finishes
+        # regardless, so a slow cloud call still stalls the caller the full
+        # duration even after TimeoutError fires. Explicit shutdown(wait=False)
+        # lets the timeout actually cut the wait short.
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
             raw = pool.submit(
                 lambda: cloud_chat(prompt, tools=[], max_rounds=1)
             ).result(timeout=10.0)
+        finally:
+            pool.shutdown(wait=False)
         raw = raw.strip()
         start = raw.find('{')
         end = raw.rfind('}')
@@ -682,7 +684,7 @@ def _llm_classify(message: str, channel: str) -> "Classification | None":
             hint = None
         return Classification(model=model_for_intent(intent), intent=intent, specialist_hint=hint, source="llm")
     except Exception as e:
-        _log.warning("classify_message LLM stage failed, falling back to regex: %s", e)
+        _log.warning("classify_message LLM stage failed, falling back to regex: %r", e)
         return None
 
 

@@ -164,7 +164,7 @@ def run_case(c: Case) -> dict:
     try:
         result = run_path_specialist(
             query=c.query,
-            model="gemma4:12b-mlx",
+            model="gemma4:12b",
             cwd=c.cwd,
             max_steps=8,
         )

@@ -15,7 +15,6 @@
 <link rel="stylesheet" href="/static/base.css?v=5"/>
 <link rel="stylesheet" href="/static/sidebar.css?v=5"/>
 <link rel="stylesheet" href="/static/chat.css?v=5"/>
-<link rel="stylesheet" href="/static/ide.css?v=5"/>
 <link rel="stylesheet" href="/static/workflows.css?v=5"/>
 <link rel="stylesheet" href="/static/responsive.css?v=5"/>
 </head>
@@ -78,10 +77,6 @@
               Research
             </a>
             <div class="overflow-sep"></div>
-            <button class="overflow-item" id="ide-btn" role="menuitem" onclick="closeOverflow()">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              Editor
-            </button>
             <button class="overflow-item" id="tts-btn" role="menuitem" onclick="closeOverflow()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
               Voice (TTS)
@@ -191,7 +186,6 @@
   <div id="workspace-panel" class="collapsed">
     <div id="workspace-tabs-bar">
       <div class="workspace-tabs">
-        <button class="ws-tab-btn" data-pane="ide" onclick="showMainView('ide')">Editor</button>
         <button class="ws-tab-btn" data-pane="workflows" onclick="showMainView('workflows')">Workflows</button>
         <button class="ws-tab-btn" data-pane="research" onclick="showMainView('research')">Research Library</button>
       </div>
@@ -200,139 +194,6 @@
     
     <div id="workspace-panes">
       <!-- Editor Pane -->
-      <div class="workspace-pane" data-pane="ide">
-        <div id="ide-view" style="display: flex;">
-          <!-- title bar -->
-          <div id="ide-titlebar">
-            <span id="ide-titlebar-name">Clixen IDE</span>
-            <button id="ide-close-btn" title="Close IDE (Esc)" onclick="showMainView('chat')">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-
-          <!-- body: actbar + sidebar + editor + chat -->
-          <div id="ide-body">
-            <!-- activity bar -->
-            <div id="ide-actbar">
-              <button class="act-btn active" data-panel="explorer" title="Explorer (⌘⇧E)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-              </button>
-              <button class="act-btn" data-panel="search" title="Search (⌘⇧F)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              </button>
-              <button class="act-btn" data-panel="git" title="Source Control (⌘⇧G)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
-              </button>
-              <button class="act-btn" data-panel="run" title="Run and Debug (⌘⇧D)" style="margin-top:auto;margin-bottom:8px">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              </button>
-            </div>
-
-            <!-- sidebar (file explorer) -->
-            <div id="ide-sidebar">
-              <div id="ide-tree-header">
-                <span id="ide-tree-title">Explorer</span>
-                <button class="tree-hdr-btn" id="ide-newfile-btn" title="New File">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                </button>
-                <button class="tree-hdr-btn" id="ide-root-btn" title="Open Folder">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                </button>
-              </div>
-              <div id="ide-tree-folder" style="display:none"></div>
-              <div id="ide-files"></div>
-            </div>
-
-            <!-- editor + output -->
-            <div id="ide-editor-panel">
-              <div id="ide-tabs"></div>
-              <div id="ide-breadcrumbs"></div>
-              <div id="ide-editor-wrap">
-                <div id="ide-editor-container"></div>
-                <div id="ide-welcome-editor">
-                  <h3>No file open</h3>
-                  <p>Open a folder from the Explorer, then click a file to edit it.<br>
-                     <kbd>⌘S</kbd> to save &nbsp;·&nbsp; <kbd>⌘⇧P</kbd> command palette</p>
-                </div>
-              </div>
-              <div id="ide-output-wrap" class="collapsed">
-                <div id="ide-panel-tabs">
-                  <div class="ide-panel-tab active" data-tab="output">Output</div>
-                  <div class="ide-panel-tab" data-tab="terminal">Terminal</div>
-                  <div id="ide-panel-actions">
-                    <button id="ide-run-btn" disabled title="Run current file">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                      Run
-                    </button>
-                    <button class="ide-panel-btn" id="ide-clear-btn" title="Clear output">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                    </button>
-                    <button class="ide-panel-btn" id="ide-collapse-btn" title="Toggle panel">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-                    </button>
-                  </div>
-                </div>
-                <div id="ide-output"><span class="ide-out-meta">No output yet. Open a file and press Run.</span></div>
-              </div>
-            </div>
-
-            <!-- Clixen chat panel -->
-            <div id="ide-chat-panel">
-              <div id="ide-chat-header">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0098ff"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Clixen Chat</span>
-                <select id="ide-model-select" aria-label="Select IDE model">
-                  <option value="">Auto</option>
-                  <option value="qwen3:4b">qwen3:4b</option>
-                  <option value="qwen3.5:4b">qwen3.5:4b</option>
-                  <option value="qwen3.5:9b">qwen3.5:9b</option>
-                  <option value="gemma4:e2b">gemma4:e2b</option>
-                </select>
-                <div id="ide-model-picker" title="IDE model (Auto = router picks)">
-                  <button id="ide-model-picker-btn">
-                    <span class="mpdot" id="ide-mpbtn-dot">—</span>
-                    <span id="ide-mpbtn-label">Auto</span>
-                  </button>
-                  <div id="ide-model-picker-list">
-                    <div class="ide-mpopt active" data-value=""><span class="mpdot">—</span>Auto</div>
-                    <div class="ide-mpopt" data-value="qwen3:4b"><span class="mpdot">○</span>qwen3:4b</div>
-                    <div class="ide-mpopt" data-value="qwen3.5:4b"><span class="mpdot">○</span>qwen3.5:4b</div>
-                    <div class="ide-mpopt" data-value="qwen3.5:9b"><span class="mpdot">○</span>qwen3.5:9b</div>
-                    <div class="ide-mpopt" data-value="gemma4:e2b"><span class="mpdot">○</span>gemma4:e2b</div>
-                  </div>
-                </div>
-              </div>
-              <div id="ide-chat-messages"></div>
-              <div id="ide-composer">
-                <textarea id="ide-input" rows="1" placeholder="Ask about the code… (⏎ send)"></textarea>
-                <button id="ide-send-btn" title="Send">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                </button>
-              </div>
-            </div>
-          </div><!-- /ide-body -->
-
-          <!-- status bar -->
-          <div id="ide-statusbar">
-            <div class="sb-left">
-              <div class="sb-item" id="sb-branch">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
-                <span id="sb-branch-name">—</span>
-              </div>
-            </div>
-            <div class="sb-right">
-              <div class="sb-item" id="sb-lang"><span id="sb-lang-name">Plain Text</span></div>
-              <div class="sb-sep"></div>
-              <div class="sb-item" id="sb-pos"><span id="sb-pos-text">Ln 1, Col 1</span></div>
-              <div class="sb-sep"></div>
-              <div class="sb-item"><span>UTF-8</span></div>
-              <div class="sb-sep"></div>
-              <div class="sb-item"><span>Spaces: 4</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      
       <!-- Workflows Pane -->
       <div class="workspace-pane" data-pane="workflows">
         <section id="workflows-view" aria-label="Workflows" style="display: block;">
@@ -749,7 +610,6 @@
 <script src="/static/utils.js?v=5"></script>
 <script src="/static/voice.js?v=5"></script>
 <script src="/static/chat.js?v=5"></script>
-<script src="/static/ide.js?v=5"></script>
 <script src="/static/app.js?v=5"></script>
 </body>
 </html>

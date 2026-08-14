@@ -1,5 +1,5 @@
 """
-Benchmark gemma4:12b-mlx vs gemma4:e4b vs gemma4:e2b on the summarizer cases.
+Benchmark gemma4:12b vs gemma4:e4b vs gemma4:e2b on the summarizer cases.
 
 Runs the same pre-fetched snippets through each model and scores output.
 Also tests raw Q&A speed/quality on a 5-prompt smoke set.
@@ -20,7 +20,7 @@ import tools.search_agentic as _sa
 from tools.search_agentic import summarize_with_model
 from tools.search_result import SearchSnippet
 
-MODELS = ["gemma4:e2b", "gemma4:e4b", "gemma4:12b-mlx"]
+MODELS = ["gemma4:e2b", "gemma4:e4b", "gemma4:12b"]
 
 CASES = [
     {

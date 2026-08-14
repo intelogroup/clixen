@@ -110,13 +110,13 @@ def get_recommendation(ram: float, gpu_name: str, vram: float) -> dict:
         rec["type"] = "Apple Silicon Unified Memory"
         if ram >= 32.0:
             rec["tier"] = "Premium"
-            rec["models"] = ["gemma4:12b-mlx", "mistral-nemo", "qwen3.5:9b"]
-            rec["primary"] = "gemma4:12b-mlx"
+            rec["models"] = ["gemma4:12b", "mistral-nemo", "qwen3.5:9b"]
+            rec["primary"] = "gemma4:12b"
             rec["ctx"] = 16384
         elif ram >= 24.0:
             rec["tier"] = "Optimal (Standard)"
-            rec["models"] = ["gemma4:12b-mlx", "mistral-nemo", "qwen3:4b"]
-            rec["primary"] = "gemma4:12b-mlx"
+            rec["models"] = ["gemma4:12b", "mistral-nemo", "qwen3:4b"]
+            rec["primary"] = "gemma4:12b"
             rec["ctx"] = 16384
         elif ram >= 16.0:
             rec["tier"] = "Medium"

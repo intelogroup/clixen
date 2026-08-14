@@ -98,6 +98,14 @@ def run_write_specialist(
     tool_trace: list[str] = []
     created_paths: list[str] = []
 
+    # ponytail: bare ollama.chat() used the module-default client (no timeout) — a
+    # hung call blocked forever since the loop's own timeout_s guard only checks
+    # *between* steps, never during one. Client(timeout=...) makes a stuck call
+    # raise so the except below can turn it into a normal timeout result instead
+    # of an indefinite hang (confirmed live: a multi-doc write request stalled
+    # 10+min with ollama runner idle at 0% CPU, no forward progress).
+    _ollama_client = ollama.Client(timeout=min(timeout_s, 90.0))
+
     for step in range(max_steps):
         if time.time() - t0 > timeout_s:
             return WriteResult(
@@ -108,7 +116,7 @@ def run_write_specialist(
             )
 
         try:
-            resp = ollama.chat(
+            resp = _ollama_client.chat(
                 model=model,
                 messages=messages,
                 tools=tools,

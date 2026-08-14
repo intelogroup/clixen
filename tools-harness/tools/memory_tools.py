@@ -9,6 +9,7 @@ DEDICATED db path so the disposable search-result cache never touches precious m
 Memories are stored with source="user_memory", which TTL maps to infinity in knowledge_base.
 """
 import logging
+import threading
 from pathlib import Path
 
 from store.knowledge_base import KnowledgeBase, _content_id
@@ -50,6 +51,7 @@ def _forget_threshold() -> float:
     return _FORGET_DIST.get(_kbmod.EMBED_BACKEND, 0.80)
 
 _mem_kb: KnowledgeBase | None = None
+_session_summary_lock = threading.RLock()
 
 
 def _kb() -> KnowledgeBase:
@@ -60,20 +62,95 @@ def _kb() -> KnowledgeBase:
     return _mem_kb
 
 
-def remember(fact: str) -> str:
-    """Store a durable fact about the user. Returns a short confirmation."""
+_ENTITY_PREFIX = "entity:"
+_TIER_PREFIX = "tier:"
+TIERS = ("always", "on_relevance", "surface_only")  # LifeOS load_timing axis; default is on_relevance (existing similarity-gated behavior)
+
+
+def _build_tags(entity_type: str = "", entity_name: str = "", tier: str = "") -> str:
+    """Pack entity + tier metadata into the query field as ';'-separated tags —
+    mirrors the fold-summary: prefix convention below, not a schema change: KnowledgeBase
+    drops+recreates its table on any SCHEMA field mismatch, which would wipe all stored
+    memories, so new columns are off the table."""
+    parts = []
+    if entity_name:
+        parts.append(f"{_ENTITY_PREFIX}{entity_type}:{entity_name}")
+    if tier and tier in TIERS and tier != "on_relevance":  # on_relevance is the implicit default, no tag needed
+        parts.append(f"{_TIER_PREFIX}{tier}")
+    return ";".join(parts)
+
+
+def _parse_tags(query: str) -> dict:
+    tags: dict[str, str] = {}
+    for part in (query or "").split(";"):
+        key, sep, val = part.partition(":")
+        if sep:
+            tags[key.strip()] = val.strip()
+    return tags
+
+
+def remember(fact: str, entity_type: str = "", entity_name: str = "", tier: str = "") -> str:
+    """Store a durable fact about the user. Returns a short confirmation.
+
+    entity_type/entity_name (optional, e.g. "person"/"Sarah") tag the fact so it can
+    be looked up as a group later via recall_about(), instead of only surfacing on
+    similarity match.
+
+    tier (optional, "always"/"on_relevance"/"surface_only") controls when it's injected:
+    "always" facts show up in recall_block() every turn regardless of topic similarity —
+    use sparingly, for things genuinely always-relevant (e.g. a standing preference).
+    Default "on_relevance" is the pre-existing similarity-threshold behavior.
+    """
     fact = (fact or "").strip()
     if not fact:
         return "Nothing to remember — empty fact."
+    query_tag = _build_tags(entity_type, entity_name, tier)
     try:
         kb = _kb()
         # Idempotent: drop any prior identical fact (same content → same id) before re-adding.
         kb.table.delete(f"id = '{_content_id(fact)}'")
-        kb.store(content=fact, source=_SOURCE, method="manual")
+        kb.store(content=fact, source=_SOURCE, method="manual", query=query_tag)
         return f"Got it — I'll remember that: {fact}"
     except Exception as e:  # Ollama/embed down — don't crash the turn
         log.warning("remember failed: %s", e)
         return f"[error] couldn't save memory: {e}"
+
+
+def _entity_rows() -> list[dict]:
+    """All user_memory rows carrying an entity: tag. Table is personal-scale (single
+    user), so a filtered full scan + python-side tag parse is simpler and more robust
+    than encoding exact-match LIKE patterns against a multi-segment tag string."""
+    try:
+        rows = (
+            _kb()
+            .table.search()
+            .where(f"source = '{_SOURCE}' AND query LIKE '{_ENTITY_PREFIX}%'", prefilter=True)
+            .to_list()
+        )
+    except Exception as e:
+        log.warning("_entity_rows failed: %s", e)
+        return []
+    return rows
+
+
+def recall_about(entity_name: str) -> str:
+    """Structured lookup: all facts explicitly tagged to entity_name, regardless of
+    wording/similarity. Complements recall_block()'s per-turn similarity recall —
+    this is exact-match by entity, for 'what do I know about X' style queries."""
+    entity_name = (entity_name or "").strip()
+    if not entity_name:
+        return ""
+    rows = []
+    for r in _entity_rows():
+        tags = _parse_tags(r.get("query", ""))
+        entity_val = tags.get("entity", "")  # "{type}:{name}"
+        name = entity_val.split(":", 1)[1] if ":" in entity_val else entity_val
+        if name == entity_name:
+            rows.append(r)
+    if not rows:
+        return ""
+    bullets = [f"- {r['content']}" for r in rows]
+    return f"## What you remember about {entity_name}\n{chr(10).join(bullets)}\n"
 
 
 def forget(query: str) -> str:
@@ -95,6 +172,21 @@ def forget(query: str) -> str:
         return f"[error] couldn't forget: {e}"
 
 
+def _always_rows() -> list[dict]:
+    """user_memory rows tagged tier:always — injected every turn regardless of topic."""
+    try:
+        rows = (
+            _kb()
+            .table.search()
+            .where(f"source = '{_SOURCE}' AND query LIKE '%{_TIER_PREFIX}always%'", prefilter=True)
+            .to_list()
+        )
+    except Exception as e:
+        log.warning("_always_rows failed: %s", e)
+        return []
+    return rows
+
+
 def recall_block(query: str) -> str:
     """
     Harness hook: return a system-prompt block of memories relevant to `query`,
@@ -110,6 +202,15 @@ def recall_block(query: str) -> str:
         return ""
     # Only inject on-topic memories — otherwise every turn floods the prompt with all of them.
     hits = [h for h in hits if h.get("_distance", 99) <= _recall_threshold()]
+
+    # "always" tier bypasses the similarity gate entirely — merge in, dedup by id
+    # (a topically-similar always fact may already be in hits from the search above).
+    seen_ids = {h["id"] for h in hits}
+    for r in _always_rows():
+        if r["id"] not in seen_ids:
+            hits.append(r)
+            seen_ids.add(r["id"])
+
     if not hits:
         return ""
     bullets = []
@@ -134,14 +235,106 @@ def mem_block_for(query: str) -> str:
         return ""
 
 
+# ── Relation links (sqlite side-table, separate from the LanceDB fact store) ────
+
+RELATION_TYPES = (
+    "supports", "contradicts", "extends", "part_of",
+    "instance_of", "caused_by", "preceded_by", "related",
+)
+
+_relations_conn = None
+
+
+def _relations_db():
+    global _relations_conn
+    if _relations_conn is None:
+        import sqlite3
+        from tools.vault_paths import db_path as _vault_db_path, ensure_data_dir
+        ensure_data_dir()
+        path = _vault_db_path("memory_relations.db")
+        con = sqlite3.connect(path, check_same_thread=False)
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS relations (
+                from_id TEXT NOT NULL,
+                to_id   TEXT NOT NULL,
+                relation_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (from_id, to_id, relation_type)
+            )
+            """
+        )
+        con.commit()
+        _relations_conn = con
+    return _relations_conn
+
+
+def link_facts(fact_a: str, fact_b: str, relation_type: str = "related") -> str:
+    """Link two already-remembered facts (e.g. 'Sarah joined Acme' extends 'Sarah works at Acme').
+    Both facts must already exist (call remember() first) — this links by content, not by writing new facts."""
+    from datetime import datetime, timezone
+
+    if relation_type not in RELATION_TYPES:
+        return f"[error] unknown relation_type {relation_type!r}, use one of {RELATION_TYPES}"
+    id_a, id_b = _content_id(fact_a.strip()), _content_id(fact_b.strip())
+    try:
+        existing_ids = {r["id"] for r in _kb().table.search().where(f"source = '{_SOURCE}'", prefilter=True).to_list()}
+    except Exception as e:
+        log.warning("link_facts lookup failed: %s", e)
+        return f"[error] couldn't verify facts: {e}"
+    missing = [f for f, i in ((fact_a, id_a), (fact_b, id_b)) if i not in existing_ids]
+    if missing:
+        return f"[error] not remembered yet, call remember() first: {missing}"
+    con = _relations_db()
+    con.execute(
+        "INSERT OR IGNORE INTO relations (from_id, to_id, relation_type, created_at) VALUES (?, ?, ?, ?)",
+        (id_a, id_b, relation_type, datetime.now(timezone.utc).isoformat()),
+    )
+    con.commit()
+    return f"Linked: {fact_a!r} --{relation_type}--> {fact_b!r}"
+
+
+def facts_related_to(fact: str) -> str:
+    """All facts linked to the given fact, in either direction, with their relation type."""
+    fact_id = _content_id(fact.strip())
+    con = _relations_db()
+    rows = con.execute(
+        "SELECT to_id, relation_type, 'forward' as dir FROM relations WHERE from_id = ? "
+        "UNION ALL "
+        "SELECT from_id, relation_type, 'backward' as dir FROM relations WHERE to_id = ?",
+        (fact_id, fact_id),
+    ).fetchall()
+    if not rows:
+        return ""
+    try:
+        all_facts = {r["id"]: r["content"] for r in _kb().table.search().where(f"source = '{_SOURCE}'", prefilter=True).to_list()}
+    except Exception as e:
+        log.warning("facts_related_to lookup failed: %s", e)
+        return ""
+    bullets = []
+    for other_id, rel_type, direction in rows:
+        content = all_facts.get(other_id)
+        if content is None:
+            continue
+        arrow = f"--{rel_type}-->" if direction == "forward" else f"<--{rel_type}--"
+        bullets.append(f"- {arrow} {content}")
+    if not bullets:
+        return ""
+    return f"## Related to: {fact}\n{chr(10).join(bullets)}\n"
+
+
 def save_session_summary(chat_id: str, summary: str) -> None:
     """Save a conversation fold summary to persistent session memory (best-effort).
     Overwrites previous entry for same chat_id — no stale accumulation."""
     try:
-        kb = _kb()
-        key = f"fold-summary:{chat_id}"
-        kb.table.delete(f"query = '{key}'")
-        kb.store(content=summary, source=_SESSION_SOURCE, query=key, method="auto_fold")
+        # Lance writes are table-level transactions. Folding runs in a
+        # background thread, so serialize this delete+insert pair to prevent
+        # concurrent transaction cleanup/manifest races during long chats.
+        with _session_summary_lock:
+            kb = _kb()
+            key = f"fold-summary:{chat_id}"
+            kb.table.delete(f"query = '{key}'")
+            kb.store(content=summary, source=_SESSION_SOURCE, query=key, method="auto_fold")
     except Exception:
         pass
 
@@ -191,9 +384,82 @@ MEMORY_SCHEMAS = [
                     "fact": {
                         "type": "string",
                         "description": "The single fact to remember, as a concise statement.",
-                    }
+                    },
+                    "entity_type": {
+                        "type": "string",
+                        "description": "Optional: what kind of thing this fact is about, e.g. 'person', 'project'. Only set together with entity_name.",
+                    },
+                    "entity_name": {
+                        "type": "string",
+                        "description": "Optional: name of the specific person/project this fact is about (e.g. 'Sarah'). Lets recall_about(entity_name) find all facts about them later.",
+                    },
+                    "tier": {
+                        "type": "string",
+                        "enum": ["always", "on_relevance", "surface_only"],
+                        "description": "Optional, default on_relevance (topic-similarity gated, the normal behavior). 'always' injects this fact every turn regardless of topic — use sparingly, only for standing facts genuinely always relevant.",
+                    },
                 },
                 "required": ["fact"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "link_facts",
+            "description": (
+                "Link two already-remembered facts with a relation (supports, contradicts, "
+                "extends, part_of, instance_of, caused_by, preceded_by, related). Both facts "
+                "must already exist via remember(). Use to connect related knowledge, e.g. "
+                "linking a new fact that extends or supersedes an old one."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "fact_a": {"type": "string", "description": "The source fact (exact text as remembered)."},
+                    "fact_b": {"type": "string", "description": "The target fact (exact text as remembered)."},
+                    "relation_type": {
+                        "type": "string",
+                        "enum": ["supports", "contradicts", "extends", "part_of", "instance_of", "caused_by", "preceded_by", "related"],
+                        "description": "How fact_a relates to fact_b. Default 'related' if unsure.",
+                    },
+                },
+                "required": ["fact_a", "fact_b"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "facts_related_to",
+            "description": "List all facts linked to a given remembered fact, in either direction, with their relation type.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "fact": {"type": "string", "description": "The fact (exact text as remembered) to find links for."},
+                },
+                "required": ["fact"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall_about",
+            "description": (
+                "Look up everything remembered about a specific named person or project. "
+                "Use for 'what do you know about X' style questions — exact entity match, "
+                "not similarity search."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_name": {
+                        "type": "string",
+                        "description": "Name of the person or project to recall facts about.",
+                    }
+                },
+                "required": ["entity_name"],
             },
         },
     },
@@ -245,7 +511,10 @@ MEMORY_SCHEMAS = [
 ]
 
 MEMORY_EXECUTORS = {
-    "remember": lambda args: remember(args.get("fact", "")),
+    "remember": lambda args: remember(args.get("fact", ""), args.get("entity_type", ""), args.get("entity_name", ""), args.get("tier", "")),
+    "recall_about": lambda args: recall_about(args.get("entity_name", "")) or f"Nothing remembered about {args.get('entity_name', '')}.",
+    "link_facts": lambda args: link_facts(args.get("fact_a", ""), args.get("fact_b", ""), args.get("relation_type", "related")),
+    "facts_related_to": lambda args: facts_related_to(args.get("fact", "")) or f"No links found for: {args.get('fact', '')}",
     "forget": lambda args: forget(args.get("query", "")),
     "search_sessions": lambda args: search_sessions(args.get("query", ""), top_k=args.get("top_k", 5)),
 }

@@ -27,6 +27,7 @@ def test_absence_protocol_rule_present():
 def test_core_prompt_has_fragments_placeholder():
     assert "{fragments}" in ORCHESTRATOR_SYSTEM_PROMPT
     assert "{home_dir}" in ORCHESTRATOR_SYSTEM_PROMPT
+    assert "NIH BIOSKETCH ROUTING" not in ORCHESTRATOR_SYSTEM_PROMPT
 
 
 def test_schedule_query_selects_schedule_fanout_fragment():

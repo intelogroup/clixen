@@ -1,19 +1,18 @@
 """
-OCR tool — extracts text from image files.
-
-Primary backend: the warm Unlimited-OCR daemon (unlimited_ocr_daemon.py, a 6.7B
-VLM on MPS) — one-shot full-document parsing with layout. Falls back to
-PaddleOCR v3.x when the daemon is unreachable/disabled.
+OCR tool — extracts text from image files via PaddleOCR v3.x.
 
 Supports: PNG, JPG, JPEG, TIFF, BMP, WebP (anything OpenCV can decode).
 Returns extracted text as plain lines, one per detected text region.
 
+For structured/table-heavy scanned docs, prefer tools/surya_ocr.py instead —
+Surya wins that benchmark; PaddleOCR here is the cheap default/fallback path.
+
 API note: PaddleOCR 3.x uses .predict() instead of .ocr(), returns
 OCRResult objects with rec_texts / rec_scores lists.
 """
-import json
 import os
-import re
+import shutil
+import subprocess
 from pathlib import Path
 
 # Skip network connectivity check on every init — weights are cached locally
@@ -27,70 +26,6 @@ _ocr_instances: dict = {}
 # crash report, 2026-07-07). Reject unsupported extensions before they ever
 # reach paddleocr.
 _SUPPORTED_EXTS = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp"}
-
-# Warm Unlimited-OCR daemon (unlimited_ocr_daemon.py). Disable with
-# UNLIMITED_OCR_DISABLE=1 to force the PaddleOCR fallback.
-_DAEMON_URL = os.environ.get("UNLIMITED_OCR_URL", "http://127.0.0.1:9239").rstrip("/")
-_DAEMON_DISABLED = os.environ.get("UNLIMITED_OCR_DISABLE", "0") == "1"
-_DAEMON_TIMEOUT = float(os.environ.get("UNLIMITED_OCR_TIMEOUT", "600"))
-
-# Strip the model's <|det|>type [bbox]<|/det|> markers into clean blocks — group
-# lines of the same block with \n, separate blocks with \n\n (OmniDocBench
-# post-processor from the Unlimited-OCR README).
-_DET_RE = re.compile(r"<\|det\|>([^<\s]+)(?:\s*\[[^\]]*\])?\s*<\|/det\|>(.*)", re.DOTALL)
-
-
-def _remove_det(raw: str) -> str:
-    blocks: list[str] = []
-    cur: list[str] | None = None
-    for line in raw.splitlines():
-        line = line.rstrip()
-        if not line:
-            continue
-        m = _DET_RE.match(line)
-        if m:
-            category, content = m.group(1).strip(), m.group(2).strip()
-            if category == "image":
-                continue
-            if cur is not None:
-                blocks.append(cur)
-            cur = [content] if content else []
-            continue
-        if cur is None:
-            cur = []
-        cur.append(line)
-    if cur is not None:
-        blocks.append(cur)
-    return "\n\n".join("\n".join(b) for b in blocks).strip()
-
-
-def _ocr_daemon(image_path: str) -> str:
-    """OCR via the warm Unlimited-OCR daemon. Raises on any failure so the
-    caller can fall back to PaddleOCR."""
-    import urllib.error
-    import urllib.request
-
-    if _DAEMON_DISABLED:
-        raise ConnectionError("Unlimited-OCR daemon disabled (UNLIMITED_OCR_DISABLE=1)")
-    body = json.dumps({"image_path": image_path}).encode()
-    req = urllib.request.Request(
-        f"{_DAEMON_URL}/ocr",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=_DAEMON_TIMEOUT) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="replace"))
-    except urllib.error.HTTPError as e:
-        raise ConnectionError(f"Unlimited-OCR daemon HTTP {e.code}: {e.read()[:200]!r}") from e
-    if "error" in data:
-        raise ConnectionError(f"Unlimited-OCR daemon error: {data['error']}")
-    text = (data.get("text") or "").strip()
-    if not text:
-        return "No text detected in image."
-    clean = _remove_det(text)
-    return clean or "No text detected in image."
 
 
 def _get_ocr(lang: str) -> "PaddleOCR":
@@ -131,8 +66,26 @@ SCHEMA = {
 }
 
 
+def _tesseract(image_path: str, lang: str) -> str:
+    binary = shutil.which("tesseract")
+    if not binary:
+        raise FileNotFoundError("tesseract is not installed")
+    tess_lang = {"en": "eng", "fr": "fra"}.get(lang, lang or "eng")
+    result = subprocess.run(
+        [binary, image_path, "stdout", "-l", tess_lang, "--psm", "3"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    text = result.stdout.strip()
+    if result.returncode != 0 or not text:
+        raise RuntimeError(result.stderr.strip() or "tesseract detected no text")
+    return text
+
+
 def execute(image_path: str, lang: str = "en") -> str:
-    """Extract text from an image: Unlimited-OCR daemon first, PaddleOCR fallback."""
+    """Extract text using Surya first, then Tesseract, then PaddleOCR."""
     path = Path(image_path)
     if not path.exists():
         return f"File not found: {image_path}"
@@ -144,15 +97,17 @@ def execute(image_path: str, lang: str = "en") -> str:
             f"({', '.join(sorted(_SUPPORTED_EXTS))}). For a PDF, use pdf_to_markdown instead."
         )
 
+    errors = []
     try:
-        return _ocr_daemon(str(path))
-    except Exception as e:
-        if _DAEMON_DISABLED:
-            pass  # disabled is not a real failure — go straight to PaddleOCR
-        else:
-            # Unreachable/unloaded daemon is fine — the harness isn't running it.
-            import logging
-            logging.getLogger("tools.ocr").debug("Unlimited-OCR daemon unavailable (%s), using PaddleOCR", e)
+        from tools.surya_ocr import _ocr_daemon
+        return _ocr_daemon(str(path), mode="ocr")
+    except Exception as exc:
+        errors.append(f"Surya: {exc}")
+
+    try:
+        return _tesseract(str(path), lang)
+    except Exception as exc:
+        errors.append(f"Tesseract: {exc}")
 
     try:
         ocr = _get_ocr(lang)
@@ -178,6 +133,8 @@ def execute(image_path: str, lang: str = "en") -> str:
 
         return "\n".join(lines)
     except ImportError:
-        return "PaddleOCR is not installed. Run: pip install paddlepaddle paddleocr"
+        errors.append("PaddleOCR is not installed")
+        return "OCR unavailable. " + "; ".join(errors)
     except Exception as e:
-        return f"OCR failed: {e}"
+        errors.append(f"PaddleOCR: {e}")
+        return "OCR failed. " + "; ".join(errors)

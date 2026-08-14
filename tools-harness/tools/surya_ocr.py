@@ -79,7 +79,7 @@ SCHEMA = {
 }
 
 
-def execute(image_path: str, detect_tables: bool = False) -> str:
+def execute(image_path: str, lang: str = "en", detect_tables: bool = False) -> str:
     path = Path(image_path)
     if not path.exists():
         return f"File not found: {image_path}"

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "baileys": "github:WhiskeySockets/Baileys",
+    "baileys": "github:WhiskeySockets/Baileys#7e7b0757e3f9f3c7789fb1cfd2f241d5002a199a",
     "better-sqlite3": "^12.11.1",
     "express": "^5.2.1",
     "pino": "^10.3.1",

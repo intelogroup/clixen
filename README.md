@@ -389,7 +389,7 @@ The only local-only carve-out is the `ocr` intent (no multimodal support in the 
 |-------|-------|------|
 | `deepseek/deepseek-v4-flash` | Cloud (DeepSeek direct API) | **Default** for the main agent — chat + agentic tool use |
 | `openrouter/anthropic/claude-haiku-4.5` | Cloud (OpenRouter) | Automatic fallback on error or after 3 consecutive tool errors |
-| `gemma4:12b-mlx` | Local, 7.6 GB, warm | OCR/vision carve-out, intent classifier, manual override |
+| `gemma4:12b` | Local, 7.6 GB, warm | OCR/vision carve-out, intent classifier, manual override |
 | `gemma4:e2b` | Local, 7.2 GB | Tertiary: warmed but not primary |
 | `qwen3.5:4b` | Local, 3.4 GB | Query rewriting (websearch), chat-history compaction, lightweight classification |
 | `qwen3-vl:8b` / `qwen3-vl:4b` | Local | Vision (OCR, browser screenshot analysis) |

@@ -545,6 +545,100 @@ doing, since it's a separate small model.
 
 ---
 
+## 10. Background Scout Agents — Frontier Research Monitors (2026-08-13)
+
+Three persistent background scout agents (pattern: the existing `science_scout` /
+`reddit_intel` background subagents — scheduled polling, evidence-graded findings DB,
+periodic digest delivery). These monitor frontier research so Clixen's owner stays
+ahead of the Keops / Forgememo / SPIF bets without manual searching. Each agent
+runs on a schedule, grades findings by evidence level, and stores them for later
+query — no per-finding chat spam; aggregate into a weekly digest via existing
+telegram/notification delivery.
+
+| ID | Domain | Sources | Evidence grading | Notes |
+|----|--------|---------|------------------|-------|
+| `memory_scout` | AI agent memory systems + agent engineering | Web + academic (arXiv, OpenAlex, Crossref) | science_scout scale | REQUIRED FEATURE: self-mutating queries (see §10.1) |
+| `robotics_scout` | Robotics, computer vision, automation, medical robotics, mathematics & physics frontier | Web + arXiv | science_scout scale | Feeds Keops: VLA/ACT/SmolVLA, manipulation benchmarks, GR00T, Gemini Robotics, ROS2 |
+| `medbio_scout` | Medicine discovery, pathogens, nanotechnology, biochemistry, DNA manipulation models, latest clinical protocols & guidance | PubMed, CDC/WHO, preprint servers, clinical guideline feeds | science_scout scale | Protocol/guideline changes flagged HIGH priority (USMLE-relevant) |
+
+### 10.1 `memory_scout` — self-mutating query requirement
+
+The distinctive requirement: this agent must NOT search the same fixed query every
+run. Around seed keywords (e.g. "AI agent memory", "agent memory architecture",
+"MCP memory server", "hierarchical memory", "long-term memory agents", "episodic
+memory LLM"), each run it:
+
+- **Mutates the query**: synonym/paraphrase expansion, embedding-similarity
+  neighbors via `nomic-embed-text` (already in stack, §9b), term substitution,
+  source-switching (web → arXiv → OpenAlex).
+- **Learns from hits**: tracks which mutations returned new findings vs dead ends
+  and weights future mutations accordingly (hit feedback).
+- **Covers the Forgememo redesign space** (L0→L5 hierarchy, TencentDB Agent Memory
+  paradigm, Mem0, memory-as-service) and the agent-engineering frontier (context
+  engineering, agent evaluation, tool use).
+
+Why: fixed-keyword monitoring misses the vocabulary drift of a fast-moving field;
+the query mutator is the actual R&D bet of this agent. Implement it as a pure,
+non-LLM search-strategy module (per §9b design rule — don't burn gemma4 on query
+generation; use embeddings + templates).
+
+### 10.2 `robotics_scout` — domains
+
+- Robotics: manipulation benchmarks/gaps, VLA & policy training (ACT, SmolVLA,
+  π0), teleoperation, imitation learning, ROS2 ecosystem.
+- Computer vision: embodiment-relevant perception, success detection, spatial
+  reasoning.
+- Automation: industrial/healthcare automation trends.
+- Medical robotics: surgical robots, hospital robots, FDA regulatory movement.
+- Mathematics & physics frontier: anything that changes what a robot/agent can
+  compute or learn (new numerical methods, physics-informed models).
+
+Purpose: keep the Keops build plan and 2046 strategy honest — cheap embodiment,
+commoditizing hardware/foundation models, and where the medical-robotics frontier
+actually is.
+
+### 10.3 `medbio_scout` — domains
+
+- Medicine discovery: drug targets, clinical trials, FDA approvals.
+- Pathogens: outbreaks, mechanisms, countermeasures (GDELT/WHO signals).
+- Nanotechnology & biochemistry advances.
+- DNA manipulation models: editing tools, design models.
+- Latest clinical protocols & guidance: CDC, WHO, specialty societies — changes
+  here get HIGH-priority flagging (relevant to USMLE Step 1 prep and clinical
+  practice).
+
+### 10.4 Shared pattern & infra
+
+- **Schedule**: daily to 2-3x weekly per agent (cost-aware; batch queries, dedupe
+  via `store/knowledge_base.py` embeddings).
+- **Delivery**: findings stored to per-agent DB (science_scout pattern), weekly
+  digest via existing delivery channels; no per-finding spam.
+- **Evidence grading**: Observed / Replicated / Mechanistically supported /
+  Predicted / Speculative / Impossible (science_scout scale).
+- **Relation to product**: not user-facing features — the founder's intelligence
+  layer. They double as dogfooding for Clixen's own B2 (Watch → Diff → Notify) and
+  B4 (multi-step pipeline) primitives (§9), and as early use-cases for the future
+  trust/memory OS (SPIF provenance on findings, Forgememo as the findings store).
+
+
+### 10.5 Frontier reading anchors — domain source for the scouts
+
+- **Source**: `frontier-reading-anchors-2026-08-13.md` — 10 ranked anchors from the
+  2025 → 2026-08-13 frontier literature check, organized as ONE subject
+  (Physical Intelligence: PERCEPTION → PHYSICS → ACTION → ROBOTIC SYSTEMS →
+  continual learning), not ten independent tracks.
+- **Anchor → scout mapping**: `robotics_scout` tracks anchors 1, 2, 5, 6, 7, 8, 9, 10
+  (world models/WAM, VLA, 4D spatial, video→sim, neural operators, differentiable
+  physics, AI materials, AI-native CAD); `memory_scout` tracks anchors 3, 4
+  (self-evolving agents, long-horizon SWE — Forgememo adjacency).
+- **Keyword seeds** for scout query mutation: WAM, Gemini Robotics 2, ER 2, SWE-EVO,
+  DeepSWE, RigorBench, OVOW, CLOUD, FNO, DeepONet, PINN, operator transformer,
+  differentiable physics, interatomic potential, action tokenization,
+  cross-embodiment transfer, video-to-simulation.
+- **Reading cadence**: feeds the weekly "Frontier deep-read — 1 paper" slot
+  (keops README daily checklist), rotated per the draft 6-month plan in the anchors file.
+
+
 ## Verification Checklist
 
 Before marking this roadmap complete, verify:

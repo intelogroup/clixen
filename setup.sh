@@ -69,7 +69,7 @@ else
   fi
   if [ -x "$(command -v ollama)" ]; then
     echo "==> Pulling default local models (Ollama)..."
-    ollama pull gemma4:12b-mlx || ollama pull gemma4:latest || echo "  (ollama pull failed — check Ollama is running; cloud-first works without it)"
+    ollama pull gemma4:12b || ollama pull gemma4:latest || echo "  (ollama pull failed — check Ollama is running; cloud-first works without it)"
     ollama pull qwen3.5:4b || true
     ollama pull nomic-embed-text || true
   else

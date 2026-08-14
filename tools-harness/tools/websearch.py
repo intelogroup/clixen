@@ -113,7 +113,7 @@ def _rewrite_query(query: str, timeout_s: float = 6.0) -> str:
     # matching _summarize()'s existing cloud-primary choice) — live-measured
     # both with the same prompt: cloud was a flat 0.8-1.2s across 3 runs,
     # while local hit 5.54s in a real orchestrator trace (Ollama model-slot
-    # contention with gemma4:12b-mlx/ornith:9b — same class of issue already
+    # contention with gemma4:12b/ornith:9b — same class of issue already
     # fixed elsewhere today for Kokoro/voiceprint). No gain in the good case,
     # but removes the tail-latency risk entirely and drops this pipeline's
     # last Ollama dependency in the hot path. Both calls are timeout-wrapped —
@@ -128,6 +128,9 @@ def _rewrite_query(query: str, timeout_s: float = 6.0) -> str:
             messages=[{"role": "user", "content": prompt}],
             tools=[],
             bypass_budget=True,
+            retry=False,
+            fallback=False,
+            timeout=timeout_s,
         )
         return (choice.message.content or "").strip()
 
@@ -589,7 +592,7 @@ def search(query: str, on_token: Callable | None = None, run_id: str | None = No
 
     _is_temp = _is_temp_early
 
-    # Fast-path: stream Tavily's synthesized answer directly and skip the gemma4:12b-mlx
+    # Fast-path: stream Tavily's synthesized answer directly and skip the gemma4:12b
     # summarize (the dominant latency). Safe when Tavily gives a substantial answer AND the
     # query isn't a deep explain/compare/list/format ask — those want gemma4's fuller
     # synthesis, so _extract_format_hint (non-None) routes them past the fast-path.
@@ -600,7 +603,7 @@ def search(query: str, on_token: Callable | None = None, run_id: str | None = No
     _wants_depth = _extract_format_hint(query) is not None
     _min_len = 150 if _is_temp else 300
     # Temporal/time-sensitive queries (sports scores, schedules, live updates) are highly
-    # prone to stale Tavily cached answers — always run them through the gemma4:12b-mlx
+    # prone to stale Tavily cached answers — always run them through the gemma4:12b
     # summarizer over fresh search snippets to verify accuracy.
     if (
         not _is_temp

@@ -2,9 +2,18 @@ import sys
 
 sys.path.insert(0, ".")
 
+import pytest
 from fastapi.testclient import TestClient
 
 import chat_ui
+
+
+@pytest.fixture(autouse=True)
+def _disable_localhost_token_gate(monkeypatch):
+    """See tests/test_chat_ui_endpoints.py's fixture of the same name — bypass
+    the E3 per-install token middleware the same way the app does when the
+    Keychain is unavailable."""
+    monkeypatch.setattr(chat_ui, "_LOCALHOST_TOKEN", None)
 
 
 def _reset_auth_state(monkeypatch, tmp_path):

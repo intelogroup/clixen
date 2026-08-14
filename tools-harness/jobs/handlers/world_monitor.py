@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import socket
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -37,9 +38,16 @@ Return ONLY a JSON list: [{"finding": "...", "reason": "..."}] or [] if nothing 
 
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
+# ponytail: global net for any socket op (getaddrinfo/connect) that per-call
+# urlopen(timeout=) doesn't cover — this handler hung 4h+ past its own 15s
+# per-call timeouts, consistent with a DNS-level stall bypassing it.
+socket.setdefaulttimeout(20)
+
 def _fetch(url: str, timeout: int = 15) -> str | None:
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        # ponytail: per-call timeout above doesn't reliably bound DNS
+        # resolution on this box — global socket default is the real net.
         resp = urllib.request.urlopen(req, timeout=timeout)
         return resp.read().decode(errors="replace")
     except Exception as e:
@@ -47,7 +55,7 @@ def _fetch(url: str, timeout: int = 15) -> str | None:
         return None
 
 
-def _query_sources() -> dict[str, str]:
+def _query_sources(scan_number: int) -> dict[str, str]:
     results = {}
 
     # arXiv new papers (latest, cross-listed in multiple categories = broad interest)
@@ -63,7 +71,10 @@ def _query_sources() -> dict[str, str]:
             results["new_research_papers"] = "\n".join(lines)
 
     # Evolved arXiv queries (top keyword-driven)
-    for q in store.get_evolved_queries():
+    evolved = store.reserve_evolved_queries(
+        store.get_evolved_queries(), scan_number, count=3, cooldown_scans=6,
+    )
+    for q in evolved:
         label = f"arxiv_evolved_{q[:30]}"
         lines = _fetch_arxiv(q, label, max_results=4)
         if lines:
@@ -154,11 +165,14 @@ def _fetch_arxiv(query: str, label: str, max_results: int = 5) -> list[str]:
     return lines
 
 
-def _evolve_arxiv_queries() -> None:
+def _evolve_arxiv_queries(scan_number: int) -> None:
     """Every 6 keyword-tracking rounds, ask LLM to generate fresh arXiv
     search queries from top-performing keywords. Store results for next scan."""
     from clients.cloud_client import chat
     from clients.cost_guard import BudgetExceededError
+
+    if scan_number % 6:
+        return
 
     top = store.top_keywords(limit=15, min_hits=2)
     if len(top) < 3:
@@ -183,10 +197,9 @@ def _evolve_arxiv_queries() -> None:
             return
         queries = json.loads(resp[start:end + 1])
         if isinstance(queries, list) and queries:
-            import shlex
-            encoded = [shlex.quote(q) for q in queries[:5] if isinstance(q, str)]
-            store.set_evolved_queries(json.dumps(queries[:5]))
-            _log.info("[world_monitor] evolved %d new arXiv queries", len(queries[:5]))
+            fresh = [q for q in queries[:5] if isinstance(q, str)]
+            stored = store.add_evolved_queries(fresh)
+            _log.info("[world_monitor] evolved %d new arXiv queries; pool=%d", len(fresh), len(stored))
     except (json.JSONDecodeError, ValueError) as e:
         _log.debug("[world_monitor] evolve parse failed: %s", e)
 
@@ -230,8 +243,9 @@ def handle(instance: dict) -> dict:
     _log.info("[world_monitor] scanning global intelligence...")
 
     store.init()
+    scan_number = store.start_scan()
 
-    raw = _query_sources()
+    raw = _query_sources(scan_number)
     if not raw:
         _log.info("[world_monitor] no data returned from any source")
         return {"status": "no_data"}
@@ -255,12 +269,11 @@ def handle(instance: dict) -> dict:
     for f in findings:
         finding_text = f.get("finding", "")
         reason = f.get("reason", "")
-        if store.is_known(finding_text):
+        if not store.claim_notified(finding_text, reason, ", ".join(raw.keys())):
             deduped_count += 1
             continue
 
         new_count += 1
-        store.mark_notified(finding_text, reason, ", ".join(raw.keys()))
         message = f"[World] {finding_text}\n\n{reason}" if reason else f"[World] {finding_text}"
 
         decide_and_notify(
@@ -293,7 +306,7 @@ def handle(instance: dict) -> dict:
 
     # Every 6 runs, evolve arXiv search queries using top keywords
     try:
-        _evolve_arxiv_queries()
+        _evolve_arxiv_queries(scan_number)
     except Exception as e:
         _log.warning("[world_monitor] query evolution failed: %s", e)
 

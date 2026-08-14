@@ -3,9 +3,20 @@ from types import SimpleNamespace
 
 sys.path.insert(0, ".")
 
+import pytest
 from fastapi.testclient import TestClient
 
 import chat_ui
+
+
+@pytest.fixture(autouse=True)
+def _disable_localhost_token_gate(monkeypatch):
+    """E3 hardening's per-install token middleware (chat_ui.py's
+    _require_localhost_token) 403s any TestClient call that doesn't carry the
+    clixen_token cookie — bypass it the same way the app itself does when the
+    Keychain is unavailable (_LOCALHOST_TOKEN is None), not by threading a
+    real token through every request in this file."""
+    monkeypatch.setattr(chat_ui, "_LOCALHOST_TOKEN", None)
 
 
 def _patch_workflow_db(monkeypatch, tmp_path):

@@ -24,8 +24,10 @@ from langgraph.types import RetryPolicy
 from agents.local_agent_state import LocalAgentState
 from clients.cloud_client import DEFAULT_CLOUD_MODEL, CLOUD_FALLBACK_MODEL, is_cloud_model
 from tools.filesystem import set_project_root as _set_project_root
+from tools.shell import set_shell_workspace as _set_shell_workspace
 from store.trace_store import get_trace, store_trace as _store_trace, record as _record_trace
 from log_config import setup_logging as _setup_logging
+from agents.document_agent import run_document_agent
 
 _log = _setup_logging("local_agent_graph")
 
@@ -35,6 +37,10 @@ _log = _setup_logging("local_agent_graph")
 # blew the 15/17 cap (recursion abort confirmed live 2026-07-09 10:42:28).
 _DEFAULT_MAX_STEPS = 15
 _MAX_STEPS_BY_TASK = {"code": 50, "document": 35}
+_PATH_SEARCH_TOOLS = {
+    "fd_find", "find_files", "list_directory", "file_tree", "glob",
+    "ripgrep", "grep_files",
+}
 
 
 def _max_steps_for(task: str) -> int:
@@ -183,13 +189,15 @@ def run_local_agent(
     """
     if max_steps is None:
         max_steps = _max_steps_for(task)
+    if task == "document":
+        return run_document_agent(query, model=model, chat_id=chat_id, project_root=project_root)
     from langchain_core.messages import HumanMessage, AIMessage
     from store.conversation import get as conv_get, trim_to_budget
 
     messages = []
     if chat_id:
         raw_history = conv_get(chat_id)
-        trimmed_history = trim_to_budget(raw_history, model, query)
+        trimmed_history = trim_to_budget(raw_history, model, query, chat_id=chat_id)
         for turn in trimmed_history:
             role = turn.get("role")
             content = turn.get("content", "")
@@ -211,6 +219,7 @@ def run_local_agent(
         f"[SKILL: {matched.name} — {matched.description}]\n\n{matched.system_prompt}"
         if matched else None
     )
+    skill_tools = matched.tools or None if matched else None
 
     initial_state = {
         "messages": messages,
@@ -224,6 +233,8 @@ def run_local_agent(
         "verify_attempts": 0,
         "project_root": project_root,
         "skill_prompt": skill_prompt,
+        "skill_tools": skill_tools,
+        "excluded_tools": [],
     }
 
     config = {"recursion_limit": max_steps + 2}  # +2 for safety margin
@@ -232,6 +243,7 @@ def run_local_agent(
     # LocalAgentState.project_root (that only reaches the system-prompt text) —
     # mirrors harness.py's force_local_agent path (harness.py:604).
     _set_project_root(project_root)
+    _set_shell_workspace(project_root)
 
     _log.info("[local-agent/run] query=%s model=%s", query[:50], model)
 
@@ -279,7 +291,8 @@ def run_local_agent(
 
 
 def run_local_agent_streaming(
-    query: str, model: str = DEFAULT_CLOUD_MODEL, chat_id: str | None = None, task: str = "full",
+    query: str, model: str = DEFAULT_CLOUD_MODEL, chat_id: str | None = None,
+    task: str = "full", project_root: str | None = None,
 ):
     """
     Run the local-agent graph with SSE streaming + specialist pre-dispatch.
@@ -297,6 +310,14 @@ def run_local_agent_streaming(
         - "final": Final response from main agent
     """
     from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+
+    if task == "document":
+        _set_project_root(project_root)
+        _set_shell_workspace(project_root)
+        yield ("final", run_document_agent(
+            query, model=model, chat_id=chat_id, project_root=project_root,
+        ))
+        return
 
     # Generated up front (not just before graph.stream) so specialist trace entries
     # below share the same run_id as the graph run that follows them.
@@ -366,7 +387,12 @@ def run_local_agent_streaming(
     if known_paths:
         path_str = "\n".join(f"  - {p}" for p in known_paths[:10])
         extra = f"\n  ... and {len(known_paths) - 10} more" if len(known_paths) > 10 else ""
-        context_parts.append(f"[Known file paths:\n{path_str}{extra}]")
+        context_parts.append(
+            f"[Known file paths resolved by the path specialist:\n{path_str}{extra}]\n"
+            "[These paths are authoritative for this request. Do not repeat a search; "
+            "synthesize the answer from them or use a non-search tool only if the user "
+            "also asked for another operation.]"
+        )
     if read_text:
         preview = read_text[:2000]
         suffix = f"\n... ({len(read_text)} chars total)" if len(read_text) > 2000 else ""
@@ -393,7 +419,7 @@ def run_local_agent_streaming(
     messages = []
     if chat_id:
         raw_history = conv_get(chat_id)
-        trimmed_history = trim_to_budget(raw_history, model, query)
+        trimmed_history = trim_to_budget(raw_history, model, query, chat_id=chat_id)
         for turn in trimmed_history:
             role = turn.get("role")
             content = turn.get("content", "")
@@ -414,6 +440,7 @@ def run_local_agent_streaming(
         f"[SKILL: {matched.name} — {matched.description}]\n\n{matched.system_prompt}"
         if matched else None
     )
+    skill_tools = matched.tools or None if matched else None
 
     initial_state = {
         "messages": messages,
@@ -428,6 +455,10 @@ def run_local_agent_streaming(
         "verified": False,
         "verify_attempts": 0,
         "skill_prompt": skill_prompt,
+        "skill_tools": skill_tools,
+        "excluded_tools": list(_PATH_SEARCH_TOOLS)
+        if dispatch_result and dispatch_result.specialist == "path" and known_paths
+        else [],
     }
 
     config = {"recursion_limit": _max_steps + 2}

@@ -170,35 +170,56 @@ def parse_local_fs_action(query: str) -> LocalFsAction | None:
 
     if re.search(r"\b(tree|layout|structure)\b", lower):
         path = _path_after_preposition(text, ("of", "for", "in", "under", "at")) or _first_path(text)
-        if path:
+        if path and Path(path).expanduser().exists():
             return LocalFsAction("file_tree", {"path": path, "max_depth": 3}, False)
 
     if re.search(r"\b(info|metadata|size|modified)\b", lower) and _first_path(text):
-        return LocalFsAction("file_info", {"path": _first_path(text)}, False)
+        path = _first_path(text)
+        if Path(path).expanduser().exists():
+            return LocalFsAction("file_info", {"path": path}, False)
 
-    if re.search(r"\b(search|grep|find text|look for)\b", lower) and not re.search(r"\b(files?|folders?|directories?)\b", lower):
+    if re.search(r"\b(search|grep|find text|look for)\b", lower) and not re.search(r"\b(files?|folders?|directory|directories)\b", lower):
         pattern_match = re.search(r"\b(?:search|grep|look for)\s+(.+?)\s+(?:in|under|from)\s+(.+)$", text, re.I)
         if pattern_match:
             pattern = pattern_match.group(1).strip(" '\"`")
             path = _clean_local_path(pattern_match.group(2))
-            return LocalFsAction("grep_files", {"pattern": pattern, "path": path}, False)
+            if Path(path).expanduser().exists():
+                return LocalFsAction("grep_files", {"pattern": pattern, "path": path}, False)
 
     if re.search(r"\b(find|locate|verify|check)\b", lower) and re.search(r"\b(files?|folders?|directories?|documents?|pdfs?|markdown|python|\*)\b", lower):
         path = _path_after_preposition(text, ("under", "in", "from", "at"))
         if not path:
             path = str(Path.home() / "Downloads") if re.search(r"\b(downloads?)\b", lower) else str(Path.home())
-        return LocalFsAction("find_files", {"pattern": _find_glob_pattern(text), "path": path}, False)
+        # A guessed fuzzy-name path (e.g. "Benoucheca perso" -> ~/Benoucheca/perso) that
+        # doesn't exist should fall through to the LLM loop, which has spotlight_search
+        # to actually locate it — not commit to a wrong path.
+        if Path(path).expanduser().exists():
+            return LocalFsAction("find_files", {"pattern": _find_glob_pattern(text), "path": path}, False)
 
     if re.search(r"\b(list|show|what'?s in|what is in|ls)\b", lower) and re.search(r"\b(files?|folders?|directory|dir|contents?)\b", lower):
         path = _path_after_preposition(text, ("in", "of", "under", "at")) or _first_path(text) or str(Path.home())
-        return LocalFsAction("list_directory", {"path": path}, False)
+        if Path(path).expanduser().exists():
+            return LocalFsAction("list_directory", {"path": path}, False)
 
     if re.search(r"\b(read|open|cat|show)\b", lower):
         path = _first_path(text)
-        if path:
+        if path and Path(path).expanduser().exists():
             return LocalFsAction("read_document", {"path": path}, False)
 
     return None
+
+
+def count_path_tokens(query: str) -> int:
+    """Count distinct filesystem-path-shaped tokens in the raw query.
+
+    Structural signal, not a keyword list: a query naming 2+ real paths
+    (multiple inputs, or an input plus a distinct write-target) needs
+    multi-step reasoning a single deterministic tool call can't do —
+    regardless of which verbs happen to appear in the sentence.
+    """
+    paths = {_clean_local_path(m) for m in _PATH_TOKEN_RE.findall(query)}
+    paths.discard("")
+    return len(paths)
 
 
 def execute_local_fs_action(action: LocalFsAction) -> str:

@@ -8,6 +8,8 @@ Install: pip install ddgs
 """
 
 import re
+import os
+import sys
 
 from tools.search_result import SearchResult
 
@@ -172,12 +174,32 @@ def execute(
         SearchResult with content ready for the model, or ok=False on error
     """
     try:
-        from ddgs import DDGS
+        import ddgs as _ddgs_module
+        DDGS = _ddgs_module.DDGS
     except ImportError:
         return SearchResult(
             content="",
             ok=False,
             error="ddgs not installed. Run: pip install ddgs",
+            source="ddg",
+            query=query,
+        )
+
+    # ddgs delegates HTTP to the native ``primp`` extension.  The currently
+    # bundled primp build aborts the whole Python 3.14 process during client
+    # construction; this cannot be caught by the normal exception boundary.
+    # Keep DDG available for supported runtimes and for injected test doubles,
+    # while making the unsafe combination an ordinary backend failure so the
+    # web-search tier can use SearXNG/Brave/Exa/Tavily instead.
+    if (
+        sys.version_info >= (3, 14)
+        and getattr(_ddgs_module, "__file__", None)
+        and os.environ.get("CLIXEN_ALLOW_UNSAFE_DDG") != "1"
+    ):
+        return SearchResult(
+            content="",
+            ok=False,
+            error="ddgs disabled on Python 3.14+ because its native HTTP client is incompatible; use SearXNG, Brave, Exa, or Tavily",
             source="ddg",
             query=query,
         )

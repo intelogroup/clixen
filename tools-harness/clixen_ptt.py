@@ -30,6 +30,7 @@ CLIXEN_URL = None
 CHAT_ID = "brabble_voice"
 
 autotype_this = False  # per-session flag, set by whichever key started the recording
+_typing = False          # guard: prevent simulated Shift events from re-triggering the listener during autotype
 
 
 def get_model() -> Model:
@@ -106,14 +107,15 @@ def stop_rec():
 
 
 def type_text(text: str) -> None:
-    # ponytail: release the trigger key first so its modifier flag doesn't
-    # get glued onto the first typed character (same footgun FluidVoice's
-    # PasteManager strips before injecting keystrokes)
+    global _typing
     time.sleep(0.05)
+    _typing = True
     try:
         typer.type(text)
     except Exception as e:
         print(f"  [autotype error] {e}", flush=True)
+    finally:
+        _typing = False
 
 
 def transcribe(wav_path: Path) -> str:
@@ -155,6 +157,8 @@ def _any_active():
 
 def on_press(k):
     global held_active, toggle_active, field_active, autotype_this
+    if _typing:
+        return
     if k == rec_key:
         if _any_active():
             return
@@ -181,6 +185,8 @@ def on_press(k):
 
 def on_release(k):
     global held_active, field_active
+    if _typing:
+        return
     if k == rec_key and held_active:
         held_active = False
         stop_rec()

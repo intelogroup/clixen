@@ -30,7 +30,8 @@ def test_plan_step_injects_system_message_not_ai_message():
     consumer's old final-answer heuristic before the agent even starts."""
     state = LocalAgentState(messages=[HumanMessage(content="rename all .txt files to .md")])
 
-    with patch.object(nodes, "_chat", return_value=_chat_resp("1. List files\n2. Rename each")):
+    with patch.object(nodes, "_chat", return_value=_chat_resp("1. List files\n2. Rename each")), \
+         patch.object(nodes, "_registry_execute_tool", return_value="[error] no results"):
         result = nodes.plan_step(state)
 
     assert len(result["messages"]) == 1
@@ -76,6 +77,35 @@ def test_verify_answer_flags_bad_answer_and_retries_once():
     assert result["verify_attempts"] == 1
     assert isinstance(result["messages"][0], SystemMessage)
     assert "DEBUG=True" in result["messages"][0].content
+
+
+def test_numeric_derivation_guard_retries_refusal_when_evidence_has_formula():
+    state = LocalAgentState(messages=[
+        HumanMessage(content="What is Q3 revenue?"),
+        ToolMessage(content="Q2 revenue is 100,000. Q3 grew by exactly 20% over Q2 revenue.", tool_call_id="t1", name="read_file"),
+        AIMessage(content="The Q3 revenue is not established."),
+    ])
+
+    with patch.object(nodes, "_chat") as mock_chat:
+        result = nodes.verify_answer(state)
+
+    mock_chat.assert_not_called()
+    assert result["verified"] is False
+    assert result["verify_attempts"] == 1
+    assert "100000 * (1 + 20/100) = 120000" in result["messages"][0].content
+
+
+def test_numeric_derivation_guard_can_use_specialist_findings_in_user_context():
+    state = LocalAgentState(messages=[
+        HumanMessage(content="What is Q3 revenue?\n\n[Specialist findings: | Q2 | 100,000 |\nQ3 grew by exactly 20% over Q2 revenue.]"),
+        AIMessage(content="It is not established."),
+    ])
+
+    with patch.object(nodes, "_chat") as mock_chat:
+        result = nodes.verify_answer(state)
+
+    mock_chat.assert_not_called()
+    assert "120000" in result["messages"][0].content
 
 
 def test_verify_answer_gives_up_after_one_retry():
@@ -179,7 +209,8 @@ def test_plan_step_ignores_trailing_ai_message_and_uses_latest_human_message():
         AIMessage(content="old answer"),
         HumanMessage(content="actual current request"),
     ])
-    with patch.object(nodes, "_chat", return_value=_chat_resp("1. Do the thing")) as mock_chat:
+    with patch.object(nodes, "_chat", return_value=_chat_resp("1. Do the thing")) as mock_chat, \
+         patch.object(nodes, "_registry_execute_tool", return_value="[error] no results"):
         nodes.plan_step(state)
 
     sent_user_msg = mock_chat.call_args.kwargs["messages"][1]["content"]
@@ -188,5 +219,6 @@ def test_plan_step_ignores_trailing_ai_message_and_uses_latest_human_message():
 
 def test_plan_step_strips_whitespace_only_response():
     state = LocalAgentState(messages=[HumanMessage(content="do something")])
-    with patch.object(nodes, "_chat", return_value=_chat_resp("   \n  ")):
+    with patch.object(nodes, "_chat", return_value=_chat_resp("   \n  ")), \
+         patch.object(nodes, "_registry_execute_tool", return_value="[error] no results"):
         assert nodes.plan_step(state) == {}

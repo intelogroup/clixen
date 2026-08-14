@@ -1,8 +1,9 @@
 """
 Office document processing utilities.
 
-Extracts readable text from Excel (.xlsx/.xls) and Word (.docx/.doc) files
-and writes a plain-text markdown summary alongside the source file.
+Extracts readable text from Excel (.xlsx/.xls), Word (.docx/.doc),
+PowerPoint (.pptx/.ppt), and CSV files, and writes a plain-text markdown
+summary alongside the source file.
 Mirrors the (path, content) return contract of pdf_tools.pdf_to_markdown.
 """
 
@@ -29,7 +30,7 @@ def excel_to_markdown(file_path: str, output_dir: str | None = None) -> tuple[st
     Returns:
         (md_file_path_str, md_content_str)
     """
-    import openpyxl
+    import anydoc
 
     p = Path(file_path)
     if not p.exists():
@@ -39,31 +40,48 @@ def excel_to_markdown(file_path: str, output_dir: str | None = None) -> tuple[st
     out_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        wb = openpyxl.load_workbook(str(p), read_only=True, data_only=True)
+        md_content = anydoc.to_markdown(str(p))
     except Exception as exc:
         msg = str(exc).lower()
-        if "file is not a zip" in msg or "encrypted" in msg or "bad magic" in msg or "password" in msg:
+        if "encrypted" in msg or "password" in msg:
             raise PasswordProtectedError(f"Excel file is password-protected: {p.name}") from exc
         raise
-    parts: list[str] = [f"# {p.stem}\n"]
 
-    for sheet_name in wb.sheetnames:
-        ws = wb[sheet_name]
-        parts.append(f"\n## {sheet_name}\n")
-        rows_written = 0
-        for row in ws.iter_rows(max_row=200, max_col=20, values_only=True):
-            cells = [str(c) if c is not None else "" for c in row]
-            if any(cells):
-                parts.append("| " + " | ".join(cells) + " |")
-                rows_written += 1
-        if rows_written == 0:
-            parts.append("_(empty sheet)_")
+    fill_grid = _excel_fill_colors(p)
+    if fill_grid:
+        md_content = f"{md_content}\n\n{fill_grid}" if md_content.strip() else fill_grid
 
-    wb.close()
-    md_content = "\n".join(parts)
     md_file = out_dir / f"{p.stem}.md"
     md_file.write_text(md_content, encoding="utf-8")
     return (str(md_file), md_content)
+
+
+def _excel_fill_colors(p: Path) -> str:
+    """Grid of per-cell fill colors, keyed by A1 address — anydoc's markdown
+    conversion only carries text/values, so any GAIA-style question about
+    cell color (e.g. "which plots are green") sees nothing without this."""
+    import openpyxl
+
+    try:
+        wb = openpyxl.load_workbook(str(p), data_only=True)
+    except Exception:
+        return ""
+
+    sections = []
+    for sheet in wb.worksheets:
+        rows = []
+        for row in sheet.iter_rows(max_row=200, max_col=20):
+            for cell in row:
+                fill = cell.fill
+                if fill is None or fill.patternType is None:
+                    continue
+                color = fill.fgColor.rgb if fill.fgColor else None
+                if not color or not isinstance(color, str) or color in ("00000000", "FFFFFFFF"):
+                    continue
+                rows.append(f"{cell.coordinate}: #{color[-6:]}")
+        if rows:
+            sections.append(f"### {sheet.title} — cell fill colors\n" + "\n".join(rows))
+    return "\n\n".join(sections)
 
 
 def excel_metadata(file_path: str) -> dict:
@@ -94,7 +112,7 @@ def docx_to_markdown(file_path: str, output_dir: str | None = None) -> tuple[str
     Returns:
         (md_file_path_str, md_content_str)
     """
-    import docx as _docx
+    import anydoc
 
     p = Path(file_path)
     if not p.exists():
@@ -104,21 +122,41 @@ def docx_to_markdown(file_path: str, output_dir: str | None = None) -> tuple[str
     out_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        doc = _docx.Document(str(p))
+        md_content = anydoc.to_markdown(str(p))
     except Exception as exc:
         msg = str(exc).lower()
-        if "encrypted" in msg or "password" in msg or "bad magic" in msg or "not a zip" in msg:
+        if "encrypted" in msg or "password" in msg:
             raise PasswordProtectedError(f"Word file is password-protected: {p.name}") from exc
         raise
-    parts: list[str] = [f"# {p.stem}\n"]
 
-    for block in _iter_blocks(doc):
-        parts.append(block)
+    comments_md = _docx_comments_markdown(str(p))
+    if comments_md:
+        md_content = f"{md_content}\n\n{comments_md}"
 
-    md_content = "\n".join(parts)
     md_file = out_dir / f"{p.stem}.md"
     md_file.write_text(md_content, encoding="utf-8")
     return (str(md_file), md_content)
+
+
+def _docx_comments_markdown(file_path: str) -> str:
+    """Extract Word review comments (python-docx/anydoc don't expose these)."""
+    from docx2python import docx2python
+
+    try:
+        result = docx2python(file_path, html=False)
+        comments = result.comments or []
+    except Exception:
+        return ""
+
+    if not comments:
+        return ""
+
+    lines = ["## Comments"]
+    for anchor, author, date, text in comments:
+        anchor = anchor.strip()
+        quote = f' on "{anchor}"' if anchor and anchor != "." else ""
+        lines.append(f"- **{author}** ({date}){quote}: {text}")
+    return "\n".join(lines)
 
 
 def _iter_blocks(doc) -> list[str]:
@@ -169,3 +207,48 @@ def docx_page_count(file_path: str) -> int:
         return 0
     except Exception:
         return 0
+
+
+# ---------------------------------------------------------------------------
+# PowerPoint / CSV (anydoc-only formats, no prior converter existed)
+# ---------------------------------------------------------------------------
+
+def _anydoc_to_markdown(file_path: str, output_dir: str | None, kind: str) -> tuple[str, str]:
+    import anydoc
+
+    p = Path(file_path)
+    if not p.exists():
+        raise FileNotFoundError(f"{kind} file not found: {file_path}")
+
+    out_dir = Path(output_dir) if output_dir is not None else p.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        md_content = anydoc.to_markdown(str(p))
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "encrypted" in msg or "password" in msg:
+            raise PasswordProtectedError(f"{kind} file is password-protected: {p.name}") from exc
+        raise
+
+    md_file = out_dir / f"{p.stem}.md"
+    md_file.write_text(md_content, encoding="utf-8")
+    return (str(md_file), md_content)
+
+
+def pptx_to_markdown(file_path: str, output_dir: str | None = None) -> tuple[str, str]:
+    """Convert a PowerPoint deck (.pptx/.ppt/.pps/...) to a markdown document.
+
+    Returns:
+        (md_file_path_str, md_content_str)
+    """
+    return _anydoc_to_markdown(file_path, output_dir, "PowerPoint")
+
+
+def csv_to_markdown(file_path: str, output_dir: str | None = None) -> tuple[str, str]:
+    """Convert a CSV file to a markdown table.
+
+    Returns:
+        (md_file_path_str, md_content_str)
+    """
+    return _anydoc_to_markdown(file_path, output_dir, "CSV")
