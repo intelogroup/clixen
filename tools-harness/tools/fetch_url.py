@@ -143,7 +143,7 @@ def _table_to_text(table) -> str:
 SCHEMA = {
     "type": "function",
     "function": {
-        "name": "fetch_url",
+        "name": "web_fetch",
         "description": (
             "Fetch and read the content of a web page. "
             "Use when the user asks to visit, open, or check a specific URL or website. "

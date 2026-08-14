@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import re as _re
 import shlex
+from pathlib import Path
 
 import jsonschema
 
@@ -55,10 +56,11 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "api_discover": frozenset({"browser"}),
     "api_fetch": frozenset({"browser"}),
     "api_list_domains": frozenset({"browser"}),
-    "append_file": frozenset({"code", "ide_extra", "spec_write"}),
-    "download_url": frozenset({"core", "fs", "ide_extra"}),
+    "append_file": frozenset({"code", "spec_write"}),
+    "download_url": frozenset({"core", "fs"}),
+    "web_fetch": frozenset({"core", "browser"}),
     "archive_grep": frozenset({"fs"}),
-    "bash_exec": frozenset({"core", "git", "ide_extra", "repl"}),
+    "bash_exec": frozenset({"core", "git", "repl"}),
     "browser_check": frozenset({"browser"}),
     "browser_click": frozenset({"browser", "spec_scraper"}),
     "browser_close": frozenset({"browser"}),
@@ -85,13 +87,16 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "list_templates": frozenset({"core", "fs"}),
     "data_to_xlsx": frozenset({"core", "fs", "spec_write"}),
     "delete_file": frozenset({"core", "fs", "spec_write"}),
+    "quarantine_document": frozenset({"core", "fs", "spec_write"}),
+    "forget_document_index": frozenset({"core", "fs", "spec_write"}),
+    "delete_document": frozenset({"core", "fs", "spec_write"}),
     "detect_flat_pdf_fields": frozenset({"form"}),
     "detect_form_fields": frozenset({"form", "fs", "spec_form"}),
     "detect_outliers": frozenset({"spec_data"}),
     "detect_pdf_form_fields": frozenset({"form", "fs", "spec_form"}),
     "download_video": frozenset({"spec_video"}),
-    "edit_file": frozenset({"core", "fs", "git", "ide_extra", "spec_write"}),
-    "edit_file_fuzzy": frozenset({"code", "ide_extra", "spec_write"}),
+    "edit_file": frozenset({"core", "fs", "git", "spec_write"}),
+    "edit_file_fuzzy": frozenset({"code", "spec_write"}),
     "call_my_phone": frozenset({"core"}),
     "get_my_doordash_orders": frozenset({"browser"}),
     "get_my_doordash_cart": frozenset({"browser"}),
@@ -116,20 +121,20 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "git_add": frozenset({"git"}),
     "git_checkout": frozenset({"git"}),
     "git_commit": frozenset({"git"}),
-    "git_diff": frozenset({"git", "ide_extra", "code"}),
+    "git_diff": frozenset({"git", "code"}),
     "git_log": frozenset({"git", "code"}),
     "git_new_worktree": frozenset({"git"}),
-    "git_status": frozenset({"git", "ide_extra", "code"}),
+    "git_status": frozenset({"git", "code"}),
     "glob": frozenset({"spec_path"}),
     "grep_files": frozenset({"code", "fs", "spec_path"}),
     "html_to_file": frozenset({"fs", "spec_write"}),
-    "index_directory": frozenset({"fs"}),
+    "index_directory": frozenset({"fs", "code"}),
     "json_to_docx": frozenset({"core", "fs", "spec_write"}),
     "list_directory": frozenset({"core", "fs", "spec_audio", "spec_path"}),
     "list_email_attachments": frozenset({"fs"}),
     "list_kernel_vars": frozenset({"repl"}),
     "load_external_skill": frozenset({"core", "fs"}),
-    "list_windows": frozenset({"ide_extra"}),
+    "list_windows": frozenset(),
     "make_summary_table": frozenset({"spec_data"}),
     "markdown_to_docx": frozenset({"core", "fs", "spec_write"}),
     "markdown_to_pdf": frozenset({"core", "fs", "spec_write"}),
@@ -169,14 +174,23 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "search_pubmed": frozenset({"spec_research"}),
     "search_youtube": frozenset({"spec_video"}),
     "search_chinese_web": frozenset({"spec_chinese_web"}),
-    "semantic_file_search": frozenset({"fs", "spec_research"}),
+    "semantic_file_search": frozenset({"fs", "spec_research", "code"}),
+    "index_directory_fts": frozenset({"fs", "code"}),
+    "fulltext_search": frozenset({"fs", "spec_research", "code"}),
+    "document_retrieve": frozenset({"core", "fs", "spec_read"}),
+    "compare_documents": frozenset({"core", "fs", "spec_read"}),
+    "extract_document_fields": frozenset({"core", "fs", "spec_read"}),
+    "detect_document_inconsistencies": frozenset({"core", "fs", "spec_read"}),
+    "classify_document": frozenset({"core", "fs", "spec_read"}),
+    "batch_inspect_documents": frozenset({"core", "fs", "spec_read"}),
+    "restore_document_version": frozenset({"core", "fs", "spec_write"}),
     "session_check": frozenset({"browser"}),
     "session_login": frozenset({"browser"}),
     "spotlight_search": frozenset({"fs"}),
-    "take_screenshot": frozenset({"ide_extra"}),
+    "take_screenshot": frozenset(),
     "text_to_file": frozenset({"fs", "spec_write"}),
     "transcribe_audio": frozenset({"form", "spec_audio", "spec_video"}),
-    "undo_last_edit": frozenset({"code", "fs", "ide_extra", "spec_write"}),
+    "undo_last_edit": frozenset({"code", "fs", "spec_write"}),
     "update_form": frozenset({"form", "fs", "spec_form"}),
     "vault_delete": frozenset({"browser"}),
     "vault_get": frozenset({"browser"}),
@@ -190,11 +204,14 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "vision_open": frozenset({"browser"}),
     "vision_snap": frozenset({"browser"}),
     "vision_type": frozenset({"browser"}),
-    "write_file": frozenset({"core", "fs", "git", "ide_extra", "repl", "spec_write"}),
-    "ask_opencode": frozenset({"code"}),
-    "ask_dev_agent": frozenset({"code"}),
+    "write_file": frozenset({"core", "fs", "git", "repl", "spec_write"}),
     "ask_research_agent": frozenset({"code"}),
     "ask_web_search": frozenset({"code"}),
+    "gog_exec": frozenset({"core"}),
+    "send_whatsapp": frozenset({"core"}),
+    "list_whatsapp_contacts": frozenset({"core"}),
+    "whatsapp_search": frozenset({"core"}),
+    "whatsapp_status": frozenset({"core"}),
 }
 
 
@@ -280,7 +297,19 @@ _COMMAND_ARG_KEYS = {"command", "code"}
 # Same medium-risk gate as _CONFIRM_REQUIRED_SUBSTRINGS, but these tools take
 # structured args (title/body), not a "command" string, so they're keyed by
 # tool name instead.
-_CONFIRM_REQUIRED_TOOL_NAMES = frozenset({"github_create_issue", "github_create_pr"})
+_CONFIRM_REQUIRED_TOOL_NAMES = frozenset({"github_create_issue", "github_create_pr", "call_my_phone"})
+
+# Document exports always require approval, even when the destination is new.
+# Existing destinations also require approval for ordinary file mutations. This
+# is enforced here, below routing and above every executor, so specialists and
+# direct tool callers share the same safety contract.
+_EXPORT_TOOL_NAMES = frozenset({
+    "create_pdf", "markdown_to_pdf", "markdown_to_docx", "markdown_to_pptx",
+    "json_to_docx", "data_to_xlsx", "text_to_file", "html_to_file",
+})
+_OVERWRITE_TOOL_NAMES = frozenset({
+    "write_file", "edit_file", "edit_file_fuzzy", "append_file", "copy_file",
+})
 
 
 def _denylist_violation(name: str, arguments: dict) -> str | None:
@@ -315,7 +344,19 @@ def _denylist_violation(name: str, arguments: dict) -> str | None:
 def _confirm_required_command(name: str, arguments: dict) -> str | None:
     """Return the offending command string if this call needs human confirmation, else None."""
     if name in _CONFIRM_REQUIRED_TOOL_NAMES:
-        return f"{name}({arguments.get('title', '')!r})"
+        return f"{name}({arguments.get('title') or arguments.get('message', '')!r})"
+    if name == "restore_document_version":
+        return f"restore_document_version(path={arguments.get('path')!r}, backup={arguments.get('backup')!r})"
+    if name in _EXPORT_TOOL_NAMES:
+        output_path = arguments.get("output_path") or arguments.get("path") or arguments.get("file_path")
+        if output_path:
+            return f"{name}(output_path={str(output_path)!r})"
+    if name in _OVERWRITE_TOOL_NAMES:
+        target = arguments.get("path") or arguments.get("file_path") or arguments.get("dest")
+        if target:
+            target_path = Path(os.path.expanduser(str(target)))
+            if target_path.exists():
+                return f"overwrite existing file {str(target_path)!r} via {name}"
     for key in _COMMAND_ARG_KEYS:
         val = arguments.get(key)
         if isinstance(val, str) and (
@@ -369,6 +410,10 @@ def is_checkpoint_result(tool_name: str, result: str) -> bool:
 
 def execute_tool(name: str, arguments: dict) -> str:
     global PLAN_MODE_ACTIVE
+    from tools.agent_hooks import run_pre_tool, run_post_tool
+    hook_block = run_pre_tool(name, arguments or {})
+    if hook_block:
+        return hook_block
     if PLAN_MODE_ACTIVE and name in PLAN_BLOCKED_TOOLS:
         return f"[blocked] {name} is unavailable in Plan mode — this is a read-only analysis tool. Do NOT call this tool."
     if name not in EXECUTORS:
@@ -425,8 +470,28 @@ def _warn_if_suspiciously_empty(name: str, result: str) -> None:
         )
 
 
+# Tools rate-limited centrally instead of each baking its own cooldown guard
+# (call_my_phone used to carry a bespoke flock-file cooldown in
+# connector_ringback.py — moved here so any tool can opt in with one entry).
+_RATE_LIMITS = {"call_my_phone": 900}
+
+
 def _execute_raw(name: str, arguments: dict) -> str:
+    _rl_previous_ts = None
+    if name in _RATE_LIMITS:
+        from tools.rate_limit import check_and_reserve
+        allowed, elapsed, previous_ts = check_and_reserve(name, _RATE_LIMITS[name])
+        if not allowed:
+            remaining = max(0, _RATE_LIMITS[name] - elapsed)
+            return (
+                f"[ringback cooldown] last call was {elapsed:.0f}s ago "
+                f"(cooldown={_RATE_LIMITS[name]}s) — callable again in {remaining:.0f}s. "
+                f"Tell the user exactly when you can call back, and offer text/telegram as alternatives."
+            )
+        _rl_previous_ts = previous_ts
     try:
+        from store import trace_store
+        trace_store.record("adhoc", {"event": "tool_call", "tool": name})
         raw_result = EXECUTORS[name](arguments)
         from tools.tool_policy import sanitize_output
         # Coerce non-str results (executors returning None/dicts) so downstream
@@ -434,9 +499,20 @@ def _execute_raw(name: str, arguments: dict) -> str:
         # passed None straight through and every LLM chat loop did len(result).
         raw_result = raw_result if isinstance(raw_result, str) else str(raw_result)
         result = sanitize_output(name, raw_result)
+        from tools.agent_hooks import run_post_tool
+        result = run_post_tool(name, arguments, result)
         _warn_if_suspiciously_empty(name, result)
+        # A docker/network flake on the guarded call itself shouldn't burn the
+        # cooldown window on nothing (mirrors connector_ringback.py's old
+        # per-tool _restore_cooldown behavior, now centralized here).
+        if _rl_previous_ts is not None and result.startswith("[ringback error]"):
+            from tools.rate_limit import restore
+            restore(name, _rl_previous_ts)
         return result
     except Exception as e:
+        if _rl_previous_ts is not None:
+            from tools.rate_limit import restore
+            restore(name, _rl_previous_ts)
         result = f"[tool error] {name} failed: {e}"
         tool_failure_log.record_failure(name, result)
         return _with_failure_hint(name, result)
@@ -455,7 +531,32 @@ def execute_confirmed(token: str, approved: bool) -> str:
         result = f"[blocked] {entry['tool_name']} denied by user: {entry['command']!r}"
         tool_failure_log.record_failure(entry["tool_name"], result)
         return result
-    return _execute_raw(entry["tool_name"], entry["arguments"])
+    if entry["tool_name"] == "delete_document":
+        from tools.document_lifecycle import delete_document
+        result = delete_document(entry["arguments"]["path"])
+    else:
+        if entry["tool_name"] in _EXPORT_TOOL_NAMES or entry["tool_name"] in _OVERWRITE_TOOL_NAMES:
+            target = (
+                entry["arguments"].get("output_path")
+                or entry["arguments"].get("path")
+                or entry["arguments"].get("file_path")
+                or entry["arguments"].get("dest")
+            )
+            if target:
+                from tools.document_output import archive_existing
+                try:
+                    archive_existing(target)
+                except Exception as exc:
+                    return f"[error] could not archive existing output before overwrite: {exc}"
+        result = _execute_raw(entry["tool_name"], entry["arguments"])
+    if entry["tool_name"] in _EXPORT_TOOL_NAMES:
+        from tools.document_output import verify_export
+        output_path = entry["arguments"].get("output_path", "")
+        verification = verify_export(output_path) if output_path else {"ok": False, "error": "missing output path"}
+        if not verification["ok"]:
+            return f"{result}\n[export verification failed] {verification['error']}"
+        return f"{result}\n[export verified] {verification['format']} {verification['bytes']} bytes"
+    return result
 
 
 def _with_failure_hint(name: str, result: str) -> str:

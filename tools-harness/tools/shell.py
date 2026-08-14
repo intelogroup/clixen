@@ -10,9 +10,15 @@ Four tools:
 
 import subprocess
 import os
+import contextvars
 from pathlib import Path
 
 _HOME = str(Path.home())
+_SHELL_WORKSPACE = contextvars.ContextVar("_SHELL_WORKSPACE", default=None)
+
+
+def set_shell_workspace(path: str | None) -> None:
+    _SHELL_WORKSPACE.set(str(Path(path).expanduser().resolve()) if path else None)
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -26,7 +32,14 @@ BASH_EXEC_SCHEMA = {
             "Run a shell command on this computer and return its output. "
             "Use for: running scripts, installing packages, git operations, "
             "checking processes, compiling, testing, anything a terminal can do. "
-            "Commands run in a bash shell. Timeout is 60 seconds."
+            "Commands run in a bash shell. Timeout is 60 seconds. "
+            "Output over 8000 chars is truncated in the reply, but the full output is "
+            "saved to a /tmp file whose path is given — use read_file on it to see the rest. "
+            "Set sandbox=true to run inside a macOS Seatbelt jail (no network, "
+            "filesystem writes confined to cwd/tmp) for untrusted or exploratory "
+            "commands — e.g. running code fetched from the web, or a command whose "
+            "effect you're not fully sure of. Leave it off for normal dev work "
+            "(git, launchctl, brew, anything that needs real host/network access)."
         ),
         "parameters": {
             "type": "object",
@@ -45,11 +58,63 @@ BASH_EXEC_SCHEMA = {
                     "description": "Timeout in seconds (default 60, max 300)",
                     "default": 60,
                 },
+                "sandbox": {
+                    "type": "boolean",
+                    "description": (
+                        "Run inside a Seatbelt sandbox: no network access, writes "
+                        "confined to cwd + /tmp. Default false."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["command"],
         },
     },
 }
+
+# ponytail: macOS-only (sandbox-exec is a Darwin syscall wrapper, no Linux equivalent
+# here). Native Seatbelt over Docker — zero image pull, near-zero cold-start vs a
+# container, no extra dependency. Add a Linux path (bwrap/firejail) if this harness
+# ever needs to run off-Mac.
+_SEATBELT_PROFILE_TMPL = """(version 1)
+(deny default)
+(allow process-fork)
+(allow process-exec)
+(allow file-read*)
+(allow file-write* (subpath "{cwd}"))
+(allow file-write* (subpath "/tmp"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write-data (literal "/dev/null"))
+(allow file-write-data (literal "/dev/tty"))
+(allow sysctl-read)
+(allow mach-lookup)
+(allow signal (target self))
+"""
+# Deliberately no (allow network*) clause — deny-default blocks all outbound/inbound
+# network, same intent as Docker's --network=none.
+
+
+class SandboxUnavailableError(Exception):
+    pass
+
+
+def _sandbox_wrap(command: str, cwd_path: Path) -> list[str]:
+    import tempfile
+    import platform
+    import shutil
+    # ponytail: fail closed, never fall through to an unconfined run — a broken/missing
+    # sandbox must look like an error, not a quietly-unsandboxed command.
+    if platform.system() != "Darwin":
+        raise SandboxUnavailableError(f"sandbox=true needs macOS Seatbelt, host is {platform.system()}")
+    if not shutil.which("sandbox-exec"):
+        raise SandboxUnavailableError("sandbox=true needs sandbox-exec, not found on PATH")
+    profile = _SEATBELT_PROFILE_TMPL.format(cwd=str(cwd_path))
+    fd, profile_path = tempfile.mkstemp(suffix=".sb", prefix="clixen_sandbox_")
+    with os.fdopen(fd, "w") as f:
+        f.write(profile)
+    wrapped = f'source ~/.zshenv 2>/dev/null; source ~/.zprofile 2>/dev/null; {command}'
+    return ["sandbox-exec", "-f", profile_path, "/bin/zsh", "-c", wrapped], profile_path
 
 WRITE_FILE_SCHEMA = {
     "type": "function",
@@ -168,39 +233,54 @@ EDIT_FILE_SCHEMA = {
 # ---------------------------------------------------------------------------
 
 
-def bash_exec(command: str, cwd: str = _HOME, timeout: int = 60) -> str:
+def bash_exec(command: str, cwd: str | None = None, timeout: int = 60, sandbox: bool = False) -> str:
     from tools.tool_policy import validate_command
     from tools.path_policy import validate_path
     try:
         validate_command(command)
-        validate_path(cwd, write=False)
+        effective_cwd = cwd or _SHELL_WORKSPACE.get() or _HOME
+        validate_path(effective_cwd, write=False)
     except Exception as e:
         return f"[error] Security validation failed: {e}"
 
-    cwd_path = Path(cwd).expanduser().resolve()
+    cwd_path = Path(effective_cwd).expanduser().resolve()
     if not cwd_path.exists():
         cwd_path = Path(_HOME)
 
     timeout = min(int(timeout), 300)
 
+    profile_path = None
     try:
-        # Run as an interactive login shell so PATH, nvm, conda, pyenv etc. are available
-        wrapped = f'source ~/.zshenv 2>/dev/null; source ~/.zprofile 2>/dev/null; {command}'
-        result = subprocess.run(
-            wrapped,
-            shell=True,
-            executable="/bin/zsh",
-            capture_output=True,
-            text=True,
-            cwd=str(cwd_path),
-            timeout=timeout,
-            env={**os.environ, "HOME": _HOME},
-        )
+        if sandbox:
+            argv, profile_path = _sandbox_wrap(command, cwd_path)
+            result = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                cwd=str(cwd_path),
+                timeout=timeout,
+                env={**os.environ, "HOME": _HOME},
+            )
+        else:
+            # Run as an interactive login shell so PATH, nvm, conda, pyenv etc. are available
+            wrapped = f'source ~/.zshenv 2>/dev/null; source ~/.zprofile 2>/dev/null; {command}'
+            result = subprocess.run(
+                wrapped,
+                shell=True,
+                executable="/bin/zsh",
+                capture_output=True,
+                text=True,
+                cwd=str(cwd_path),
+                timeout=timeout,
+                env={**os.environ, "HOME": _HOME},
+            )
         stdout = result.stdout.strip()
         stderr = result.stderr.strip()
         exit_code = result.returncode
 
         parts = []
+        if sandbox:
+            parts.append("[sandboxed: no network, writes confined to cwd/tmp]")
         if stdout:
             parts.append(stdout)
         if stderr:
@@ -208,15 +288,31 @@ def bash_exec(command: str, cwd: str = _HOME, timeout: int = 60) -> str:
         parts.append(f"[exit code: {exit_code}]")
 
         output = "\n".join(parts)
-        # Cap output to avoid flooding context
+        # Cap output to avoid flooding context. Full output isn't discarded — spilled to
+        # a tmp file so the model can read_file the rest instead of losing the tail.
         if len(output) > 8000:
-            output = output[:7800] + f"\n... (truncated, {len(output)} chars total)"
+            import tempfile
+            # dir="/tmp" (not the /var/folders default) — that's what path_policy's
+            # TMP_DIRS allowlist covers, so read_file can actually reach the spill file.
+            fd, spill_path = tempfile.mkstemp(suffix=".txt", prefix="clixen_bash_output_", dir="/tmp")
+            with os.fdopen(fd, "w") as f:
+                f.write(output)
+            output = (
+                output[:7800]
+                + f"\n... (truncated, {len(output)} chars total — full output saved to {spill_path}, use read_file to see the rest)"
+            )
         return output
 
     except subprocess.TimeoutExpired:
         return f"[error] Command timed out after {timeout}s"
     except Exception as e:
         return f"[error] {e}"
+    finally:
+        if profile_path:
+            try:
+                os.unlink(profile_path)
+            except OSError:
+                pass
 
 
 def write_file(path: str, content: str) -> str:

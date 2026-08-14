@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from tools._registry import imports as _ri
 globals().update({k: v for k, v in vars(_ri).items() if not k.startswith("__")})
 
@@ -25,7 +27,6 @@ EXECUTORS = {
     "ask_sheets_agent": lambda args: __import__("tools.orchestrator_tools", fromlist=["exec_ask_sheets_agent"]).exec_ask_sheets_agent(args),
     "ask_deep_research": lambda args: __import__("tools.orchestrator_tools", fromlist=["exec_ask_deep_research"]).exec_ask_deep_research(args),
     "ask_automation_agent": lambda args: __import__("tools.orchestrator_tools", fromlist=["exec_ask_automation_agent"]).exec_ask_automation_agent(args),
-    "ask_dev_agent": lambda args: __import__("tools.orchestrator_tools", fromlist=["exec_ask_dev_agent"]).exec_ask_dev_agent(args),
     "ask_messaging_agent": lambda args: __import__("tools.orchestrator_tools", fromlist=["exec_ask_messaging_agent"]).exec_ask_messaging_agent(args),
     "ask_research_agent": lambda args: __import__("tools.orchestrator_tools", fromlist=["exec_ask_research_agent"]).exec_ask_research_agent(args),
     "ask_vision_agent": lambda args: __import__("tools.orchestrator_tools", fromlist=["exec_ask_vision_agent"]).exec_ask_vision_agent(args),
@@ -49,6 +50,9 @@ EXECUTORS = {
         top_k=args.get("top_k", 4),
     ),
     "web_search": lambda args: websearch.search(query=args["query"]),
+    "document_scratchpad": lambda args: document_scratchpad_execute(
+        session_id=args["session_id"], workspace=args["workspace"], note=args.get("note", "")
+    ),
     "deep_research": lambda args: deep_research_execute(
         query=args["query"],
         depth=args.get("depth", 2),
@@ -60,6 +64,10 @@ EXECUTORS = {
             categories=args.get("categories", "general"),
             time_range=args.get("time_range", ""),
         )
+    ),
+    "web_fetch": lambda args: _web_fetch(
+        url=args["url"],
+        max_chars=args.get("max_chars", 3000),
     ),
     "scrapling_fetch": lambda args: _scrapling_fetch(
         url=args["url"],
@@ -113,6 +121,9 @@ EXECUTORS = {
     "list_windows": lambda args: peekaboo_list_windows(
         app=args.get("app", ""),
     ),
+    "gog_exec": lambda args: gog_exec_execute(
+        command=args.get("command", ""),
+    ),
     "slack_search": lambda args: slack_search_execute(
         query=args["query"],
         limit=args.get("limit", 10),
@@ -135,7 +146,6 @@ EXECUTORS = {
         query=args["query"],
         resolve_handles=args.get("resolve_handles", True),
     ),
-    "set_opencode_model": lambda args: set_opencode_model_execute(model=args["model"]),
     "parse_document": lambda args: docling_execute(
         path=args["path"],
         max_chars=args.get("max_chars", 12000),
@@ -157,6 +167,9 @@ EXECUTORS = {
         days=args.get("days", 0),
     ),
     "whatsapp_status": lambda args: whatsapp_status_execute(),
+    "whatsapp_recent_chats": lambda args: whatsapp_recent_chats_execute(
+        limit=args.get("limit", 10),
+    ),
     "spotlight_search": lambda args: spotlight_execute(
         query=args["query"],
         directory=args.get("directory", ""),
@@ -262,6 +275,9 @@ EXECUTORS = {
         path=args["path"],
         recursive=args.get("recursive", False),
     ),
+    "quarantine_document": lambda args: quarantine_document(args["path"]),
+    "forget_document_index": lambda args: forget_document_index(args["path"]),
+    "delete_document": lambda args: request_delete_document(args["path"]),
     "create_directory": lambda args: create_directory(path=args["path"]),
     "copy_file": lambda args: copy_file(
         src=args["src"],
@@ -363,8 +379,9 @@ EXECUTORS = {
     # Shell / agent
     "bash_exec": lambda args: bash_exec(
         command=args["command"],
-        cwd=args.get("cwd", _HOME),
+        cwd=args.get("cwd"),
         timeout=args.get("timeout", 60),
+        sandbox=args.get("sandbox", False),
     ),
     "write_file": lambda args: write_file(
         path=args["path"],
@@ -407,8 +424,6 @@ EXECUTORS = {
         text=args["text"],
         iso_datetime=args["iso_datetime"],
     ),
-    # opencode
-    "ask_opencode": lambda args: exec_ask_opencode(args),
     # Chinese web search (agent-reach)
     "search_chinese_web": lambda args: search_chinese_web(args),
     # Google auth
@@ -594,11 +609,39 @@ EXECUTORS = {
     "index_directory": lambda args: index_directory(
         path=args["path"],
         glob=args.get("glob", "*"),
+        refresh=args.get("refresh", False),
     ),
     "semantic_file_search": lambda args: semantic_file_search(
         query=args["query"],
         path_filter=args.get("path_filter", ""),
         top_k=args.get("top_k", 5),
+    ),
+    # Full-text search
+    "index_directory_fts": lambda args: index_directory_fts(
+        path=args["path"],
+        glob=args.get("glob", "*"),
+    ),
+    "fulltext_search": lambda args: fulltext_search(
+        query=args["query"],
+        path_filter=args.get("path_filter", ""),
+        top_k=args.get("top_k", 5),
+    ),
+    "document_retrieve": lambda args: document_retrieve(
+        query=args["query"], workspace=args["workspace"],
+        path_glob=args.get("path_glob", "**/*"), limit=args.get("limit", 8),
+        search_mode=args.get("search_mode", "hybrid"),
+    ),
+    "compare_documents": lambda args: compare_documents(
+        args["left_source"], args["left_text"], args["right_source"], args["right_text"]
+    ),
+    "extract_document_fields": lambda args: extract_fields(args["text"], args["fields"]),
+    "detect_document_inconsistencies": lambda args: detect_inconsistencies(args["documents"]),
+    "classify_document": lambda args: classify_document(args["path"], args.get("text", "")),
+    "batch_inspect_documents": lambda args: batch_inspect_documents(
+        args["workspace"], args.get("pattern", "**/*"), args.get("limit", 200)
+    ),
+    "restore_document_version": lambda args: json.dumps(
+        restore_version(args["path"], args["backup"]), ensure_ascii=False
     ),
     "list_email_attachments": lambda args: list_email_attachments(
         month=args.get("month", ""),
@@ -684,6 +727,7 @@ EXECUTORS = {
         to=args["to"],
         message=args["message"],
     ),
+    "list_whatsapp_contacts": lambda args: whatsapp_contacts_execute(),
     # Google Docs
     "list_google_docs": lambda args: _gdocs_list(args),
     "read_google_doc": lambda args: _gdocs_read(args),
@@ -742,4 +786,3 @@ EXECUTORS = {
         handle=args["handle"], count=args.get("count", 10)
     ),
 }
-

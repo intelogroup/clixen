@@ -450,7 +450,10 @@ def main() -> int:
         "path": str(scratch / "nonexistent.pdf"),
         "fields": {"Name": "Test"},
     })
-    record(ok and "not found" in out.lower(), "fill_pdf_form (no file, expected failure)")
+    record(
+        ok and ("not found" in out.lower() or "disabled" in out.lower()),
+        "fill_pdf_form (no file / PDF tooling disabled, expected failure)",
+    )
 
     # ── OCR (needs PaddleOCR, heavy model load) ────────────────────────────
     print(f"\n{BOLD}[OCR]{RESET}")

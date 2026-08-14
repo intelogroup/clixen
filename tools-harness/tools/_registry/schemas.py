@@ -6,10 +6,18 @@ from tools._registry import imports as _ri
 globals().update({k: v for k, v in vars(_ri).items() if not k.startswith("__")})
 
 ALL_TOOLS = [
+    # Semantic + full-text search — kept first so native tool-calling models
+    # see these before read_file/list_directory/grep_files; list order biases
+    # tool choice more than system-prompt text (ragtest6+ finding).
+    SEMANTIC_SEARCH_SCHEMA,
+    FULLTEXT_SEARCH_SCHEMA,
     *WORKFLOW_JOB_SCHEMAS,
     WEB_SEARCH_SCHEMA,
     SEARXNG_SCHEMA,
     LOCAL_SCHEMA,
+    # web_fetch: SSRF-guarded generic page fetcher (noise-stripped text, JSON passthrough,
+    # Playwright/Tavily fallback) — prefer this over scrapling_fetch for plain "read this URL".
+    WEB_FETCH_SCHEMA,
     # Scrapling (lightweight public-page HTTP fetcher + adaptive parser)
     SCRAPLING_FETCH_SCHEMA,
     SCRAPLING_STEALTHY_SCHEMA,
@@ -22,6 +30,8 @@ ALL_TOOLS = [
     SURYA_OCR_SCHEMA,
     PEEKABOO_SCHEMA,
     PEEKABOO_LIST_WINDOWS_SCHEMA,
+    # Google Workspace (Gmail/Calendar/Drive/Docs/Sheets/Tasks) via gog CLI
+    GOG_EXEC_SCHEMA,
     # Slack archive (slacrawl)
     SLACK_SEARCH_SCHEMA,
     SLACK_STATUS_SCHEMA,
@@ -31,8 +41,6 @@ ALL_TOOLS = [
     IMESSAGE_SEND_SCHEMA,
     # macOS Contacts -> iMessage handle resolution
     CONTACTS_RESOLVE_SCHEMA,
-    # Deterministic OpenCode model switch (bypasses looping automation agent)
-    SET_OPENCODE_MODEL_SCHEMA,
     # Document parsing (docling) + archive grep (ripgrep-all)
     DOCLING_SCHEMA,
     RGA_SCHEMA,
@@ -41,6 +49,7 @@ ALL_TOOLS = [
     # WhatsApp archive (~/.clixen/whatsapp.db, written by bridge)
     WHATSAPP_SEARCH_SCHEMA,
     WHATSAPP_STATUS_SCHEMA,
+    WHATSAPP_RECENT_CHATS_SCHEMA,
     # Native macOS surfaces
     SPOTLIGHT_SCHEMA,
     FIND_RECENT_SCHEMA,
@@ -75,6 +84,17 @@ ALL_TOOLS = [
     COPY_FILE_SCHEMA,
     # Structured parsing
     READ_DOCUMENT_SCHEMA,
+    DOCUMENT_SCRATCHPAD_SCHEMA,
+    DOCUMENT_RETRIEVE_SCHEMA,
+    QUARANTINE_DOCUMENT_SCHEMA,
+    FORGET_DOCUMENT_INDEX_SCHEMA,
+    DELETE_DOCUMENT_SCHEMA,
+    COMPARE_DOCUMENTS_SCHEMA,
+    EXTRACT_FIELDS_SCHEMA,
+    DETECT_INCONSISTENCIES_SCHEMA,
+    CLASSIFY_DOCUMENT_SCHEMA,
+    BATCH_INSPECT_DOCUMENTS_SCHEMA,
+    RESTORE_VERSION_SCHEMA,
     PARSE_FILE_SCHEMA,
     READ_PDF_SCHEMA,
     PARSE_CODE_SCHEMA,
@@ -103,9 +123,10 @@ ALL_TOOLS = [
     CHECK_XLSX_QUALITY_SCHEMA,
     CHECK_PDF_ANOMALIES_SCHEMA,
     ADD_DOCX_COMMENT_SCHEMA,
-    # Semantic search
+    # Semantic search (schemas moved to front of list, see top)
     INDEX_DIR_SCHEMA,
-    SEMANTIC_SEARCH_SCHEMA,
+    # Full-text search (schema moved to front of list, see top)
+    INDEX_DIR_FTS_SCHEMA,
     LIST_EMAIL_ATTACHMENTS_SCHEMA,
     # Docs
     CONTEXT7_SCHEMA,
@@ -196,6 +217,7 @@ ALL_TOOLS = [
     FFMPEG_SCHEMA,
     # WhatsApp
     WHATSAPP_SCHEMA,
+    WHATSAPP_CONTACTS_SCHEMA,
     # Google Docs
     *GDOCS_SCHEMAS,
     # Google Sheets
@@ -238,7 +260,6 @@ ALL_TOOLS = [
     ASK_RUN_COMMAND_SCHEMA,
     ASK_FETCH_URL_SCHEMA,
     ASK_AUTOMATION_AGENT_SCHEMA,
-    ASK_DEV_AGENT_SCHEMA,
     ASK_MESSAGING_AGENT_SCHEMA,
     ASK_RESEARCH_AGENT_SCHEMA,
     ASK_VISION_AGENT_SCHEMA,
@@ -246,7 +267,6 @@ ALL_TOOLS = [
     ASK_TRANSPORT_AGENT_SCHEMA,
     ASK_YOUTUBE_AGENT_SCHEMA,
     ASK_X_AGENT_SCHEMA,
-    ASK_OPENCODE_SCHEMA,
     ASK_REDDIT_AGENT_SCHEMA,
     ASK_SCIENCE_SCOUT_AGENT_SCHEMA,
     ASK_SEND_MESSAGE_SCHEMA,

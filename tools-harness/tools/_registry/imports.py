@@ -19,7 +19,7 @@ from tools.orchestrator_tools import (
     ASK_DOCS_AGENT_SCHEMA, ASK_SHEETS_AGENT_SCHEMA,
     ASK_READ_FILE_SCHEMA, ASK_WRITE_FILE_SCHEMA, ASK_DELETE_FILE_SCHEMA,
     ASK_RENAME_FILE_SCHEMA, ASK_RUN_COMMAND_SCHEMA, ASK_FETCH_URL_SCHEMA,
-    ASK_AUTOMATION_AGENT_SCHEMA, ASK_DEV_AGENT_SCHEMA, ASK_MESSAGING_AGENT_SCHEMA,
+    ASK_AUTOMATION_AGENT_SCHEMA, ASK_MESSAGING_AGENT_SCHEMA,
     ASK_RESEARCH_AGENT_SCHEMA, ASK_VISION_AGENT_SCHEMA, ASK_UTILITY_AGENT_SCHEMA,
     ASK_TRANSPORT_AGENT_SCHEMA, ASK_YOUTUBE_AGENT_SCHEMA, ASK_X_AGENT_SCHEMA,
     ASK_REDDIT_AGENT_SCHEMA,
@@ -38,6 +38,7 @@ from tools.scrapling_fetch import (
     _scrapling_fetch, _scrapling_stealthy_fetch,
     _scrapling_extract, _scrapling_fetch_and_extract,
 )
+from tools.fetch_url import SCHEMA as WEB_FETCH_SCHEMA, execute as _web_fetch
 
 _search_log = _logging.getLogger("websearch")
 
@@ -54,6 +55,7 @@ from tools.local_search import SCHEMA as LOCAL_SCHEMA, execute as local_execute
 from tools.audio import SCHEMA as AUDIO_SCHEMA, execute as audio_execute
 from tools.audio_tools import CONVERT_AUDIO_SCHEMA, convert_audio as _convert_audio
 from tools.ocr import SCHEMA as OCR_SCHEMA, execute as ocr_execute
+from tools.document_scratchpad import SCHEMA as DOCUMENT_SCRATCHPAD_SCHEMA, execute as document_scratchpad_execute
 from tools.surya_ocr import SCHEMA as SURYA_OCR_SCHEMA, execute as surya_ocr_execute
 from tools.video_tools import (
     YTDLP_SCHEMA, FFMPEG_SCHEMA,
@@ -68,6 +70,10 @@ from tools.peekaboo import (
     LIST_WINDOWS_SCHEMA as PEEKABOO_LIST_WINDOWS_SCHEMA,
     execute as peekaboo_execute,
     list_windows as peekaboo_list_windows,
+)
+from tools.gog import (
+    SCHEMA as GOG_EXEC_SCHEMA,
+    execute as gog_exec_execute,
 )
 from tools.slack_search import (
     SEARCH_SCHEMA as SLACK_SEARCH_SCHEMA,
@@ -86,10 +92,6 @@ from tools.imessage_search import (
 from tools.contacts_resolver import (
     SCHEMA as CONTACTS_RESOLVE_SCHEMA,
     execute as contacts_resolve_execute,
-)
-from tools.set_opencode_model import (
-    SCHEMA as SET_OPENCODE_MODEL_SCHEMA,
-    execute as set_opencode_model_execute,
 )
 from tools.rga_tool import (
     SCHEMA as RGA_SCHEMA,
@@ -142,8 +144,10 @@ from tools.email_parse import (
 from tools.whatsapp_search import (
     SEARCH_SCHEMA as WHATSAPP_SEARCH_SCHEMA,
     STATUS_SCHEMA as WHATSAPP_STATUS_SCHEMA,
+    RECENT_CHATS_SCHEMA as WHATSAPP_RECENT_CHATS_SCHEMA,
     search as whatsapp_search_execute,
     status as whatsapp_status_execute,
+    recent_chats as whatsapp_recent_chats_execute,
 )
 from tools.document_create import (
     MARKDOWN_TO_DOCX_SCHEMA,
@@ -235,6 +239,30 @@ from tools.semantic_files import (
     index_directory,
     semantic_file_search,
 )
+from tools.fulltext_search import (
+    INDEX_DIR_FTS_SCHEMA,
+    FULLTEXT_SEARCH_SCHEMA,
+    index_directory_fts,
+    fulltext_search,
+)
+from tools.document_retrieve import DOCUMENT_RETRIEVE_SCHEMA, document_retrieve
+from tools.document_lifecycle import (
+    QUARANTINE_DOCUMENT_SCHEMA, FORGET_DOCUMENT_INDEX_SCHEMA, DELETE_DOCUMENT_SCHEMA,
+    quarantine_document, forget_document_index, request_delete_document,
+)
+from tools.document_output import RESTORE_VERSION_SCHEMA, restore_version
+from tools.document_operations import (
+    COMPARE_DOCUMENTS_SCHEMA,
+    EXTRACT_FIELDS_SCHEMA,
+    DETECT_INCONSISTENCIES_SCHEMA,
+    CLASSIFY_DOCUMENT_SCHEMA,
+    BATCH_INSPECT_DOCUMENTS_SCHEMA,
+    compare_documents,
+    extract_fields,
+    detect_inconsistencies,
+    classify_document,
+    batch_inspect_documents,
+)
 from tools.shell import (
     BASH_EXEC_SCHEMA,
     WRITE_FILE_SCHEMA,
@@ -277,7 +305,6 @@ from tools.repl import (
     list_kernel_vars,
 )
 from tools.reminder import SET_REMINDER_SCHEMA, set_reminder
-from tools.opencode_tool import ASK_OPENCODE_SCHEMA, exec_ask_opencode
 from tools.telegram_send import SEND_TELEGRAM_SCHEMA, send_telegram
 from tools.time_tool import GET_CURRENT_TIME_SCHEMA, get_current_time
 from tools.bus_eta import BUS_ETA_SCHEMA, bus_eta
@@ -356,7 +383,12 @@ from skills_hub import SKILLS_HUB_SCHEMAS, SKILLS_HUB_EXECUTORS
 
 from tools.arxiv_tool import SCHEMA as ARXIV_SCHEMA, execute as arxiv_execute
 from tools.pubmed_tool import SCHEMA as PUBMED_SCHEMA, execute as pubmed_execute
-from tools.whatsapp_tool import SCHEMA as WHATSAPP_SCHEMA, execute as whatsapp_execute
+from tools.whatsapp_tool import (
+    SCHEMA as WHATSAPP_SCHEMA,
+    LIST_CONTACTS_SCHEMA as WHATSAPP_CONTACTS_SCHEMA,
+    execute as whatsapp_execute,
+    list_contacts as whatsapp_contacts_execute,
+)
 from tools.youtube_tool import SEARCH_SCHEMA as YT_SEARCH_SCHEMA, TRANSCRIPT_SCHEMA as YT_TRANSCRIPT_SCHEMA
 from tools.youtube_tool import search_youtube as yt_search_execute, get_youtube_transcript as yt_transcript_execute
 from tools.discovery_sources import (
