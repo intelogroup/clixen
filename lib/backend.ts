@@ -8,3 +8,8 @@ export function backendUrl(path: string): string {
 export function sessionCookieName(): string {
   return SESSION_COOKIE;
 }
+
+export function localTokenHeaders(): Record<string, string> {
+  const token = process.env.CLIXEN_LOCAL_TOKEN;
+  return token ? { "X-Clixen-Token": token } : {};
+}

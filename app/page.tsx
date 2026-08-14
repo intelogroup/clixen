@@ -10,18 +10,16 @@ import {
   Bot, 
   CheckCircle, 
   Zap, 
-  Users, 
   Globe, 
   Shield, 
-  Star,
-  PlayCircle,
-  ChevronDown,
   Mail,
   Calendar,
   Database,
   Cloud,
   BarChart3,
-  Workflow
+  Workflow,
+  Terminal,
+  Cpu
 } from "lucide-react"
 
 export default function LandingPage() {
@@ -39,87 +37,76 @@ export default function LandingPage() {
   const features = [
     {
       icon: Bot,
-      title: "AI-Powered Automation",
-      description: "Simply describe what you want to automate in natural language, and Clixen creates it for you."
+      title: "Local AI Assistant",
+      description: "Chat with an assistant that can read your files, run tools, and check your workflows — right on this machine."
     },
     {
       icon: Zap,
-      title: "Lightning Fast Setup",
-      description: "Go from idea to working automation in under 5 minutes. No coding or technical knowledge required."
+      title: "Natural Language Automation",
+      description: "Describe what you want in plain English. Clixen turns it into a real, running workflow."
     },
     {
       icon: Globe,
-      title: "400+ Integrations",
-      description: "Connect with all your favorite tools - from Gmail and Slack to Salesforce and Shopify."
+      title: "Tools & Integrations",
+      description: "Email, file search, web search, reminders, and more — wired in and ready to use."
     },
     {
       icon: Shield,
-      title: "Enterprise Security",
-      description: "Bank-level encryption and security. Your data is safe and your workflows are reliable."
+      title: "Private by Design",
+      description: "Data stays local. No cloud account, no subscription, no analytics to a third party."
     }
   ]
 
   const useCases = [
     {
       icon: Mail,
-      title: "Email Automation",
-      description: "Welcome sequences, follow-ups, newsletters",
+      title: "Email",
+      description: "Watch, summarize, and reply to your inbox",
       color: "text-blue-600 bg-blue-100"
     },
     {
       icon: Calendar,
-      title: "Scheduling & Reminders",
-      description: "Appointment booking, task reminders, events",
+      title: "Reminders",
+      description: "Scheduled messages, notes, and alerts",
       color: "text-green-600 bg-green-100"
     },
     {
       icon: Database,
-      title: "Data Management",
-      description: "CRM sync, lead scoring, data enrichment",
+      title: "Files & Notes",
+      description: "Search, summarize, and organize local documents",
       color: "text-purple-600 bg-purple-100"
     },
     {
       icon: Cloud,
-      title: "File Operations",
-      description: "Backup, sync, organization, compression",
+      title: "Web",
+      description: "Search and pull information from the internet",
       color: "text-orange-600 bg-orange-100"
     },
     {
       icon: BarChart3,
-      title: "Analytics & Reporting",
-      description: "Daily reports, performance tracking, alerts",
+      title: "Reports",
+      description: "Digests, charts, and scheduled summaries",
       color: "text-pink-600 bg-pink-100"
     },
     {
       icon: Workflow,
-      title: "Business Processes",
-      description: "Customer onboarding, order processing, approvals",
+      title: "Automations",
+      description: "Trigger workflows from email, schedules, and more",
       color: "text-indigo-600 bg-indigo-100"
     }
   ]
 
-  const testimonials = [
+  const runtimeFacts = [
     {
-      name: "Sarah Chen",
-      role: "Marketing Director",
-      company: "TechFlow",
-      content: "Clixen saved us 20 hours per week on manual tasks. The natural language interface is incredible!",
-      rating: 5
+      icon: Cpu,
+      title: "Runs on your machine",
+      description: "Ollama for local models, cloud fallback for heavy reasoning.",
     },
     {
-      name: "Michael Rodriguez",
-      role: "Operations Manager", 
-      company: "StartupCo",
-      content: "Setup took 3 minutes and we immediately saw results. Best automation tool we've ever used.",
-      rating: 5
+      icon: Terminal,
+      title: "A real agent harness",
+      description: "Tools, skills, task workers, and automations — all supervised locally.",
     },
-    {
-      name: "Emily Watson",
-      role: "CEO",
-      company: "GrowthLabs",
-      content: "Game-changer for our business. Clixen handles complex workflows that would take weeks to build manually.",
-      rating: 5
-    }
   ]
 
   return (
@@ -138,8 +125,7 @@ export default function LandingPage() {
             <div className="hidden md:flex items-center space-x-8">
               <a href="#features" className="text-gray-600 hover:text-gray-900 transition-colors">Features</a>
               <a href="#use-cases" className="text-gray-600 hover:text-gray-900 transition-colors">Use Cases</a>
-              <a href="#testimonials" className="text-gray-600 hover:text-gray-900 transition-colors">Testimonials</a>
-              <a href="#pricing" className="text-gray-600 hover:text-gray-900 transition-colors">Pricing</a>
+              <a href="#runtime" className="text-gray-600 hover:text-gray-900 transition-colors">How It Runs</a>
             </div>
 
             <div className="flex items-center space-x-4">
@@ -151,10 +137,10 @@ export default function LandingPage() {
                 Sign In
               </Button>
               <Button 
-                onClick={() => router.push('/auth/signup')}
+                onClick={() => router.push('/auth/signin')}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                Get Started Free
+                Open App
               </Button>
             </div>
           </div>
@@ -166,51 +152,43 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto text-center">
           <div className="max-w-3xl mx-auto">
             <Badge className="mb-6 bg-blue-100 text-blue-800 border-blue-200">
-              ✨ Now powered by advanced AI
+              Local-first AI workspace
             </Badge>
             
             <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
-              Automate Anything with
-              <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent"> Natural Language</span>
+              Your own AI agent,
+              <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent"> running locally</span>
             </h1>
             
             <p className="text-xl text-gray-600 mb-8 leading-relaxed">
-              Stop wasting time on repetitive tasks. Just tell Clixen what you want to automate in plain English, 
-              and watch as it creates powerful workflows in minutes, not hours.
+              Clixen is a personal AI workspace that lives on your machine. Chat with an
+              assistant that can read your files, run tools, and automate your workflows —
+              no cloud subscription required.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
               <Button 
                 size="lg" 
-                onClick={() => router.push('/auth/signup')}
+                onClick={() => router.push('/auth/signin')}
                 className="bg-blue-600 hover:bg-blue-700 h-12 px-8 text-lg"
               >
-                Start Free Trial
+                Open Your Workspace
                 <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-              <Button 
-                size="lg" 
-                variant="outline"
-                onClick={() => router.push('/demo')}
-                className="h-12 px-8 text-lg border-2"
-              >
-                <PlayCircle className="mr-2 h-5 w-5" />
-                Try Demo
               </Button>
             </div>
 
             <div className="flex items-center justify-center space-x-6 text-sm text-gray-500">
               <div className="flex items-center">
                 <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                Free 14-day trial
+                Free forever
               </div>
               <div className="flex items-center">
                 <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                No credit card required
+                Runs locally
               </div>
               <div className="flex items-center">
                 <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                Cancel anytime
+                Your data stays put
               </div>
             </div>
           </div>
@@ -222,10 +200,10 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Why Choose Clixen?
+              What Clixen can do
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Experience the future of automation with our AI-powered platform that understands what you need and builds it for you.
+              A single workspace for talking to your files, running automations, and getting real work done.
             </p>
           </div>
 
@@ -250,10 +228,10 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Automate Every Part of Your Business
+              Real things you can do
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              From simple email sequences to complex business processes, Clixen handles it all with ease.
+              Connected to the tools already on this machine.
             </p>
           </div>
 
@@ -270,45 +248,31 @@ export default function LandingPage() {
               </Card>
             ))}
           </div>
-
-          <div className="text-center mt-12">
-            <Button 
-              size="lg"
-              onClick={() => router.push('/demo')}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              View Live Demo
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-          </div>
         </div>
       </section>
 
-      {/* Testimonials Section */}
-      <section id="testimonials" className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
+      {/* Runtime Section */}
+      <section id="runtime" className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Loved by Thousands of Teams
+              How it runs
             </h2>
-            <p className="text-xl text-gray-600">
-              See what our customers are saying about Clixen
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              No servers, no setup wizard, no billing page. It's a process on this machine.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {testimonials.map((testimonial, index) => (
-              <Card key={index} className="border-2">
-                <CardContent className="p-6">
-                  <div className="flex items-center mb-4">
-                    {[...Array(testimonial.rating)].map((_, i) => (
-                      <Star key={i} className="h-4 w-4 text-yellow-400 fill-current" />
-                    ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {runtimeFacts.map((fact, index) => (
+              <Card key={index} className="border-2 hover:shadow-lg transition-all duration-300">
+                <CardContent className="p-6 flex items-start gap-4">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shrink-0">
+                    <fact.icon className="h-6 w-6 text-white" />
                   </div>
-                  <p className="text-gray-700 mb-4 italic">"{testimonial.content}"</p>
                   <div>
-                    <div className="font-semibold text-gray-900">{testimonial.name}</div>
-                    <div className="text-sm text-gray-600">{testimonial.role} at {testimonial.company}</div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">{fact.title}</h3>
+                    <p className="text-gray-600 text-sm leading-relaxed">{fact.description}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -321,30 +285,20 @@ export default function LandingPage() {
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-blue-600 to-purple-600">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
-            Ready to Transform Your Workflow?
+            Ready to use it?
           </h2>
           <p className="text-xl text-blue-100 mb-8">
-            Join thousands of teams already automating their success with Clixen.
-            Start your free trial today and see the difference in minutes.
+            Sign in to your local workspace and start a chat.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button 
               size="lg"
-              onClick={() => router.push('/auth/signup')}
+              onClick={() => router.push('/auth/signin')}
               className="bg-white text-blue-600 hover:bg-gray-100 h-12 px-8 text-lg"
             >
-              Start Free Trial
+              Open App
               <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-            <Button 
-              size="lg"
-              variant="outline"
-              onClick={() => router.push('/demo')}
-              className="border-2 border-white text-white hover:bg-white hover:text-blue-600 h-12 px-8 text-lg"
-            >
-              <PlayCircle className="mr-2 h-5 w-5" />
-              Try Interactive Demo
             </Button>
           </div>
         </div>
@@ -353,51 +307,38 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="bg-gray-900 text-white py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <div className="flex items-center space-x-2 mb-4">
                 <Bot className="h-6 w-6 text-blue-400" />
                 <span className="text-lg font-bold">Clixen</span>
               </div>
               <p className="text-gray-400 text-sm">
-                The AI-powered automation platform that understands natural language and creates workflows for you.
+                A local-first AI workspace: assistant, tools, and automations running on your machine.
               </p>
             </div>
             
             <div>
-              <h3 className="font-semibold mb-4">Product</h3>
+              <h3 className="font-semibold mb-4">App</h3>
               <ul className="space-y-2 text-sm text-gray-400">
                 <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
                 <li><a href="#use-cases" className="hover:text-white transition-colors">Use Cases</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Integrations</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">API</a></li>
+                <li><a href="#runtime" className="hover:text-white transition-colors">How It Runs</a></li>
               </ul>
             </div>
             
             <div>
-              <h3 className="font-semibold mb-4">Company</h3>
+              <h3 className="font-semibold mb-4">Access</h3>
               <ul className="space-y-2 text-sm text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">About</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Careers</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h3 className="font-semibold mb-4">Support</h3>
-              <ul className="space-y-2 text-sm text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Community</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Status</a></li>
+                <li><a href="/auth/signin" className="hover:text-white transition-colors">Sign In</a></li>
+                <li><a href="/auth/signup" className="hover:text-white transition-colors">Set Up Workspace</a></li>
               </ul>
             </div>
           </div>
           
           <div className="border-t border-gray-800 mt-8 pt-8 text-center">
             <p className="text-gray-400 text-sm">
-              © 2025 Clixen. All rights reserved. Built with ❤️ for automation enthusiasts.
+              Clixen — runs locally, free forever.
             </p>
           </div>
         </div>

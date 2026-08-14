@@ -16,7 +16,8 @@ import {
   LogOut,
   ChevronDown,
   ChevronRight,
-  Zap
+  Zap,
+  FileText
 } from "lucide-react"
 
 interface Workspace {
@@ -35,6 +36,7 @@ interface DashboardSidebarProps {
   className?: string
   onNavigate?: (route: string) => void
   onSignOut?: () => void
+  workflows?: Array<{ id: string; name: string; status: string }>
 }
 
 const workspaces: Workspace[] = [
@@ -75,14 +77,27 @@ const workspaces: Workspace[] = [
   }
 ]
 
-export function DashboardSidebar({ className, onNavigate, onSignOut }: DashboardSidebarProps) {
+export function DashboardSidebar({ className, onNavigate, onSignOut, workflows }: DashboardSidebarProps) {
   const router = useRouter()
-  const [workspaceStates, setWorkspaceStates] = useState<Record<string, boolean>>(
-    workspaces.reduce((acc, workspace) => {
-      acc[workspace.id] = workspace.expanded || false
-      return acc
-    }, {} as Record<string, boolean>)
-  )
+  const [workspaceStates, setWorkspaceStates] = useState<Record<string, boolean>>({})
+
+  // When a `workflows` array is provided (even empty), render honest data —
+  // a single local workspace. Only when the prop is omitted do we fall back
+  // to the mock tree (legacy call sites yet to be wired up).
+  const hasData = workflows !== undefined
+  const visibleWorkspaces: Workspace[] = hasData
+    ? [{
+        id: "local",
+        name: "Local Workspace",
+        count: workflows.length,
+        expanded: true,
+        workflows: workflows.map((w) => ({
+          id: w.id,
+          name: w.name,
+          status: w.status as "active" | "paused" | "draft",
+        })),
+      }]
+    : workspaces
 
   const toggleWorkspace = (workspaceId: string) => {
     setWorkspaceStates(prev => ({
@@ -170,6 +185,14 @@ export function DashboardSidebar({ className, onNavigate, onSignOut }: Dashboard
             <Button
               variant="ghost"
               className="w-full justify-start text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl py-3 transition-all duration-200"
+              onClick={() => handleNavigation('/documents')}
+            >
+              <FileText className="h-4 w-4 mr-3" />
+              Documents
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl py-3 transition-all duration-200"
               onClick={() => handleNavigation('/analytics')}
             >
               <BarChart3 className="h-4 w-4 mr-3" />
@@ -193,7 +216,7 @@ export function DashboardSidebar({ className, onNavigate, onSignOut }: Dashboard
           <h3 className="text-sm font-semibold text-slate-500 mb-4 uppercase tracking-wider">Workspaces</h3>
 
           <div className="space-y-3">
-            {workspaces.map((workspace) => {
+            {visibleWorkspaces.map((workspace) => {
               const isExpanded = workspaceStates[workspace.id]
 
               return (

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { backendUrl } from "@/lib/backend";
+import { backendUrl, localTokenHeaders } from "@/lib/backend";
 
 export const runtime = "nodejs";
 
@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
 
   const upstream = await fetch(backendUrl("/api/auth/register"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...localTokenHeaders() },
     body: JSON.stringify(body),
     cache: "no-store",
   });

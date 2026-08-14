@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { backendUrl } from "@/lib/backend";
+import { backendUrl, localTokenHeaders } from "@/lib/backend";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...localTokenHeaders(),
       ...(token ? { Cookie: `g4l_session=${token}` } : {}),
     },
     body: JSON.stringify(body),

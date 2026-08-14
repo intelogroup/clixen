@@ -21,7 +21,6 @@ export default function SignUpPage() {
     lastName: "",
     email: "",
     password: "",
-    company: ""
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,7 +34,6 @@ export default function SignUpPage() {
         password: formData.password,
         firstName: formData.firstName,
         lastName: formData.lastName,
-        company: formData.company,
         flow: "signUp",
       })
 
@@ -83,8 +81,8 @@ export default function SignUpPage() {
             <span className="text-2xl font-bold text-gray-900">Clixen</span>
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Create your account</h1>
-          <p className="text-gray-600">Start automating your workflows in minutes</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Set up your workspace</h1>
+          <p className="text-gray-600">Runs locally on this machine — no cloud account required</p>
         </div>
 
         <Card className="border-2 shadow-lg">
@@ -149,24 +147,7 @@ export default function SignUpPage() {
                   value={formData.email}
                   onChange={handleInputChange}
                   className="h-11"
-                  placeholder="john@company.com"
-                  disabled={isLoading}
-                />
-              </div>
-
-              {/* Company */}
-              <div>
-                <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
-                  Company <span className="text-gray-400">(optional)</span>
-                </label>
-                <Input
-                  id="company"
-                  name="company"
-                  type="text"
-                  value={formData.company}
-                  onChange={handleInputChange}
-                  className="h-11"
-                  placeholder="Your company name"
+                  placeholder="you@example.com"
                   disabled={isLoading}
                 />
               </div>
@@ -243,14 +224,7 @@ export default function SignUpPage() {
                   disabled={isLoading}
                 />
                 <label htmlFor="terms" className="text-gray-600">
-                  I agree to the{" "}
-                  <Link href="/terms" className="text-blue-600 hover:underline">
-                    Terms of Service
-                  </Link>{" "}
-                  and{" "}
-                  <Link href="/privacy" className="text-blue-600 hover:underline">
-                    Privacy Policy
-                  </Link>
+                  This workspace runs locally on this machine. Your data stays here.
                 </label>
               </div>
 
@@ -287,15 +261,15 @@ export default function SignUpPage() {
           <div className="grid grid-cols-1 gap-2">
             <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>14-day free trial</span>
+              <span>Local models and files — nothing leaves this machine</span>
             </div>
             <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>400+ integrations included</span>
+              <span>No subscription, no billing, no credit card</span>
             </div>
             <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>24/7 customer support</span>
+              <span>Automations, tools, and a chat assistant built in</span>
             </div>
           </div>
         </div>

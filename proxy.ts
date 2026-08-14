@@ -6,8 +6,6 @@ const protectedRoutes = [
   "/dashboard",
   "/chat",
   "/billing",
-  "/modals",
-  "/transitions",
 ];
 
 const authRoutes = [
