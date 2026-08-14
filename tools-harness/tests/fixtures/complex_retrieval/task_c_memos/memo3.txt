@@ -1,0 +1,4 @@
+Weekly Status Memo - Docs Sprint
+From: Carla
+Nobody from the setup workstream logged hours this week; the team was
+focused entirely on documentation review instead.

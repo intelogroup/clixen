@@ -1,0 +1,5 @@
+Weekly Status Memo - Infra
+From: Dana
+Alice logged 6 hours on infra setup, mostly VPN configuration. Dana
+logged 12 hours on the migration. No other team members contributed
+this week.

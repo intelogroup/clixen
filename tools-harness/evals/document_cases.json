@@ -1,0 +1,9 @@
+[
+  {"name": "txt_summary", "format": "txt", "operation": "summarize", "max_model_calls": 1},
+  {"name": "docx_heading", "format": "docx", "operation": "summarize", "max_model_calls": 1},
+  {"name": "xlsx_sheet", "format": "xlsx", "operation": "extract", "max_model_calls": 1},
+  {"name": "html_body", "format": "html", "operation": "summarize", "max_model_calls": 1},
+  {"name": "email_headers", "format": "eml", "operation": "extract", "max_model_calls": 1},
+  {"name": "two_document_conflict", "format": "mixed", "operation": "inconsistency", "max_model_calls": 1},
+  {"name": "approved_pdf_export", "format": "md", "operation": "export", "max_model_calls": 1}
+]

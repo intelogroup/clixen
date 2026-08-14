@@ -1,0 +1,26 @@
+[
+  {
+    "task_id": "cr-a-policy",
+    "dir": "task_a_policy",
+    "question": "Read policy.md and expenses.csv in this folder. By how many dollars does the single largest policy-violating expense line item exceed its daily category cap? Answer with just the number.",
+    "final_answer": "60"
+  },
+  {
+    "task_id": "cr-b-spec",
+    "dir": "task_b_spec",
+    "question": "Read spec.md in this folder. What is the maximum retry count before a job transitions to DEAD? Answer with just the number.",
+    "final_answer": "17"
+  },
+  {
+    "task_id": "cr-c-memos",
+    "dir": "task_c_memos",
+    "question": "Read all the memo*.txt files in this folder. Across all five memos combined, how many total hours did Alice log? Answer with just the number.",
+    "final_answer": "15.5"
+  },
+  {
+    "task_id": "cr-d-revenue",
+    "dir": "task_d_revenue",
+    "question": "Read report.md in this folder. Using the table and the note together, what is Q3 revenue in USD? Answer with just the number, no commas or currency symbol.",
+    "final_answer": "120000"
+  }
+]

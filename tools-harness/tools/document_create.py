@@ -122,6 +122,8 @@ def _add_heading(doc, text: str, level: int):
 
 
 def _add_code_block(doc, text: str):
+    from docx.shared import Pt
+
     p = doc.add_paragraph()
     run = p.add_run(text)
     run.font.name = "Courier New"
@@ -778,4 +780,3 @@ def html_to_file_executor(args: dict) -> str:
     if not output_path:
         return "Error: missing output_path. Provide output_path in args."
     return html_to_file(html_content, output_path)
-

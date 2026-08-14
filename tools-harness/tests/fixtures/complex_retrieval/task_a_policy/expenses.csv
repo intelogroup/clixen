@@ -1,0 +1,9 @@
+date,category,amount,description
+2026-03-02,Lodging,190,Hotel night 1
+2026-03-03,Lodging,260,Hotel night 2 (upgraded room)
+2026-03-02,Meals,38,Dinner day 1
+2026-03-03,Meals,50,Dinner day 2
+2026-03-02,Ground Transport,45,Taxi from airport
+2026-03-03,Ground Transport,30,Rideshare to client site
+2026-03-02,Incidentals,20,Hotel wifi
+2026-03-03,Incidentals,15,Laundry
