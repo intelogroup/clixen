@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import sys
 import time
 import tempfile
 import threading
@@ -18,6 +19,7 @@ SAVE_DIR = Path.home() / "Documents" / "clixen-voice"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 SAMPLERATE = 16000
+INPUT_DEVICE = os.environ.get("CLIXEN_PTT_INPUT_DEVICE", "").strip() or None
 _model: Model | None = None
 recording = False
 frames: list = []
@@ -45,29 +47,53 @@ def _whisper(wav_path: str) -> str:
     return "".join(s.text for s in segs).strip()
 
 
-def prewarm_mic():
+def prewarm_mic() -> bool:
     # ponytail: opens+closes once at startup so the first real recording
-    # doesn't eat the device-open latency FluidVoice avoids via pre-warming
+    # doesn't eat the device-open latency FluidVoice avoids via pre-warming.
+    # Also acts as the mic gate: returns False when the default input can't be
+    # opened — macOS TCC mic denial surfaces as "Error querying device -1",
+    # and a launchd agent can't prompt for it, so it would otherwise run
+    # forever capturing silence.
+    try:
+        dev = sd.query_devices(kind="input")
+        print(f"  input device: {dev['name']} ({int(dev['default_samplerate'])} Hz)", flush=True)
+    except Exception:
+        pass
     try:
         s = sd.InputStream(samplerate=SAMPLERATE, channels=1)
         s.start()
         s.stop()
         s.close()
+        return True
     except Exception as e:
         print(f"  [mic prewarm failed] {e}", flush=True)
+        return False
 
 
-def start_rec():
+def start_rec() -> bool:
     global recording, frames, stream
     with lock:
         if recording:
-            return
-        recording = True
+            return False
         frames = []
-        stream = sd.InputStream(samplerate=SAMPLERATE, channels=1,
-                                callback=lambda i, n, t, s: frames.append(i.copy()))
-        stream.start()
+        try:
+            stream = sd.InputStream(
+                samplerate=SAMPLERATE,
+                channels=1,
+                device=INPUT_DEVICE,
+                callback=lambda i, n, t, s: frames.append(i.copy()),
+            )
+            stream.start()
+        except Exception as e:
+            stream = None
+            frames = []
+            print(f"  [mic error] {e}", flush=True)
+            print("  Check macOS Microphone permission and input device; "
+                  "set CLIXEN_PTT_INPUT_DEVICE if needed.", flush=True)
+            return False
+        recording = True
     print("● recording… (release RIGHT-Cmd to save)", flush=True)
+    return True
 
 
 def stop_rec():
@@ -80,10 +106,19 @@ def stop_rec():
             stream.stop()
             stream.close()
             stream = None
-    if not frames:
+    captured = list(frames)
+    if not captured:
         print("  no audio captured", flush=True)
         return
-    audio = np.concatenate(frames, axis=0)
+    audio = np.concatenate(captured, axis=0)
+    if len(audio) < int(SAMPLERATE * 0.1):
+        print("  no usable audio captured", flush=True)
+        return
+    peak = float(np.abs(audio).max())
+    if peak < 0.01:
+        print("  [silence] mic captured no signal (peak < 0.01) — "
+              "check Microphone permission and input device", flush=True)
+        return
 
     if autotype_this:
         print("■ transcribing…", flush=True)
@@ -108,6 +143,11 @@ def stop_rec():
 
 def type_text(text: str) -> None:
     global _typing
+    import ApplicationServices as _AX
+    if not _AX.AXIsProcessTrusted():
+        print("  [autotype error] accessibility permission missing — add this python to "
+              "System Settings → Privacy & Security → Accessibility, then restart", flush=True)
+        return
     time.sleep(0.05)
     _typing = True
     try:
@@ -162,9 +202,9 @@ def on_press(k):
     if k == rec_key:
         if _any_active():
             return
-        held_active = True
         autotype_this = False
-        start_rec()
+        if start_rec():
+            held_active = True
     elif k == toggle_key:
         if toggle_active:
             toggle_active = False
@@ -172,15 +212,15 @@ def on_press(k):
             return
         if held_active or field_active:
             return
-        toggle_active = True
         autotype_this = False
-        start_rec()
+        if start_rec():
+            toggle_active = True
     elif k == field_key:
         if _any_active():
             return
-        field_active = True
         autotype_this = True
-        start_rec()
+        if start_rec():
+            field_active = True
 
 
 def on_release(k):
@@ -201,7 +241,12 @@ if __name__ == "__main__":
           f"  Tap RIGHT-Option -> toggle continuous rec, save file only\n"
           f"  Hold RIGHT-Shift -> record, save file + type into focused field\n"
           f"Files -> {SAVE_DIR}", flush=True)
-    threading.Thread(target=prewarm_mic, daemon=True).start()
+    if not prewarm_mic():
+        print("\n  Mic unavailable — System Settings → Privacy & Security → Microphone,\n"
+              "  allow this python binary, then restart:\n"
+              "  launchctl kickstart -k gui/$(id -u)/com.clixen.pushtotalk\n",
+              flush=True)
+        sys.exit(2)
     threading.Thread(target=get_model, daemon=True).start()
     with keyboard.Listener(on_press=on_press, on_release=on_release) as l:
         l.join()
