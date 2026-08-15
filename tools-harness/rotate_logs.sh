@@ -8,7 +8,7 @@ LOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAX_BYTES=$((10 * 1024 * 1024))  # 10MB, same threshold as log_config.py
 KEEP=5
 
-for f in core_stdout.log core_stderr.log messaging_stdout.log messaging_stderr.log; do
+for f in core_stdout.log core_stderr.log messaging_stdout.log messaging_stderr.log task_worker.err.log; do
     path="$LOG_DIR/$f"
     [ -f "$path" ] || continue
     size=$(stat -f%z "$path" 2>/dev/null || echo 0)
