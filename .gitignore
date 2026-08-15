@@ -31,7 +31,7 @@ node_modules/
 tools-harness/.screenshot_cache/
 __pycache__/
 *.pyc
-tools-harness/.baileys_auth/
+tools-harness/.baileys_auth*/
 tests/*.wav
 
 # Scratch / scribbles — keep the tree product-clean (see CHANGELOG for history)
@@ -46,6 +46,7 @@ tools-harness/benchmarks/*.json
 
 # Runtime / session state, scratch outputs, rotated logs, backups
 tools-harness/store/sessions/
+tools-harness/store/session_archive/
 tools-harness/store/ringback_cooldown.json
 data/
 tools-harness/scratch/
@@ -63,6 +64,13 @@ tools-harness/scores_md.md
 tools-harness/screenshot.png
 tools-harness/world_cup_scores.*
 .claude/
+
+# Local virtualenvs, spill/build artifacts, spike scratch
+.venv-chatterbox/
+tools-harness/.spill/
+tools-harness/build/
+tauri-spikes/ui-mock/
+tsconfig.tsbuildinfo
 
 # Rust build artifacts
 **/target/
