@@ -37,6 +37,15 @@ _CRASH_RE = re.compile(
     r"Process \d+ exited|Traceback \(most recent call last\)"
 )
 
+# log_config.py's formatter: "%(asctime)s [%(levelname)s] [%(run_id)s] %(name)s: %(message)s"
+# A record line sits immediately before any exc_info dump emitted by
+# log.error(..., exc_info=True) / log.exception(...). Used to tell a *caught*
+# exception's traceback apart from a real uncaught crash.
+_LOG_RECORD_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} "
+    r"\[(?:ERROR|WARNING|WARN|CRITICAL|INFO|DEBUG)\]"
+)
+
 _POLL_SECS = 5
 _DEBOUNCE_SECS = 60  # don't re-alert on the same crash more than once a minute
 
@@ -57,6 +66,21 @@ def _crash_key(line: str, key_text: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
+def _is_caught_exception(new_text: str, match: "re.Match[str]") -> bool:
+    """A `Traceback (most recent call last)` is a *caught* exception when it's
+    the exc_info dump appended to a logging record — the record line (e.g.
+    `2026-08-15 15:17:45,605 [ERROR] task_worker: worker cycle failed`) sits
+    immediately before the `Traceback` line. A real uncaught crash writes its
+    traceback straight to stderr with no such record line in front (the
+    interpreter prints `Exception in thread foo:` or nothing at all).
+    """
+    if match.group(0) != "Traceback (most recent call last)":
+        return False
+    before = new_text[: match.start()].rstrip("\n")
+    last_line = before.rsplit("\n", 1)[-1] if before else ""
+    return bool(_LOG_RECORD_RE.search(last_line))
+
+
 def check_new_text(path: Path, new_text: str, last_alert: dict[str, float], now: float | None = None) -> bool:
     """Check one file's newly-appended text for a crash signature and alert
     if it's not a dedupe-window repeat of an already-alerted crash. Mutates
@@ -64,28 +88,32 @@ def check_new_text(path: Path, new_text: str, last_alert: dict[str, float], now:
     Extracted from watch()'s loop body so tests can drive it directly instead
     of re-implementing the same offset/match/dedupe logic inline.
     """
-    match = _CRASH_RE.search(new_text)
-    if not match:
-        return False
-
-    line = match.group(0)
-    snippet = new_text[max(0, match.start() - 100):match.start() + 200].strip()
-    # Dedupe key uses only text AFTER the match (the actual exception body) —
-    # the pre-match context in `snippet` above can include a log-line
-    # timestamp, which differs by a second or two between files even for the
-    # same fanned-out crash record and would otherwise break the hash match.
-    key_text = new_text[match.end():match.end() + 300]
-    key = _crash_key(line, key_text)
-
     now = time.time() if now is None else now
-    if now - last_alert.get(key, 0) < _DEBOUNCE_SECS:
-        print(f"[watchdog] crash signature in {path.name}: {line} (deduped, already alerted)", flush=True)
-        return False
-    last_alert[key] = now
 
-    print(f"[watchdog] crash signature in {path.name}: {line}", flush=True)
-    send_telegram(f"Crash detected in {path.name}: {line}\n\n{snippet[:500]}")
-    return True
+    for match in _CRASH_RE.finditer(new_text):
+        if _is_caught_exception(new_text, match):
+            print(f"[watchdog] caught exception (not a crash) in {path.name}: {match.group(0)}", flush=True)
+            continue
+
+        line = match.group(0)
+        snippet = new_text[max(0, match.start() - 100):match.start() + 200].strip()
+        # Dedupe key uses only text AFTER the match (the actual exception body) —
+        # the pre-match context in `snippet` above can include a log-line
+        # timestamp, which differs by a second or two between files even for the
+        # same fanned-out crash record and would otherwise break the hash match.
+        key_text = new_text[match.end():match.end() + 300]
+        key = _crash_key(line, key_text)
+
+        if now - last_alert.get(key, 0) < _DEBOUNCE_SECS:
+            print(f"[watchdog] crash signature in {path.name}: {line} (deduped, already alerted)", flush=True)
+            continue
+        last_alert[key] = now
+
+        print(f"[watchdog] crash signature in {path.name}: {line}", flush=True)
+        send_telegram(f"Crash detected in {path.name}: {line}\n\n{snippet[:500]}")
+        return True
+
+    return False
 
 
 def check_new_events(events: list[dict], last_alert: dict[str, float], now: float | None = None) -> int:

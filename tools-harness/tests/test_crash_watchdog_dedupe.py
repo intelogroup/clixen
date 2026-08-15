@@ -36,16 +36,61 @@ def test_dedupe_suppresses_second_alert_within_window(monkeypatch, tmp_path):
 
     log_a = tmp_path / "task_worker.log"
     log_b = tmp_path / "chat_ui.log"
-    # Same crash record fanned out to two files (log_config.py's root-logger
-    # wiring) — timestamps a second apart, as they'd realistically be.
-    crash_a = "2026-07-11 19:11:42,100 [ERROR] test: Traceback (most recent call last)\nIndexError: index 510 is out of bounds for axis 0 with size 510\n"
-    crash_b = "2026-07-11 19:11:42,873 [ERROR] test: Traceback (most recent call last)\nIndexError: index 510 is out of bounds for axis 0 with size 510\n"
+    # Same real crash fanned out to two files — the dedupe key must ignore the
+    # pre-match context and key only on the traceback body.
+    crash = (
+        "Traceback (most recent call last)\n"
+        "  File \"worker.py\", line 350, in main\n"
+        "IndexError: index 510 is out of bounds for axis 0 with size 510\n"
+    )
 
     last_alert: dict[str, float] = {}
-    assert cw.check_new_text(log_a, crash_a, last_alert) is True
-    assert cw.check_new_text(log_b, crash_b, last_alert) is False, "differing timestamps should not defeat the dedupe key"
+    assert cw.check_new_text(log_a, crash, last_alert) is True
+    assert cw.check_new_text(log_b, crash, last_alert) is False, "the same crash in 2 files must dedupe"
 
     assert len(sent) == 1, f"expected exactly 1 alert for the same crash in 2 files, got {len(sent)}"
+
+
+def test_caught_exception_is_not_a_crash(monkeypatch, tmp_path):
+    import crash_watchdog as cw
+
+    sent = []
+    monkeypatch.setattr(cw, "send_telegram", lambda msg: sent.append(msg))
+
+    # log.error(..., exc_info=True) / log.exception(...) emit a [LEVEL] record
+    # line immediately before the Traceback — this is a *caught* exception, the
+    # process keeps running, so the watchdog must not alert on it.
+    caught = (
+        "2026-08-15 17:40:58,969 [ERROR] [216719fc] whatsapp_tool: whatsapp send failed: timed out\n"
+        "Traceback (most recent call last):\n"
+        "  File \"tools/whatsapp_tool.py\", line 76, in execute\n"
+        "TimeoutError: timed out\n"
+    )
+
+    last_alert: dict[str, float] = {}
+    assert cw.check_new_text(tmp_path / "whatsapp_bot.log", caught, last_alert) is False
+    assert len(sent) == 0, f"caught exceptions must not alert, got {len(sent)}"
+
+
+def test_uncaught_thread_exception_still_alerts(monkeypatch, tmp_path):
+    import crash_watchdog as cw
+
+    sent = []
+    monkeypatch.setattr(cw, "send_telegram", lambda msg: sent.append(msg))
+
+    # An uncaught exception in a thread: the interpreter writes
+    # `Exception in thread foo:` (not a [LEVEL] record line) before the
+    # traceback — this IS a real crash and must still alert.
+    crash = (
+        "Exception in thread voiceprint_daemon:\n"
+        "Traceback (most recent call last):\n"
+        "  File \"threading.py\", line 1081, in _bootstrap_inner\n"
+        "ModuleNotFoundError: No module named 'resemblyzer'\n"
+    )
+
+    last_alert: dict[str, float] = {}
+    assert cw.check_new_text(tmp_path / "core_stderr.log", crash, last_alert) is True
+    assert len(sent) == 1, f"uncaught thread exceptions must alert, got {len(sent)}"
 
 
 def test_different_crashes_both_alert(monkeypatch):
