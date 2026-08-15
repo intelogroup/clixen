@@ -50,8 +50,8 @@ tools-harness/store/session_archive/
 tools-harness/store/ringback_cooldown.json
 data/
 tools-harness/scratch/
-tools-harness/graphify-out/
-graphify-out/
+**/graphify-out/
+tools-harness/ringback/voices/
 *.bak.audio
 *.log.[0-9]*
 *.log.*.gz
