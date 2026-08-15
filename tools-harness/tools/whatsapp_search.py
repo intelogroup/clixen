@@ -143,13 +143,14 @@ def search(query: str, limit: int = 10, contact: str = "", days: int = 0) -> str
 
         use_fts = _has_table(conn, "message_fts")
         if use_fts:
+            fts_query = '"' + clean.replace('"', '""') + '"'
             sql = """
                 SELECT m.msg_id, m.jid, m.push_name, m.from_me, m.text, m.ts
                 FROM message_fts f
                 JOIN messages m ON m.id = f.rowid
                 WHERE message_fts MATCH ?
             """
-            params: list = [clean]
+            params: list = [fts_query]
         else:
             sql = """
                 SELECT msg_id, jid, push_name, from_me, text, ts
@@ -173,7 +174,25 @@ def search(query: str, limit: int = 10, contact: str = "", days: int = 0) -> str
         try:
             rows = conn.execute(sql, params).fetchall()
         except sqlite3.OperationalError as e:
-            return f"[whatsapp fts error] {e}. Try simpler terms."
+            if use_fts and "no such column" in str(e):
+                like_sql = """
+                    SELECT msg_id, jid, push_name, from_me, text, ts
+                    FROM messages
+                    WHERE text LIKE ? COLLATE NOCASE
+                """
+                like_params: list = [f"%{clean}%"]
+                if contact:
+                    like_params.extend([cf, cf])
+                if days and days > 0:
+                    like_params.append(cutoff)
+                like_sql += " ORDER BY ts DESC LIMIT ?"
+                like_params.append(cap)
+                try:
+                    rows = conn.execute(like_sql, like_params).fetchall()
+                except sqlite3.OperationalError:
+                    rows = []
+            else:
+                return f"[whatsapp fts error] {e}. Try simpler terms."
 
         if not rows:
             scope = f" with {contact}" if contact else ""
