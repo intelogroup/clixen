@@ -404,6 +404,7 @@ def main() -> None:
                 time.sleep(args.poll_interval)
             except Exception:
                 _log.exception("worker cycle failed, continuing")
+                time.sleep(args.poll_interval)
 
     except KeyboardInterrupt:
         _log.info("task worker interrupted")
