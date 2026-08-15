@@ -204,3 +204,58 @@ def test_paperqa_extraction_failure_falls_back_to_snippet(monkeypatch):
         raise RuntimeError("paper-qa unavailable")
     monkeypatch.setattr(science_scout, "_paperqa_extract_async", lambda url, niche: boom(url, niche))
     assert science_scout.extract_claim("https://example.com/paper", "microplastics") == ""
+
+
+def _strong_paper(i: int, niche: str, call_detail: str) -> dict:
+    return {
+        "id": f"https://arxiv.org/abs/9{i}",
+        "title": f"Distinct paper {i}",
+        "snippet": f"snippet {i}",
+        "url": f"https://arxiv.org/abs/9{i}",
+        "niche": niche,
+    }
+
+
+def test_strong_evidence_notify_capped_per_niche(clean_db, kb, monkeypatch):
+    calls = []
+    monkeypatch.setattr("jobs.notify_gate.decide_and_notify", lambda **kw: calls.append(kw) or True)
+
+    cap = science_scout.NOTIFY_CAP_PER_NICHE_PER_DAY
+    # Distinct call_details so the cross-source semantic dedup (Jaccard) does
+    # NOT collapse them — each is a genuinely different paper in the same niche.
+    details = [
+        "Enzyme degrades PET bottles at ambient temperature in controlled trials.",
+        "Quantum annealing accelerates protein folding prediction on benchmarks.",
+        "CRISPR delivered via lipid nanoparticles reaches brain tissue in mice.",
+        "Graphene aerogel filter removes heavy metals from contaminated water.",
+        "Organoid model recapitulates early human neural development in vitro.",
+    ]
+    for i, detail in enumerate(details):
+        science_scout.apply_decision(
+            _strong_paper(i, "microplastics", detail),
+            {"decision": "CREATE", "summary": f"Distinct claim {i}", "evidence_level": "Observed", "call_detail": detail},
+            kb,
+        )
+
+    assert len(calls) == cap, f"expected {cap} notifications for one niche, got {len(calls)}"
+
+    # A different niche is not blocked by the first niche's cap.
+    science_scout.apply_decision(
+        _strong_paper(99, "organoids", "Distinct organoid detail about a kidney scaffold."),
+        {"decision": "CREATE", "summary": "Other claim", "evidence_level": "Observed", "call_detail": "Distinct organoid detail about a kidney scaffold."},
+        kb,
+    )
+    assert len(calls) == cap + 1
+
+    # The rate-limited findings were still persisted as claims for the weekly digest.
+    assert len(store.list_active_claims()) == len(details) + 1
+
+
+def test_niche_notify_count_increments_and_is_per_niche(clean_db):
+    assert store.niche_notify_count("microplastics") == 0
+    store.record_niche_notify("microplastics")
+    assert store.niche_notify_count("microplastics") == 1
+    assert store.niche_notify_count("other") == 0
+    store.record_niche_notify("microplastics")
+    assert store.niche_notify_count("microplastics") == 2
+    assert store.niche_notify_count("other") == 0

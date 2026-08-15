@@ -43,6 +43,14 @@ DEFAULT_NICHE_QUERIES = [
 # not just in the weekly digest — Predicted/Speculative wait for the digest.
 STRONG_EVIDENCE_LEVELS = ("Observed", "Replicated")
 
+# Cap the immediate (phone/agent-wake) notifications per niche per day. A niche
+# query pulls a cluster of near-identical papers (same tissue-engineering story,
+# different method) that each pass the semantic dedup — without a cap the scout
+# rings the user every ~2 minutes with what reads as duplicates. Excess findings
+# are still stored as claims and reach the weekly digest; only the interrupt is
+# throttled.
+NOTIFY_CAP_PER_NICHE_PER_DAY = 3
+
 NEAR_DUP_MAX_DISTANCE = 0.65
 MAX_RESULTS_PER_QUERY = 8
 # Cap how many fresh candidates get the (slow, LLM-costly) paper-qa full-text
@@ -387,11 +395,19 @@ def apply_decision(paper: dict, decision: dict, kb) -> str:
                 if not wm_store.claim_notified(call_detail, "", "science_scout"):
                     store.log_suppressed_alert("science_scout", finding_text, "already surfaced (cross-source dedup)")
                 else:
-                    decide_and_notify(
-                        finding=finding_text,
-                        source="science_scout", fallback_alert=True, wake_agent=True, call_phone=True, bypass_gate=True,
-                        on_suppress=lambda finding, reason: store.log_suppressed_alert("science_scout", finding, reason),
-                    )
+                    niche = paper.get("niche", "science scout")
+                    if store.niche_notify_count(niche) >= NOTIFY_CAP_PER_NICHE_PER_DAY:
+                        store.log_suppressed_alert(
+                            "science_scout", finding_text,
+                            f"rate-limited: {NOTIFY_CAP_PER_NICHE_PER_DAY} immediate notifications/day for niche '{niche}'",
+                        )
+                    else:
+                        store.record_niche_notify(niche)
+                        decide_and_notify(
+                            finding=finding_text,
+                            source="science_scout", fallback_alert=True, wake_agent=True, call_phone=True, bypass_gate=True,
+                            on_suppress=lambda finding, reason: store.log_suppressed_alert("science_scout", finding, reason),
+                        )
             except Exception as e:
                 _warn_failed("immediate notify failed", e)
     elif verdict == "UPDATE" and matched:

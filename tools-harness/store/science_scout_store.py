@@ -372,6 +372,38 @@ def set_config(key: str, value) -> None:
     set_meta(_CONFIG_PREFIX + key, json.dumps(value))
 
 
+# ── per-niche immediate-notify rate limiter ─────────────────────────────
+# science_scout's niche queries pull clusters of papers on the same narrow
+# topic; each one is a distinct claim (different compound/method) but reads
+# as "the same story again" to a human. Cap the phone/agent-wake
+# notifications per niche per day so the scout doesn't ring the user every
+# ~2 minutes; the excess findings are still stored as claims and surface in
+# the weekly digest instead.
+
+_NOTIFY_COUNTS_KEY = "notify_daily_counts"
+
+
+def niche_notify_count(niche: str) -> int:
+    """Count of immediate (strong-evidence) notifications already sent for a
+    niche today. Returns 0 on a new day (the counter is date-scoped)."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    counts = get_config(_NOTIFY_COUNTS_KEY, {})
+    if not isinstance(counts, dict) or counts.get("_date") != today:
+        return 0
+    return int(counts.get(niche, 0))
+
+
+def record_niche_notify(niche: str) -> None:
+    """Increment today's immediate-notify count for a niche, resetting the
+    whole counter when the day rolls over."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    counts = get_config(_NOTIFY_COUNTS_KEY, {})
+    if not isinstance(counts, dict) or counts.get("_date") != today:
+        counts = {"_date": today}
+    counts[niche] = int(counts.get(niche, 0)) + 1
+    set_config(_NOTIFY_COUNTS_KEY, counts)
+
+
 def active_claims_fingerprint() -> str:
     """Stable version of the active claim set for idempotent reports."""
     claims = list_active_claims(limit=10000)
