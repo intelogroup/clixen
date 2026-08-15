@@ -41,7 +41,7 @@ from openai import OpenAI
 
 from clients.cancellation import check_aborted, QueryAbortedException
 from clients.cost_guard import check_budget, record_usage, BudgetExceededError  # noqa: F401 (re-exported)
-from store.trace_store import record as _record_trace
+from store.trace_store import record as _record_trace, get_trace as _get_trace
 
 # harness.py already loads tools-harness/.env for the main entrypoints, but
 # standalone callers (benchmark/e2e scripts, ad-hoc debugging) import this
@@ -52,6 +52,7 @@ from store.trace_store import record as _record_trace
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from tools.registry import execute_tool, is_error_result, is_checkpoint_result
 from tools.injection_guard import wrap_external_output
+from tools.spill import spill
 
 _log = logging.getLogger(__name__)
 
@@ -60,6 +61,24 @@ _log = logging.getLogger(__name__)
 # in chat() kicks in. Raise _TRANSIENT_MAX_RETRIES if these still surface to users often.
 _TRANSIENT_MAX_RETRIES = 1
 _TRANSIENT_BASE_DELAY = 1.0
+_TRANSIENT_MAX_DELAY = 30.0
+
+
+def _retry_after_seconds(e: Exception) -> float | None:
+    """Provider-supplied Retry-After header, if present and sane (deepseek-harness
+    llm-retry pattern: honor it over our own backoff guess when it's available)."""
+    resp = getattr(e, "response", None)
+    headers = getattr(resp, "headers", None) if resp is not None else None
+    if not headers:
+        return None
+    raw = headers.get("retry-after")
+    if not raw:
+        return None
+    try:
+        secs = float(raw)
+    except ValueError:
+        return None
+    return secs if 0 < secs <= _TRANSIENT_MAX_DELAY else None
 
 # OpenRouter's 402 message when the account balance is low but nonzero:
 # "This request requires more credits, or fewer max_tokens. You requested up to
@@ -79,7 +98,12 @@ def _clamp_max_tokens_for_afford(kwargs: dict, err: Exception) -> dict | None:
     requested = kwargs.get("max_tokens")
     if requested is not None and requested <= afford:
         return None  # already under the ceiling — clamping can't help
-    capped = max(min(afford - 256, 8192), 256)
+    # Below this floor, another request cannot be made safely: forcing 256
+    # tokens when the account can afford fewer than 256 reproduces the same
+    # 402. Return None so the caller takes the normal provider fallback.
+    if afford <= 256:
+        return None
+    capped = min(afford - 256, 8192)
     if requested is not None and capped >= requested:
         return None
     out = dict(kwargs)
@@ -96,7 +120,7 @@ def _create_with_retry(client, **kwargs):
         except (APIConnectionError, APITimeoutError, RateLimitError, InternalServerError) as e:
             if attempt >= _TRANSIENT_MAX_RETRIES:
                 raise
-            delay = _TRANSIENT_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
+            delay = _retry_after_seconds(e) or (_TRANSIENT_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5))
             _log.warning("[cloud_client] transient error (%s), retrying in %.1fs", e, delay)
             time.sleep(delay)
         except Exception as e:
@@ -121,7 +145,7 @@ def _create_stream_with_retry(client, **kwargs):
         except (APIConnectionError, APITimeoutError, RateLimitError, InternalServerError) as e:
             if attempt >= _TRANSIENT_MAX_RETRIES:
                 raise
-            delay = _TRANSIENT_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
+            delay = _retry_after_seconds(e) or (_TRANSIENT_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5))
             _log.warning("[cloud_client] transient error (%s), retrying in %.1fs", e, delay)
             time.sleep(delay)
         except Exception as e:
@@ -756,8 +780,7 @@ def _run_tool_loop(
                 f"The user's request needs a live {force_tool_choice} lookup; calling it now."
             )
         messages.append(_preseed_msg)
-        if len(result) > 4000:
-            result = result[:3800] + f"\n... [truncated — {len(result)} chars total]"
+        result = spill(result, force_tool_choice)
         result = wrap_external_output(force_tool_choice, result)
         messages.append({"role": "tool", "tool_call_id": _tc_id, "content": result})
         force_tool_choice = None  # loop is now pure synthesis (model already has the result)
@@ -868,13 +891,29 @@ def _run_tool_loop(
                     args = json.loads(tc.function.arguments or "{}")
                 except json.JSONDecodeError:
                     args = {}
+                # list_emails already tells the model (via its schema description) to
+                # scan with an empty query on schedule/due-date questions and re-read
+                # snippets instead of retrying with a search operator — but that's a
+                # soft prompt-level ask, models don't reliably hold to it once the first
+                # scan doesn't yield an obvious match (live regression 2026-08-14:
+                # deepseek-v4-flash retried with query='assignment' after one empty scan).
+                # Hard-enforce it here: once this run has done one empty-query scan,
+                # force every later list_emails call in the same run back to empty
+                # instead of trusting the model to keep re-reading snippets.
+                if tc.function.name == "list_emails" and args.get("query") and run_id:
+                    _prior = _get_trace(run_id) or []
+                    if any(
+                        t.get("tool") == "list_emails" and not (t.get("args") or {}).get("query")
+                        for t in _prior
+                    ):
+                        args["query"] = ""
                 print(f"[tool] {tc.function.name}({str(args)[:200]})", flush=True)
                 _ctx = contextvars.copy_context()
                 if tc.function.name not in _allowed_tool_names:
                     _err = f"[error] tool '{tc.function.name}' was not offered this round — use one of the available tools instead"
-                    futures[executor.submit(lambda e=_err: e)] = tc
+                    futures[executor.submit(lambda e=_err: e)] = (tc, args)
                 else:
-                    futures[executor.submit(_ctx.run, execute_tool, tc.function.name, args)] = tc
+                    futures[executor.submit(_ctx.run, execute_tool, tc.function.name, args)] = (tc, args)
 
             # 2026-08-03: plain future.result() had NO timeout — a hung tool
             # (stuck subprocess, dead socket) froze the whole agent round forever.
@@ -882,7 +921,7 @@ def _run_tool_loop(
             # shutdown(wait=False) so a straggler can't block the round (the
             # old `with` block's __exit__ did shutdown(wait=True)).
             tool_timeout = round_timeout or _CLOUD_TOOL_TIMEOUT_S
-            for future, tc in futures.items():
+            for future, (tc, args) in futures.items():
                 _t0 = time.time()
                 try:
                     result = future.result(timeout=tool_timeout)
@@ -893,21 +932,19 @@ def _run_tool_loop(
                 is_error = is_error_result(result)
                 consecutive_errors = consecutive_errors + 1 if is_error else 0
                 if run_id:
-                    try:
-                        args_preview = json.loads(tc.function.arguments or "{}")
-                    except json.JSONDecodeError:
-                        args_preview = {}
+                    # Use the (possibly corrected) args actually executed, not a fresh
+                    # re-parse of the model's original tool_call — otherwise the trace
+                    # would show the query the model asked for, not what really ran.
                     _record_trace(run_id, {
                         "run_id": run_id, "tool": tc.function.name,
-                        "args": {k: str(v)[:80] for k, v in args_preview.items()},
+                        "args": {k: str(v)[:80] for k, v in args.items()},
                         "result_summary": result[:120],
                         "elapsed_ms": round((time.time() - _t0) * 1000),
                         "error": is_error,
                     })
                 if is_checkpoint_result(tc.function.name, result):
                     return result
-                if len(result) > 4000:
-                    result = result[:3800] + f"\n... [truncated — {len(result)} chars total]"
+                result = spill(result, tc.function.name)
                 result = wrap_external_output(tc.function.name, result)
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
                 _inject_screenshot_image(messages, tc.function.name, result, model)

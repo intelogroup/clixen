@@ -18,6 +18,7 @@ from ollama import Message as OllamaMessage
 from tools.registry import execute_tool, is_error_result, is_checkpoint_result
 from tools.premise_check import inject as _premise_inject
 from tools.injection_guard import wrap_external_output
+from tools.spill import spill
 
 _SEARCH_TOOL_NAMES = {"web_search", "google_search", "brave_search", "tech_search"}
 
@@ -583,8 +584,7 @@ def chat(
                 print(f"[tool/text] {fn_name}({str(fn_args)[:200]})", flush=True)
                 check_aborted()
                 result = execute_tool(fn_name, fn_args)
-                if len(result) > 4000:
-                    result = result[:3800] + f"\n... [truncated — {len(result)} chars total]"
+                result = spill(result, fn_name)
                 if fn_name in _SEARCH_TOOL_NAMES:
                     result = _premise_inject(user_message, result)
                 result = wrap_external_output(fn_name, result)
@@ -709,9 +709,8 @@ def chat(
                     "result_summary": result[:120], "elapsed_ms": None, "error": _is_error,
                 })
 
-            # Truncate large tool results to prevent context blowup across rounds
-            if len(result) > 4000:
-                result = result[:3800] + f"\n... [truncated — {len(result)} chars total]"
+            # Spill large tool results to disk to prevent context blowup across rounds
+            result = spill(result, fn_name)
 
             # Inject contradiction warning for search tools before model sees result
             if fn_name in _SEARCH_TOOL_NAMES:

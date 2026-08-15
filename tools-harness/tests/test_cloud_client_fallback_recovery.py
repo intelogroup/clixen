@@ -79,6 +79,10 @@ def test_low_balance_402_clamps_max_tokens():
 
         # already under the ceiling -> no retry possible
         assert cc._clamp_max_tokens_for_afford({"model": "x", "max_tokens": 5000}, err) is None
+        # too little balance for the minimum request -> do not retry the same
+        # 256-token request; let chat() move to its fallback provider.
+        tiny_err = Exception("402: can only afford 128")
+        assert cc._clamp_max_tokens_for_afford({"model": "x", "max_tokens": 8192}, tiny_err) is None
         # non-402 / no afford info -> no clamp
         assert cc._clamp_max_tokens_for_afford({"model": "x", "max_tokens": 8192}, Exception("boom")) is None
     finally:
