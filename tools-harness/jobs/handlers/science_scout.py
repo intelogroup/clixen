@@ -131,20 +131,30 @@ def _get_knowledge_base():
 
 
 def collect_new_papers(niche_queries: list[str]) -> list[dict]:
-    """Search each niche query via SearXNG's science category. Never raises —
-    a search failure for one query just means fewer candidates this scan."""
-    from tools.searxng_search import execute as searxng_execute
+    """Search each niche through the shared Exa/Tavily web-search pipeline.
+
+    The shared pipeline is Exa-first and Tavily-second, with legacy local
+    backends only as fallbacks. Never raises — one failed query just means
+    fewer candidates this scan, but the backend error is logged explicitly.
+    """
+    from tools.websearch import _search as web_search
 
     papers: list[dict] = []
     for niche in niche_queries:
         try:
-            result = searxng_execute(niche, categories="science", max_results=MAX_RESULTS_PER_QUERY)
+            # Science queries are inherently recent; the shared API pipeline
+            # uses this window for Tavily and compatible providers.
+            result = web_search(niche, time_range="year")
         except Exception as e:
             _warn_failed(f"search failed for niche {niche!r}", e)
             continue
         if not result.ok:
+            _warn_failed(
+                f"search returned no results for niche {niche!r}",
+                RuntimeError(result.error or "all web-search backends failed"),
+            )
             continue
-        for item in result.items or []:
+        for item in (result.items or [])[:MAX_RESULTS_PER_QUERY]:
             if not item.url:
                 continue
             papers.append({

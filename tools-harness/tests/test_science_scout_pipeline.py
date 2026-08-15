@@ -17,6 +17,7 @@ from store import science_scout_store as store
 from store import world_monitor_store as wm_store
 from store.knowledge_base import KnowledgeBase
 from jobs.handlers import science_scout
+from tools.search_result import SearchResult, SearchSnippet
 
 
 @pytest.fixture
@@ -157,6 +158,61 @@ def test_handle_uses_config_niche_queries(clean_db, kb, monkeypatch):
     monkeypatch.setattr(science_scout, "collect_new_papers", lambda niches: [])
     result = science_scout.handle({"id": "wf-cfg", "config": {"niche_queries": ["custom niche"]}})
     assert result["niches_scanned"] == ["custom niche"]
+
+
+def test_collect_new_papers_uses_shared_exa_tavily_search_pipeline(monkeypatch):
+    calls = []
+
+    def fake_web_search(query, time_range=""):
+        calls.append((query, time_range))
+        return SearchResult(
+            content="",
+            ok=True,
+            source="exa",
+            query=query,
+            items=[SearchSnippet(
+                title="New paper",
+                url="https://example.test/paper",
+                snippet="A useful science finding.",
+            )],
+        )
+
+    monkeypatch.setattr("tools.websearch._search", fake_web_search)
+
+    papers = science_scout.collect_new_papers(["new science discovery"])
+
+    assert calls == [("new science discovery", "year")]
+    assert papers == [{
+        "id": "https://example.test/paper",
+        "niche": "new science discovery",
+        "title": "New paper",
+        "snippet": "A useful science finding.",
+        "url": "https://example.test/paper",
+    }]
+
+
+def test_legacy_search_adapter_uses_api_pipeline_before_ddg(monkeypatch):
+    from tools import searxng_search
+
+    monkeypatch.setattr(searxng_search, "_search_searxng", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "tools.websearch._search",
+        lambda query, time_range="": SearchResult(
+            content="", ok=True, source="tavily", query=query,
+            items=[SearchSnippet(title="API result", url="https://example.test/api")],
+        ),
+    )
+    monkeypatch.setattr(
+        searxng_search,
+        "_fallback_ddg",
+        lambda *args, **kwargs: pytest.fail("DDG must not be used when API search succeeds"),
+    )
+
+    result = searxng_search.execute("science discovery", categories="science")
+
+    assert result.ok is True
+    assert result.source == "tavily"
+    assert result.items[0].url == "https://example.test/api"
 
 
 def test_automatic_query_batch_rotates_with_cooldown(clean_db):

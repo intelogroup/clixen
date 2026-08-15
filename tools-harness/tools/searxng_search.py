@@ -113,13 +113,35 @@ def _fallback_ddg(query: str, time_range: str = "", max_results: int = 10) -> Se
 
 
 def execute(query: str, categories: str = "general", time_range: str = "", max_results: int = 10) -> SearchResult:
-    """Search via SearXNG with DDG fallback."""
+    """Search via SearXNG, then Exa/Tavily, then DDG as a last resort.
+
+    The local SearXNG and DDG tiers are optional legacy backends. In the
+    supported Python 3.14 runtime DDG is intentionally disabled, so API-backed
+    search must be attempted before reaching that fallback.
+    """
     # Try SearXNG first
     result = _search_searxng(query, categories=categories, time_range=time_range, max_results=max_results)
     if result and result.ok:
         log.debug("SearXNG: %d results for %r", len(result.items or []), query[:60])
         return result
 
-    # Fall back to DuckDuckGo
-    log.debug("SearXNG unavailable, falling back to DDG for %r", query[:60])
+    # API-backed web search is the supported fallback when local SearXNG is
+    # absent. websearch._search is Exa-first, Tavily-second, and only then
+    # considers the legacy scraping backends.
+    try:
+        from tools.websearch import _search as api_search
+        api_result = api_search(query, time_range=time_range)
+        if api_result and api_result.ok and api_result.items:
+            api_result.items = api_result.items[:max_results]
+            log.debug("API web search (%s): %d results for %r", api_result.source,
+                      len(api_result.items), query[:60])
+            return api_result
+        log.warning("API web search returned no results for %r: %s", query[:60],
+                    api_result.error if api_result else "no result")
+    except Exception as exc:
+        log.warning("API web search failed for %r: %s", query[:60], exc)
+
+    # Last resort only: DDG is unavailable on Python 3.14+, but retaining this
+    # branch preserves compatibility for older runtimes/configurations.
+    log.debug("SearXNG/API search unavailable, falling back to DDG for %r", query[:60])
     return _fallback_ddg(query, time_range=time_range, max_results=max_results)
