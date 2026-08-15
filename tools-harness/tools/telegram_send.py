@@ -44,6 +44,9 @@ def send_telegram(message: str, chat_id: str = None) -> str:
 
     import requests
 
+    if len(message) > 4000:
+        message = message[:4000] + "…"
+
     last_exc = None
     for attempt in range(2):  # ponytail: one retry, covers transient wifi blips like Errno 51
         try:
