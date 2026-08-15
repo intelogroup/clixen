@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import os
 import asyncio
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 import httpx
@@ -18,6 +20,38 @@ PORT = int(os.getenv("WHATSAPP_BOT_PORT", "9236"))
 # loopback bind). When empty, loopback-only auth applies (matches the app's
 # loopback=owner model). Set WHATSAPP_BOT_TOKEN in .env to require it.
 BOT_TOKEN = os.getenv("WHATSAPP_BOT_TOKEN", "").strip()
+WEBHOOK_TIMEOUT = float(os.getenv("WHATSAPP_WEBHOOK_TIMEOUT", "120"))
+MAX_CONCURRENT_REQUESTS = max(1, int(os.getenv("WHATSAPP_MAX_CONCURRENT", "2")))
+
+# A timed-out asyncio wait does not stop the Python worker running harness_run.
+# Keep those workers bounded and keep their slot occupied until they actually
+# finish; otherwise every slow WhatsApp message creates another live thread and
+# eventually exhausts the process' file descriptors.
+_REQUEST_EXECUTOR = ThreadPoolExecutor(
+    max_workers=MAX_CONCURRENT_REQUESTS,
+    thread_name_prefix="whatsapp-request",
+)
+_ACTIVE_REQUESTS: set[str] = set()
+_ACTIVE_REQUESTS_LOCK = threading.Lock()
+
+
+def _claim_request(chat_id: str) -> bool:
+    with _ACTIVE_REQUESTS_LOCK:
+        if chat_id in _ACTIVE_REQUESTS or len(_ACTIVE_REQUESTS) >= MAX_CONCURRENT_REQUESTS:
+            return False
+        _ACTIVE_REQUESTS.add(chat_id)
+        return True
+
+
+def _release_request(chat_id: str) -> None:
+    with _ACTIVE_REQUESTS_LOCK:
+        _ACTIVE_REQUESTS.discard(chat_id)
+        no_active_requests = not _ACTIVE_REQUESTS
+    # inflight_tracker has one crash marker per channel. Do not clear the
+    # marker for a completed request while another WhatsApp request is still
+    # running.
+    if no_active_requests:
+        _inflight.clear("whatsapp")
 
 
 def _auth_ok(request: Request) -> bool:
@@ -132,7 +166,14 @@ async def webhook(request: Request, message: WebhookMessage):
         if message.fresh_context and message.context
         else base_chat_id
     )
+    if not _claim_request(chat_id):
+        log.warning("webhook busy chat_id=%s", chat_id)
+        return {
+            "reply": "I’m still processing your previous request. Please wait for that reply before sending another one.",
+            "message": message.message,
+        }
     _inflight.mark("whatsapp", chat_id, message.message)
+    timed_out = False
     try:
         # 2026-07-11: dropped the doc-creation-keyword pre-gate — classify_message()
         # already decides intent=="document" semantically, so gating the call behind
@@ -166,32 +207,36 @@ async def webhook(request: Request, message: WebhookMessage):
         else:
             cls = classify_message(query, channel="whatsapp") if ROUTER_AVAILABLE else None
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        worker = _REQUEST_EXECUTOR.submit(
+            harness_run,
+            query=query,
+            chat_id=chat_id,
+            model=cls.model if cls else None,
+            intent=cls.intent if cls else None,
+            specialist_hint=cls.specialist_hint if cls else None,
+            channel="whatsapp",
+            context_only=message.fresh_context,
+        )
         result = await asyncio.wait_for(
-            loop.run_in_executor(
-                None,
-                lambda: harness_run(
-                    query=query,
-                    chat_id=chat_id,
-                    model=cls.model if cls else None,
-                    intent=cls.intent if cls else None,
-                    specialist_hint=cls.specialist_hint if cls else None,
-                    channel="whatsapp",
-                    context_only=message.fresh_context,
-                ),
-            ),
-            timeout=120.0,
+            asyncio.wrap_future(worker, loop=loop),
+            timeout=WEBHOOK_TIMEOUT,
         )
 
         reply = result[0] if isinstance(result, tuple) else result
 
         return {"reply": reply, "message": message.message}
     except asyncio.TimeoutError:
+        timed_out = True
         log.error("webhook timeout chat_id=%s query=%r", chat_id, message.message[:200])
-        return JSONResponse(
-            {"error": "timeout", "reply": "Sorry, I took too long to respond. Please try again."},
-            status_code=504,
-        )
+        # The worker cannot be force-killed safely. Keep the request claimed
+        # until it exits, while returning a normal response so the bridge sends
+        # a visible status message instead of silently dropping the request.
+        worker.add_done_callback(lambda _future: _release_request(chat_id))
+        return {
+            "reply": "I couldn’t finish that request within two minutes. I stopped waiting; please resend it as a shorter question.",
+            "message": message.message,
+        }
     except Exception as e:
         log.error("webhook failed chat_id=%s query=%r: %s", chat_id, message.message[:200], e, exc_info=True)
         return JSONResponse(
@@ -199,7 +244,8 @@ async def webhook(request: Request, message: WebhookMessage):
             status_code=500,
         )
     finally:
-        _inflight.clear("whatsapp")
+        if not timed_out:
+            _release_request(chat_id)
 
 
 @app.post("/send")
