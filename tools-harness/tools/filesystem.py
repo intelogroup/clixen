@@ -283,8 +283,11 @@ _MAX_FILE_BYTES = 100_000  # 100 KB hard cap on any single file read
 
 
 def read_file(path: str, offset: int = 1, limit: int = 200) -> str:
+    from tools.fs_observation import observe
+
     p = _resolve_path(path)
     if not p.exists():
+        observe(p)  # records "absent" — lets a subsequent write_file blind-create it
         return f"File not found: {p}"
     if not p.is_file():
         return f"Not a file: {p}"
@@ -294,6 +297,7 @@ def read_file(path: str, offset: int = 1, limit: int = 200) -> str:
         raw = p.read_bytes()[:_MAX_FILE_BYTES].decode("utf-8", errors="replace")
     except PermissionError:
         return f"Permission denied: {p}"
+    observe(p)
 
     lines = raw.splitlines()
     total = len(lines)

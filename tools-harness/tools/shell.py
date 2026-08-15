@@ -317,15 +317,22 @@ def bash_exec(command: str, cwd: str | None = None, timeout: int = 60, sandbox: 
 
 def write_file(path: str, content: str) -> str:
     from tools.path_policy import validate_path
+    from tools.fs_observation import check_write, observe
     try:
         path = validate_path(path, write=True)
     except Exception as e:
         return f"[error] Security validation failed: {e}"
 
     p = Path(path).expanduser().resolve()
+    guard_err = check_write(p)
+    if guard_err:
+        return f"[error] {guard_err}"
     try:
+        if p.exists():
+            _save_undo_snapshot(p, p.read_text(encoding="utf-8", errors="replace"))
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
+        observe(p)
         lines = content.count("\n") + 1
         return f"Written {lines} lines to {p}"
     except PermissionError:
@@ -336,6 +343,7 @@ def write_file(path: str, content: str) -> str:
 
 def append_file(path: str, content: str) -> str:
     from tools.path_policy import validate_path
+    from tools.fs_observation import check_edit, observe
     try:
         path = validate_path(path, write=True)
     except Exception as e:
@@ -344,10 +352,15 @@ def append_file(path: str, content: str) -> str:
     p = Path(path).expanduser().resolve()
     if not p.exists():
         return f"[error] File not found: {p}"
+    guard_err = check_edit(p)
+    if guard_err:
+        return f"[error] {guard_err}"
     try:
         existing = p.read_text(encoding="utf-8", errors="replace")
         separator = "" if existing.endswith("\n") else "\n"
+        _save_undo_snapshot(p, existing)
         p.write_text(existing + separator + content, encoding="utf-8")
+        observe(p)
         lines = content.count("\n") + 1
         return f"Appended {lines} line(s) to {p}"
     except PermissionError:
@@ -417,6 +430,7 @@ def download_url(url: str, dest_path: str) -> str:
 
 def edit_file(path: str, old_str: str, new_str: str) -> str:
     from tools.path_policy import validate_path
+    from tools.fs_observation import check_edit, observe
     try:
         path = validate_path(path, write=True)
     except Exception as e:
@@ -425,6 +439,9 @@ def edit_file(path: str, old_str: str, new_str: str) -> str:
     p = Path(path).expanduser().resolve()
     if not p.exists():
         return f"[error] File not found: {p}"
+    guard_err = check_edit(p)
+    if guard_err:
+        return f"[error] {guard_err}"
     try:
         content = p.read_text(encoding="utf-8", errors="replace")
     except PermissionError:
@@ -449,6 +466,7 @@ def edit_file(path: str, old_str: str, new_str: str) -> str:
     _save_undo_snapshot(p, content)
     diff = _generate_diff(content, new_content, str(p))
     p.write_text(new_content, encoding="utf-8")
+    observe(p)
     return f"Edited {p} (replaced 1 occurrence).\nDiff:\n{diff}"
 
 
@@ -493,6 +511,8 @@ def undo_last_edit(path: str) -> str:
     if prior is None:
         return f"[error] No undo snapshot available for {p} (either never edited this session, or already undone)."
     p.write_text(prior, encoding="utf-8")
+    from tools.fs_observation import observe
+    observe(p)
     return f"Reverted {p} to its state before the last edit."
 
 
@@ -540,6 +560,7 @@ EDIT_FILE_FUZZY_SCHEMA = {
 
 def edit_file_fuzzy(path: str, old_str: str, new_str: str) -> str:
     from tools.path_policy import validate_path
+    from tools.fs_observation import check_edit, observe
     import difflib
     try:
         path = validate_path(path, write=True)
@@ -549,6 +570,9 @@ def edit_file_fuzzy(path: str, old_str: str, new_str: str) -> str:
     p = Path(path).expanduser().resolve()
     if not p.exists():
         return f"[error] File not found: {p}"
+    guard_err = check_edit(p)
+    if guard_err:
+        return f"[error] {guard_err}"
     try:
         content = p.read_text(encoding="utf-8", errors="replace")
     except PermissionError:
@@ -561,6 +585,7 @@ def edit_file_fuzzy(path: str, old_str: str, new_str: str) -> str:
         _save_undo_snapshot(p, content)
         diff = _generate_diff(content, new_content, str(p))
         p.write_text(new_content, encoding="utf-8")
+        observe(p)
         return f"Edited {p} (replaced 1 occurrence).\nDiff:\n{diff}"
 
     if count > 1:
@@ -625,6 +650,7 @@ def edit_file_fuzzy(path: str, old_str: str, new_str: str) -> str:
     _save_undo_snapshot(p, content)
     diff = _generate_diff(content, new_content, str(p))
     p.write_text(new_content, encoding="utf-8")
+    observe(p)
     return (
         f"Fuzzy-edited {p} (matched with similarity {best_ratio:.2f}).\n"
         f"Diff:\n{diff}"
