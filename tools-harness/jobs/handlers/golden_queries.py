@@ -153,6 +153,27 @@ def _evaluate(spec: dict, answer: str, trace: list, elapsed: float) -> list[str]
     return failures
 
 
+def _judge(spec: dict, answer: str) -> str | None:
+    """Cheap LLM-judge pass on an answer that already passed structural checks.
+    Returns a failure reason string, or None on PASS / judge-call error (fail-open —
+    a judge outage must not fail the whole suite)."""
+    from clients.cloud_client import chat
+
+    prompt = (
+        f"Query: {spec['query']}\nAnswer: {answer}\n\n"
+        "Does the answer plainly address the query, without hedging, refusal "
+        "language, or dodging the question? Reply exactly PASS, or FAIL: <one-line reason>."
+    )
+    try:
+        verdict = chat(prompt, tools=[], max_rounds=1).strip()
+    except Exception as exc:
+        log.warning("[golden] %s judge call errored, skipping: %s", spec["name"], exc)
+        return None
+    if verdict.upper().startswith("PASS"):
+        return None
+    return verdict[:200] or "judge FAIL (no reason given)"
+
+
 def handle(instance: dict) -> dict:
     import harness
     from store import trace_store
@@ -185,6 +206,10 @@ def handle(instance: dict) -> dict:
                     ex.shutdown(wait=False)
             trace = trace_store.get_trace(rid) or []
             failures = _evaluate(spec, answer, trace, time.time() - t0)
+            if not failures:
+                judge_failure = _judge(spec, answer)
+                if judge_failure:
+                    failures = [f"judge: {judge_failure}"]
         except (concurrent.futures.TimeoutError, TimeoutError) as exc:
             trace = trace_store.get_trace(rid) or []
             elapsed = time.time() - t0

@@ -38,3 +38,7 @@ The clixen routing system has been transitioned from a rigid, context-blind inte
 
 ## 3. Optimization (Bypassed Latency)
 - Telegram and WhatsApp bots run a quick regex checking for potential document creation requests (`_run_doc_agent`). For all other standard queries, they bypass the local `classify_message` call entirely, saving **2-5 seconds** of local classification model latency.
+
+## 4. Golden-Query Regression Suite
+- **[jobs/handlers/golden_queries.py](file:///Users/kalinovdameus/Developer/clixen/tools-harness/jobs/handlers/golden_queries.py)**: Replays a fixed set of real production-failure queries through `harness.run()` (or a direct intent pipeline for cases needing to inspect a specific tool call) and asserts structurally via `trace_store` — tool calls present, no spurious model escalation, no raw search operators, answer non-empty and not matching forbidden refusal patterns, wall-clock budget. On structural pass, a lightweight LLM-as-judge pass (`_judge()`) also checks the answer plainly addresses the query without hedging/refusal language — fails open (skipped, not suite-failing) on judge-call error.
+- Scheduled via `jobs/worker.py`'s `handler_registry.register("golden.queries", golden_queries.handle)`. Failures surface through the worker's existing `_notify_workflow_failure` plumbing (Telegram alert), no separate alerting path.
