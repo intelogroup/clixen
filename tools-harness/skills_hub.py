@@ -14,11 +14,14 @@ Skills Hub vs Automation Catalog vs TASK_ROUTING:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
+
+log = logging.getLogger("skills_hub")
 
 _HOME = str(Path.home())
 
@@ -391,6 +394,10 @@ def match_skill(query: str, min_score: float = 1.0) -> Skill | None:
 
     if best_skill and best_score >= min_score:
         return best_skill
+    log.info(
+        "no skill match for query=%r (best=%s score=%.2f < min=%.2f)",
+        query, best_skill.id if best_skill else None, best_score, min_score,
+    )
     return None
 
 
