@@ -138,7 +138,7 @@ _SCHEMA = pa.schema([
 
 def _get_table():
     db = lancedb.connect(_resolve_db_path())
-    if _TABLE in db.list_tables():
+    if _TABLE in db.list_tables().tables:
         return db.open_table(_TABLE)
     return db.create_table(_TABLE, schema=_SCHEMA)
 
@@ -273,6 +273,83 @@ def index_directory(path: str, glob: str = "*", refresh: bool = False) -> str:
     )
 
 
+_REWRITE_MODEL = "qwen3:8b"  # qwen3.5:4b named in CLAUDE.md wasn't actually pulled; qwen3:8b pulled 2026-08-19
+
+
+def _amplify_query(query: str) -> list[str]:
+    """Ask the local rewrite model for 2 alternate phrasings to widen recall.
+    Falls back to just the original query on any failure (offline, timeout, etc)."""
+    try:
+        resp = ollama.chat(
+            model=_REWRITE_MODEL,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "Rewrite this search query as 2 alternate phrasings that use "
+                    "different but related wording (synonyms, rephrasing). "
+                    "One per line, no numbering, no explanation.\n\nQuery: " + query
+                ),
+            }],
+            options={"num_predict": 80},
+            think=False,
+        )
+        text = resp["message"]["content"].strip()
+        alts = [ln.strip("-* \t") for ln in text.splitlines() if ln.strip()]
+        return [query] + alts[:2]
+    except Exception:
+        return [query]
+
+
+import re as _re
+
+_SYMBOL_RE = _re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _lexical_overlap(query: str, text: str) -> float:
+    """Cheap token-overlap score, case-insensitive."""
+    qtok = set(query.lower().split())
+    ttok = set(text.lower().split())
+    if not qtok:
+        return 0.0
+    return len(qtok & ttok) / len(qtok)
+
+
+_RERANK_URL = "http://127.0.0.1:8090/v1/rerank"
+
+
+def _rerank_llamacpp(query: str, candidates: list[str]) -> list[float] | None:
+    """Score candidates with a real cross-encoder (bge-reranker-v2-m3 served by
+    llama-server --reranking on :8090 — Ollama has no rerank endpoint, this is
+    the actual classification-head score, not an embedding-similarity proxy).
+    Returns None (caller falls back to the heuristic) if the server isn't up."""
+    import json
+    import urllib.request
+
+    body = json.dumps({"model": "bge-reranker-v2-m3", "query": query, "documents": candidates}).encode()
+    req = urllib.request.Request(_RERANK_URL, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+    except Exception:
+        return None
+    scores = [0.0] * len(candidates)
+    for r in data["results"]:
+        scores[r["index"]] = r["relevance_score"]
+    return scores
+
+
+def _symbol_overlap(query: str, text: str) -> float:
+    """Fraction of query identifier-shaped tokens (CamelCase, snake_case, dotted
+    API names) that appear VERBATIM (case-sensitive) in the text — catches exact
+    API symbol matches like 'GeometryNodeTree' or 'is_mode_edit' that generic
+    lexical overlap (lowercased, whitespace-only) misses or under-weights."""
+    qsyms = {s for s in _SYMBOL_RE.findall(query) if len(s) > 2 and (s != s.lower() or "_" in s)}
+    if not qsyms:
+        return 0.0
+    hits = sum(1 for s in qsyms if s in text)
+    return hits / len(qsyms)
+
+
 def semantic_file_search(query: str, path_filter: str = "", top_k: int = 5) -> str:
     try:
         table = _get_table()
@@ -283,24 +360,53 @@ def semantic_file_search(query: str, path_filter: str = "", top_k: int = 5) -> s
     if count == 0:
         return "No files indexed yet. Use index_directory first."
 
-    try:
-        vec = _embed(query)
-    except Exception as e:
-        return f"Embedding failed: {e}"
+    queries = _amplify_query(query)
 
-    results = (
-        table.search(vec)
-        .limit(top_k * 3)  # over-fetch to allow path filtering
-        .to_pandas()
-    )
+    # search with each phrasing, merge candidates keeping the best (lowest) distance per chunk id
+    best: dict[str, dict] = {}
+    for q in queries:
+        try:
+            vec = _embed(q)
+        except Exception:
+            continue
+        hits = table.search(vec).limit(top_k * 4).to_pandas()
+        for _, row in hits.iterrows():
+            rid = row["id"]
+            if rid not in best or row["_distance"] < best[rid]["_distance"]:
+                best[rid] = row.to_dict()
+
+    if not best:
+        return f"Embedding failed for query: '{query}'"
+
+    import pandas as pd
+    results = pd.DataFrame(best.values())
 
     if path_filter:
         results = results[results["path"].str.contains(path_filter, regex=False)]
 
-    results = results.head(top_k)
-
     if results.empty:
         return f"No results for '{query}'" + (f" under {path_filter}" if path_filter else "")
+
+    # rerank: prefer a real cross-encoder (llama-server --reranking) over vector
+    # distance — distance alone put the actual GeometryNodeTree API page at rank
+    # 7/10 for a query naming its exact symbols. Falls back to the distance +
+    # symbol/lexical-overlap heuristic if the rerank server isn't running.
+    rerank_scores = _rerank_llamacpp(query, results["text"].tolist())
+    if rerank_scores is not None:
+        results["_score"] = [-s for s in rerank_scores]  # sort ascending = best first
+    else:
+        results["_lex"] = results["text"].apply(lambda t: _lexical_overlap(query, t))
+        results["_sym"] = results["text"].apply(lambda t: _symbol_overlap(query, t))
+        # raw vector distance is on an unbounded/uncalibrated scale (nomic-embed-text
+        # L2, seen ranging ~200-250 within one result set) — min-max normalize it into
+        # [0,1] per query so the lexical/symbol bonuses (already 0-1) are comparable
+        # instead of being drowned out by a ~30-unit distance spread.
+        dmin, dmax = results["_distance"].min(), results["_distance"].max()
+        span = dmax - dmin
+        results["_dnorm"] = (results["_distance"] - dmin) / span if span > 0 else 0.0
+        results["_score"] = results["_dnorm"] - 0.35 * results["_sym"] - 0.15 * results["_lex"]
+    results = results.sort_values(by="_score", ascending=True)
+    results = results.head(top_k)
 
     parts = []
     for _, row in results.iterrows():
