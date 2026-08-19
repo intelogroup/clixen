@@ -79,3 +79,24 @@ SKILLS.append(_s(
         r"(?=.*\b(comment|annotate|note)\b)(?=.*\b(docx|word|document|file|pdf)\b)"
     ),
 ))
+
+
+SKILLS.append(_s(
+    "Search Indexed Files",
+    "Meaning-based search over already-indexed local files/docs (Blender manual, code, notes) — "
+    "finds relevant content even when the exact wording doesn't match. Use for 'find where X is "
+    "mentioned', 'is there anything about Y', 'look up Z in the docs'. Not for exact identifiers "
+    "or literal strings — those go through fulltext_search instead.",
+    "Docs",
+    ["semantic_file_search"],
+    "Call semantic_file_search(query=...) with the user's question as the query. Report the "
+    "matched file paths and relevant excerpts. If it returns 'No files indexed yet', say the "
+    "directory needs index_directory run first and name which directory.",
+    ["search the docs", "find in docs", "search indexed files", "look up in the manual",
+     "search blender docs", "find where it says", "is there anything about",
+     "search my notes", "semantic search"],
+    max_rounds=3, icon="search",
+    trigger_regex=(
+        r"(?=.*\b(search|find|look\s?up)\b)(?=.*\b(docs?|manual|notes?|indexed|files?)\b)"
+    ),
+))
