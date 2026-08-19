@@ -9,6 +9,7 @@ Local LLM harness + chat app, on-device (Apple M4, 24 GB unified memory).
 - **`AGENTS.md`**: deeper agent-dev reference — tool inventory, specialist dispatch, browser automation, connectors, voice. Points into `docs/agents/*.md` for full depth.
 - **Standalone script runs**: use `~/Developer/clixen/.venv/bin/python`, not system python — it has `mcp` and all deps; system python is too old/missing packages for some modules.
 - **Type check**: `npm run typecheck` (`tsc --noEmit`) — run after any `.ts`/`.tsx` edit, no build step needed.
+- **Blender knowledge base**: `~/.claude/skills/blender-motion/references/*.md` (bpy gotchas, GN scatter, materials, shading) is indexed into LanceDB via `tools/semantic_files.py` (`index_directory`). Query it with `semantic_file_search` instead of re-reading the raw markdown when the skill file grows past what fits in context — re-run `index_directory` on that folder after adding new notes to keep it current.
 
 ## Design Principles
 - **Prefer prompt/code/system design over regex routing.** Regex is fine for one bounded, precise thing; use good prompts, clean code, and clean APIs for intent classification/routing/parsing.
@@ -43,7 +44,7 @@ Cloud-first (2026-07): main agent defaults to cloud via OpenRouter — local gem
 | `openrouter/anthropic/claude-haiku-4.5` | Cloud | Fallback on error / 3 consecutive tool errors |
 | `openrouter/google/gemini-3.1-flash-lite` | Cloud | Primary vision (`harness.py` routes `vision` intent here via `CLOUD_VISION_MODEL`) |
 | `gemma4:12b` (GGUF) | Local | OCR/vision-capable, intent classifier, manual override, IDE-mode fallback — replaced `-mlx` tag 2026-08-08, mlx never received image bytes (Ollama runtime bug) |
-| `qwen3.5:4b` | Local | Query rewriting, history compaction |
+| `qwen3:8b` | Local | Query rewriting, history compaction — replaced `qwen3.5:4b` 2026-08-19, that tag was never actually pulled |
 | `tools/local_vision.py` | Local | Replaces qwen3-vl for most screenshot analysis tasks |
 | `nomic-embed-text` | Local | Embeddings (`tools/semantic_files.py`, `store/knowledge_base.py`) |
 
