@@ -287,13 +287,27 @@ class KnowledgeBase:
         count = self.table.count_rows()
         if count == 0:
             return {"total": 0, "by_source": {}}
-        df = self.table.to_pandas()
-        return {
-            "total":     count,
-            "by_source": df["source"].value_counts().to_dict(),
-            "by_method": df["method"].value_counts().to_dict(),
-            "by_lang":   df["lang"].value_counts().to_dict(),
-        }
+        try:
+            df = self.table.to_pandas()
+            return {
+                "total":     count,
+                "by_source": df["source"].value_counts().to_dict(),
+                "by_method": df["method"].value_counts().to_dict(),
+                "by_lang":   df["lang"].value_counts().to_dict(),
+            }
+        except ImportError:
+            # pylance not installed — fall back to arrow (no lance dependency)
+            tbl = self.table.to_arrow()
+            from collections import Counter
+            src = Counter(tbl.column("source").to_pylist())
+            meth = Counter(tbl.column("method").to_pylist())
+            lang = Counter(tbl.column("lang").to_pylist())
+            return {
+                "total":     count,
+                "by_source": dict(src),
+                "by_method": dict(meth),
+                "by_lang":   dict(lang),
+            }
 
     def validate(self, known_pairs: list[tuple[str, str, bool]] = None) -> dict:
         """
