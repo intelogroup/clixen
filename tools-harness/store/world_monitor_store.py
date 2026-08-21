@@ -199,7 +199,7 @@ def cleanup_old_scans(days: int = 7) -> None:
     with _conn() as conn:
         conn.execute(
             "DELETE FROM raw_scans WHERE scanned_at < ?",
-            (datetime.now(timezone.utc).isoformat(),),
+            ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(),),
         )
 
 
