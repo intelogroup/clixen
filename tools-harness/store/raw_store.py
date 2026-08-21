@@ -119,7 +119,7 @@ class RawStore:
         Dedup: same content sha256 = no-op, returns existing id.
         """
         cid = _content_id(content)
-        content_hash = _file_hash(file_path) if file_path else cid
+        content_hash = (_file_hash(file_path) or cid) if file_path else cid
 
         with self._conn() as conn:
             existing = conn.execute(
