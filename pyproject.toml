@@ -54,7 +54,7 @@ dependencies = [
   "google-auth-oauthlib",
   "google-auth-httplib2",
   "google-api-python-client",
-  "twscrape[curl]>=0.19.2,<0.20",
+  "twscrape[curl]>=0.20.1",
   "resemblyzer>=0.1.4",
   "paper-qa>=5.0.0",
   "reportlab>=4.0.0",
