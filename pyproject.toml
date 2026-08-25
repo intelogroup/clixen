@@ -54,7 +54,7 @@ dependencies = [
   "google-auth-oauthlib",
   "google-auth-httplib2",
   "google-api-python-client",
-  "twscrape[curl] @ git+https://github.com/intelogroup/twscrape.git@clixen-fixes",
+  "twscrape[curl,browser] @ git+https://github.com/intelogroup/twscrape.git@clixen-fixes",
   "resemblyzer>=0.1.4",
   "paper-qa>=5.0.0",
   "reportlab>=4.0.0",
