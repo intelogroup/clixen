@@ -32,11 +32,19 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+# Real per-account GraphQL limits, read live from X's x-rate-limit-* response
+# headers (verified 2026-08-25, may drift): SearchTimeline ~50/15min,
+# UserByScreenName ~150/15min, Followers ~50/15min. twscrape auto-locks the
+# account per-endpoint until reset and surfaces XClIdAccountError on abuse
+# patterns — this is a heads-up for the caller, not enforced here.
+_RATE_LIMIT_NOTE = " Rate-limited by X per account (~50 requests/15min for this endpoint type); repeated heavy use risks the account being temporarily locked."
+
 SCHEMA_SEARCH = {
     "type": "function",
     "function": {
         "name": "x_search",
-        "description": "Search X (Twitter) for recent tweets matching a query.",
+        "description": "Search X (Twitter) for recent tweets matching a query."
+        + _RATE_LIMIT_NOTE,
         "parameters": {
             "type": "object",
             "properties": {
@@ -58,7 +66,7 @@ SCHEMA_READ = {
     "type": "function",
     "function": {
         "name": "x_read_tweet",
-        "description": "Read an X post by URL or numeric post ID.",
+        "description": "Read an X post by URL or numeric post ID." + _RATE_LIMIT_NOTE,
         "parameters": {
             "type": "object",
             "properties": {
@@ -73,7 +81,7 @@ SCHEMA_USER = {
     "type": "function",
     "function": {
         "name": "x_user_tweets",
-        "description": "Get recent posts from an X account.",
+        "description": "Get recent posts from an X account." + _RATE_LIMIT_NOTE,
         "parameters": {
             "type": "object",
             "properties": {
