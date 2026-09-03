@@ -225,7 +225,12 @@ def get_service(api: str, version: str):
     key = f"{api}:{version}"
     if key in _services:
         _maybe_refresh_token()
-        return _services[key]
+        # _maybe_refresh_token() clears _services on a near-expiry refresh —
+        # re-check instead of trusting the membership test above, or a
+        # refresh landing right here raises KeyError on the now-empty cache
+        # (live 2026-08-21 and 2026-09-03: intermittent 'calendar:v3' crash).
+        if key in _services:
+            return _services[key]
 
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
