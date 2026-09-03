@@ -31,9 +31,6 @@ Shared helper module shells out to the `agent-browser` CLI with `--auto-connect`
 **Fallback**: direct `api.sofascore.com/api/v1/` via `curl_cffi` (Chrome TLS impersonation) — plain `httpx`/`requests` gets WAF-blocked (403).
 Sport slugs: football, basketball, tennis, american-football, baseball, ice-hockey, mma, esports, rugby, cricket, volleyball, handball.
 
-### Ringback (real SIP call, not a browser tool)
-`tools/connector_ringback.py`'s `call_my_phone()` places a real SIP call, gated by a 900s cooldown (`RINGBACK_CALL_COOLDOWN_SECONDS` env, default 900) tracked via `_check_and_update_cooldown()`/`_restore_cooldown()`. On cooldown, returns `"[ringback cooldown] ... callable again in Ns"` — the tool description tells the model to quote the remaining-seconds figure verbatim, not paraphrase it.
-
 ## Credential Vault (`tools/vault.py`) — unaffected by the BrowserOS removal
 macOS Keychain-backed credential storage, still live: `vault_save(service, data)`, `vault_get(service)`, `vault_list()`, `vault_delete(service)`.
 

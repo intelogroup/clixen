@@ -39,6 +39,19 @@ from tools.scrapling_fetch import (
     _scrapling_extract, _scrapling_fetch_and_extract,
 )
 from tools.fetch_url import SCHEMA as WEB_FETCH_SCHEMA, execute as _web_fetch
+from tools.apify import (
+    RUN_ACTOR_SCHEMA as APIFY_RUN_ACTOR_SCHEMA,
+    LIST_ACTORS_SCHEMA as APIFY_LIST_ACTORS_SCHEMA,
+    RUN_MY_ACTOR_SCHEMA as APIFY_RUN_MY_ACTOR_SCHEMA,
+    apify_run_actor as apify_run_actor_exec,
+    apify_list_actors as apify_list_actors_exec,
+    apify_run_my_actor as apify_run_my_actor_exec,
+)
+from tools.fal import FAL_GENERATE_SCHEMA, fal_generate as fal_generate_exec
+from tools.tencent_hunyuan3d import (
+    TENCENT_HUNYUAN3D_SCHEMA,
+    tencent_hunyuan3d_generate as tencent_hunyuan3d_generate_exec,
+)
 
 _search_log = _logging.getLogger("websearch")
 
@@ -378,6 +391,7 @@ from tools.browser import (
 )
 from tools.automation_tools import AUTOMATION_TOOLS_SCHEMAS, AUTOMATION_EXECUTORS
 from tools.memory_tools import MEMORY_SCHEMAS, MEMORY_EXECUTORS
+from tools.verse_agent import VERSE_AGENT_SCHEMAS, VERSE_AGENT_EXECUTORS
 from tools.plan_tool import PLAN_TASK_SCHEMAS, PLAN_TASK_EXECUTORS
 from skills_hub import SKILLS_HUB_SCHEMAS, SKILLS_HUB_EXECUTORS
 
@@ -432,8 +446,6 @@ from tools.connector_doordash import SCHEMAS as DOORDASH_SCHEMAS
 from tools.connector_doordash import get_my_doordash_orders, get_my_doordash_cart, get_doordash_order_status
 from tools.connector_uber import SCHEMAS as UBER_SCHEMAS
 from tools.connector_uber import get_my_uber_trips, estimate_uber_ride
-from tools.connector_ringback import SCHEMAS as RINGBACK_SCHEMAS
-from tools.connector_ringback import call_my_phone
 from tools.connector_sofascore import SCHEMAS as SOFASCORE_SCHEMAS
 from tools.connector_sofascore import (
     search_teams, get_team, get_scheduled_events,
@@ -441,6 +453,9 @@ from tools.connector_sofascore import (
 )
 from tools.local_vision import SCHEMAS as LOCAL_VISION_SCHEMAS
 from tools.local_vision import local_vision_snap, local_vision_highlight
+from tools.segment import SCHEMA as SEGMENT_SCHEMA
+from tools.depth import SCHEMA as DEPTH_SCHEMA
+from tools.prep_animation import SCHEMA as PREP_ANIMATION_SCHEMA
 from tools.session_browser import SCHEMAS as SESSION_SCHEMAS
 from tools.session_browser import session_login, session_check
 

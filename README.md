@@ -98,7 +98,6 @@ clixen/
 │   │   ├── connector_uber.py   # Uber ride estimates
 │   │   ├── connector_doordash.py
 │   │   ├── connector_sofascore.py
-│   │   ├── connector_ringback.py # call_my_phone() — real SIP call, 900s cooldown
 │   │   ├── scrapling_fetch.py  # Adaptive web scraping
 │   │   ├── browser.py          # Headless browser (Playwright)
 │   │   ├── session_browser.py  # Persistent browser sessions
@@ -228,9 +227,6 @@ clixen/
 │   │
 │   ├── kokoro_daemon.py        # TTS warm daemon
 │   ├── voiceprint_daemon.py    # Speaker verification daemon
-│   └── ringback/                # SIP voice-call docker source + MCP server (own repo, vendored)
-│       ├── src/voice_mcp.py    # MCP server: call_start/call_end tools
-│       └── .last_call_ts       # Cooldown state, read by tools/connector_ringback.py
 │
 ├── docs/                       # Documentation
 │   ├── agents/                 # Agent development internals
@@ -407,13 +403,13 @@ The only local-only carve-out is the `ocr` intent (no multimodal support in the 
 ### 1. One-shot setup (fresh clone)
 
 ```bash
-./setup.sh                 # submodules + venv + npm + model guidance + .env
+./setup.sh                 # venv + npm + model guidance + .env
 # optionally: ./setup.sh --use-uv  (uv sync instead of pip)
 #             ./setup.sh --no-models (code-only, skip model pulls)
 ```
 
-This initializes the `ringback` submodule, installs Python + Node deps, guides
-model downloads, and creates `tools-harness/.env` from `.env.example`. Then:
+This installs Python + Node deps, guides model downloads, and creates
+`tools-harness/.env` from `.env.example`. Then:
 
 ```bash
 # 2. edit tools-harness/.env with your API keys (see .env.example for where to get them)
@@ -487,14 +483,14 @@ Other required software: **Ollama** (https://ollama.com), **Docker** (for SearXN
 | 9234 | Web UI (`chat_ui.py`) | 127.0.0.1 |
 | 9235 | WhatsApp bridge (Baileys) | 127.0.0.1 |
 | 9236 | WhatsApp bot | 127.0.0.1 |
-| 9237 | Kokoro TTS daemon | 0.0.0.0 (ringback docker needs it; `KOKORO_BIND_HOST` to override) |
+| 9237 | Kokoro TTS daemon | 0.0.0.0 (`KOKORO_BIND_HOST` to override) |
 | 9238 | Voiceprint daemon | 127.0.0.1 |
 | 11434 | Ollama | localhost |
 | 8888 | SearXNG | localhost |
 | 3100 | Autopilot Mail (optional) | localhost |
 
 All services bind loopback by default. The only non-loopback socket is the Kokoro TTS
-daemon (deliberate — the ringback docker container reaches it via `host.docker.internal`);
+daemon (deliberate — a docker container consumer reaches it via `host.docker.internal`);
 set `KOKORO_AUTH_TOKEN` to gate it.
 
 ## Auth & Multi-User Notes

@@ -182,9 +182,6 @@ def _make_thread(name: str) -> threading.Thread:
 def main():
     print("Starting Clixen Core (consolidated)...")
 
-    from tools.connector_ringback import reap_orphaned_processes
-    reap_orphaned_processes()
-
     threads: dict[str, threading.Thread] = {}
     last_restart: dict[str, float] = {}
     restart_counts: dict[str, int] = {}

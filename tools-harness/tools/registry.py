@@ -97,7 +97,6 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "download_video": frozenset({"spec_video"}),
     "edit_file": frozenset({"core", "fs", "git", "spec_write"}),
     "edit_file_fuzzy": frozenset({"code", "spec_write"}),
-    "call_my_phone": frozenset({"core"}),
     "get_my_doordash_orders": frozenset({"browser"}),
     "get_my_doordash_cart": frozenset({"browser"}),
     "get_doordash_order_status": frozenset({"browser"}),
@@ -297,7 +296,7 @@ _COMMAND_ARG_KEYS = {"command", "code"}
 # Same medium-risk gate as _CONFIRM_REQUIRED_SUBSTRINGS, but these tools take
 # structured args (title/body), not a "command" string, so they're keyed by
 # tool name instead.
-_CONFIRM_REQUIRED_TOOL_NAMES = frozenset({"github_create_issue", "github_create_pr", "call_my_phone"})
+_CONFIRM_REQUIRED_TOOL_NAMES = frozenset({"github_create_issue", "github_create_pr"})
 
 # Document exports always require approval, even when the destination is new.
 # Existing destinations also require approval for ordinary file mutations. This
@@ -470,10 +469,9 @@ def _warn_if_suspiciously_empty(name: str, result: str) -> None:
         )
 
 
-# Tools rate-limited centrally instead of each baking its own cooldown guard
-# (call_my_phone used to carry a bespoke flock-file cooldown in
-# connector_ringback.py — moved here so any tool can opt in with one entry).
-_RATE_LIMITS = {"call_my_phone": 900}
+# Tools rate-limited centrally instead of each baking its own cooldown guard —
+# any tool can opt in with one entry.
+_RATE_LIMITS: dict[str, int] = {}
 
 
 def _execute_raw(name: str, arguments: dict) -> str:
@@ -484,9 +482,8 @@ def _execute_raw(name: str, arguments: dict) -> str:
         if not allowed:
             remaining = max(0, _RATE_LIMITS[name] - elapsed)
             return (
-                f"[ringback cooldown] last call was {elapsed:.0f}s ago "
-                f"(cooldown={_RATE_LIMITS[name]}s) — callable again in {remaining:.0f}s. "
-                f"Tell the user exactly when you can call back, and offer text/telegram as alternatives."
+                f"[cooldown] last call was {elapsed:.0f}s ago "
+                f"(cooldown={_RATE_LIMITS[name]}s) — callable again in {remaining:.0f}s."
             )
         _rl_previous_ts = previous_ts
     try:
@@ -502,10 +499,9 @@ def _execute_raw(name: str, arguments: dict) -> str:
         from tools.agent_hooks import run_post_tool
         result = run_post_tool(name, arguments, result)
         _warn_if_suspiciously_empty(name, result)
-        # A docker/network flake on the guarded call itself shouldn't burn the
-        # cooldown window on nothing (mirrors connector_ringback.py's old
-        # per-tool _restore_cooldown behavior, now centralized here).
-        if _rl_previous_ts is not None and result.startswith("[ringback error]"):
+        # A flake on the guarded call itself shouldn't burn the cooldown
+        # window on nothing.
+        if _rl_previous_ts is not None and result.startswith("[error]"):
             from tools.rate_limit import restore
             restore(name, _rl_previous_ts)
         return result

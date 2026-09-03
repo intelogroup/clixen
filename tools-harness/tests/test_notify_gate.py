@@ -70,25 +70,6 @@ def test_wake_agent_falls_back_to_raw_finding_on_verify_failure(notified, monkey
     assert "big opportunity" in notified[0]["message"]
 
 
-def test_call_phone_true_places_call(notified, monkeypatch):
-    monkeypatch.setattr("clients.cloud_client.chat", lambda **kw: json.dumps({"alert": True, "reason": "urgent"}))
-    calls = []
-    monkeypatch.setattr(notify_gate, "_call_linphone", lambda text: calls.append(text))
-    sent = notify_gate.decide_and_notify(finding="huge thing", source="test", fallback_alert=False, call_phone=True)
-    assert sent is True
-    assert len(calls) == 1
-
-
-def test_call_phone_translates_before_ringback_tts(monkeypatch):
-    spoken = []
-    monkeypatch.setattr(notify_gate, "_translate_for_phone", lambda text: "Bonjour, découverte importante.")
-    monkeypatch.setattr("tools.connector_ringback.call_my_phone", lambda message: spoken.append(message) or "[ringback ok]")
-
-    notify_gate._call_linphone("Important finding")
-
-    assert spoken == ["Bonjour, découverte importante."]
-
-
 def test_bypass_gate_skips_llm_and_uses_fallback(notified, monkeypatch):
     def boom(**kw):
         raise AssertionError("chat() should not be called when bypass_gate=True")
@@ -107,20 +88,3 @@ def test_bypass_gate_false_fallback_suppresses(notified, monkeypatch):
     assert notified == []
 
 
-def test_call_phone_false_never_calls(notified, monkeypatch):
-    monkeypatch.setattr("clients.cloud_client.chat", lambda **kw: json.dumps({"alert": True, "reason": "urgent"}))
-    calls = []
-    monkeypatch.setattr(notify_gate, "_call_linphone", lambda text: calls.append(text))
-    notify_gate.decide_and_notify(finding="huge thing", source="test", fallback_alert=False)
-    assert calls == []
-
-
-def test_call_phone_failure_does_not_block_notification(notified, monkeypatch):
-    monkeypatch.setattr("clients.cloud_client.chat", lambda **kw: json.dumps({"alert": True, "reason": "urgent"}))
-
-    def boom(**kw):
-        raise RuntimeError("no ringback module")
-    monkeypatch.setattr("tools.connector_ringback.call_my_phone", lambda message: (_ for _ in ()).throw(RuntimeError("docker down")))
-    sent = notify_gate.decide_and_notify(finding="huge thing", source="test", fallback_alert=False, call_phone=True)
-    assert sent is True
-    assert len(notified) == 1

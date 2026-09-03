@@ -332,9 +332,6 @@ def main() -> None:
 
     _setup_handler_registry()
 
-    from tools.connector_ringback import reap_orphaned_processes
-    reap_orphaned_processes()
-
     _log.info("task worker started (poll_interval=%d seconds)", args.poll_interval)
 
     try:

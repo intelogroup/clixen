@@ -761,7 +761,6 @@ EXECUTORS = {
     "estimate_uber_ride": lambda args: estimate_uber_ride(
         destination=args.get("destination", "3 Manning Terrace, Everett MA"), pickup=args.get("pickup", "")
     ),
-    "call_my_phone": lambda args: call_my_phone(message=args.get("message", "")),
     "sofascore_search_teams": lambda args: search_teams(query=args["query"], sport=args.get("sport", "football")),
     "sofascore_get_team": lambda args: get_team(team_id=args["team_id"]),
     "sofascore_scheduled_events": lambda args: get_scheduled_events(sport=args.get("sport", "football"), date_str=args.get("date")),

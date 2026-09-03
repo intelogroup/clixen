@@ -3,8 +3,7 @@
 Periodically queries free public global-intelligence sources (no API key needed)
 for interesting events across science, health, conflict, climate, energy, and
 tech. Uses LLM to judge what's worth surfacing given the user's profile as a
-scientist, engineer, and doctor. Interesting findings trigger notify_gate with
-call_phone=True — so the main agent can call the user about them.
+scientist, engineer, and doctor. Interesting findings trigger notify_gate.
 
 instance["config"] keys:
   poll_hours  int — hours between scans (default 4)
@@ -282,7 +281,6 @@ def handle(instance: dict) -> dict:
             fallback_alert=True,
             bypass_gate=True,
             level="info",
-            call_phone=True,
         )
 
     # Track source hit rate

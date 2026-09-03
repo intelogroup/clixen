@@ -415,7 +415,7 @@ def apply_decision(paper: dict, decision: dict, kb) -> str:
                         store.record_niche_notify(niche)
                         decide_and_notify(
                             finding=finding_text,
-                            source="science_scout", fallback_alert=True, wake_agent=True, call_phone=True, bypass_gate=True,
+                            source="science_scout", fallback_alert=True, wake_agent=True, bypass_gate=True,
                             on_suppress=lambda finding, reason: store.log_suppressed_alert("science_scout", finding, reason),
                         )
             except Exception as e:

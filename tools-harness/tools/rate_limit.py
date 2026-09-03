@@ -1,8 +1,6 @@
 """Generic per-key cooldown, flock-guarded for cross-process safety.
 
-Generalizes the pattern that used to live one-off inside
-connector_ringback.py (_check_and_update_cooldown/_restore_cooldown) so any
-tool can be rate-limited from one place (tools/registry.py::_execute_raw)
+Any tool can be rate-limited from one place (tools/registry.py::_execute_raw)
 instead of each tool baking its own guard.
 """
 from __future__ import annotations
@@ -12,7 +10,7 @@ import re
 import time
 from pathlib import Path
 
-_STATE_DIR = Path(__file__).resolve().parent.parent / "ringback"
+_STATE_DIR = Path(__file__).resolve().parent.parent / ".rate_limit_state"
 _STATE_DIR.mkdir(exist_ok=True)
 _SAFE_KEY_RE = re.compile(r"[^a-zA-Z0-9_.-]")
 

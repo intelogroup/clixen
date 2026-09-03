@@ -22,12 +22,6 @@ done
 
 echo "==> Clixen setup in $REPO_ROOT"
 
-# --- 1. git submodules (ringback SIP voice source) -------------------------
-if [ -f "$REPO_ROOT/.gitmodules" ]; then
-  echo "==> Initializing git submodules..."
-  git -C "$REPO_ROOT" submodule update --init --recursive
-fi
-
 # --- 2. Python environment -------------------------------------------------
 if [ "$USE_UV" = "1" ]; then
   echo "==> Installing deps with uv (from pyproject.toml)..."

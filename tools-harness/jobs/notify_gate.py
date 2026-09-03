@@ -15,51 +15,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
 from typing import Callable
 
 _log = logging.getLogger(__name__)
 
-# ponytail: ringback's pjsua backend crashes (native assert abort) if a second
-# call is placed while the first is still tearing down its SIP registration —
-# hit live when science_scout fired two strong findings ~seconds apart. One
-# process-wide lock serializes calls; good enough since all callers run in
-# the same worker process.
-_CALL_LOCK = threading.Lock()
-
 _DECISION_SYSTEM_PROMPT = """You decide whether a background finding is worth interrupting \
 the user for. Given the finding, respond with ONLY JSON: {"alert": true|false, "reason": \
 "one sentence"}. Alert only if it is actionable, time-sensitive, or high-value; otherwise false."""
-
-
-def _translate_for_phone(text: str) -> str:
-    """Translate background-call speech; preserve source text on any failure."""
-    # Monitor/scout phone briefings use the local Kokoro English voice by default.
-    # Set CLIXEN_CALL_LANGUAGE explicitly when a translated call is desired.
-    language = os.environ.get("CLIXEN_CALL_LANGUAGE", "en").strip().lower()
-    if not text or language in {"", "en", "none", "off"}:
-        return text
-    try:
-        from clients.cloud_client import chat
-        response = chat(
-            user_message=(
-                f"Translate this scientific or news briefing into {language}. "
-                "Preserve facts, numbers, names, uncertainty, and source labels. "
-                "Return only the translation.\n\n" + text
-            ),
-            reasoning_effort="low",
-        )
-        translated = str(response or "").strip()
-        try:
-            parsed = json.loads(translated)
-            if isinstance(parsed, dict):
-                translated = str(parsed.get("translation", "")).strip()
-        except (TypeError, ValueError, json.JSONDecodeError):
-            pass
-        return translated or text
-    except Exception:
-        _log.warning("[notify_gate] phone translation failed; using source text", exc_info=True)
-        return text
 
 
 def decide_and_notify(
@@ -74,7 +36,6 @@ def decide_and_notify(
     action_payload: dict | None = None,
     on_suppress: Callable[[str, str], None] | None = None,
     wake_agent: bool = False,
-    call_phone: bool = False,
     bypass_gate: bool = False,
 ) -> bool:
     """Ask whether `finding` should alert the user; notify if so. Returns
@@ -85,11 +46,6 @@ def decide_and_notify(
     cross-check sources, judge credibility — before anything reaches the
     user. Falls back to the raw finding if the agent run itself fails, so a
     harness bug never silently eats an alert that passed the gate.
-
-    call_phone=True: on top of the Telegram push, also place a real SIP call
-    via ringback (Linphone) speaking the message. Best-effort — cooldown/
-    docker/call failures never block the Telegram push or the notification
-    row, they just log.
 
     bypass_gate=True: skip the LLM alert/suppress judgment entirely and use
     fallback_alert as-is. The gate's "is this actually worth interrupting
@@ -130,8 +86,6 @@ def decide_and_notify(
         action_type=action_type, action_payload=action_payload,
     )
     _push_telegram(_format_for_telegram(source, _summarize_for_telegram(message)))
-    if call_phone:
-        _call_linphone(message)
     return True
 
 
@@ -208,26 +162,3 @@ def _push_telegram(text: str) -> None:
         _send_telegram(token, chat_id, text, parse_mode="Markdown")
     except Exception:
         _log.warning("[notify_gate] telegram push failed", exc_info=True)
-
-
-def _call_linphone(text: str) -> None:
-    """Best-effort SIP call via ringback — cooldown/docker/call failures
-    never raise, caller already sent Telegram as the guaranteed channel."""
-    try:
-        from tools.connector_ringback import call_my_phone
-        # Callers build messages with \n\n between finding/reason for readable Telegram
-        # text — Piper renders a literal paragraph break as a long silence gap inside
-        # the single WAV, which sounds like the call audio stopping and restarting.
-        # Collapse to single spaces since this is spoken, not displayed.
-        spoken = " ".join(_translate_for_phone(text).split())
-        # ponytail: 1600 chars ~= 90s spoken — enough for a real scientific-depth
-        # briefing (result + numbers + methodology), not just a headline. Was 400,
-        # which cut every finding down to a one-line hook regardless of content.
-        with _CALL_LOCK:
-            result = call_my_phone(spoken[:1600])
-        if result.startswith("[ringback cooldown]"):
-            _log.info("[notify_gate] %s", result)
-        elif result.startswith("[ringback error]") or result.startswith("[invalid arguments]"):
-            _log.warning("[notify_gate] ringback call not placed: %s", result)
-    except Exception:
-        _log.warning("[notify_gate] ringback call failed", exc_info=True)

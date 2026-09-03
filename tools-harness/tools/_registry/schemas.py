@@ -23,6 +23,14 @@ ALL_TOOLS = [
     SCRAPLING_STEALTHY_SCHEMA,
     SCRAPLING_EXTRACT_SCHEMA,
     SCRAPLING_FETCH_AND_EXTRACT_SCHEMA,
+    # Apify Actors (cloud scraping/automation)
+    APIFY_RUN_ACTOR_SCHEMA,
+    APIFY_LIST_ACTORS_SCHEMA,
+    APIFY_RUN_MY_ACTOR_SCHEMA,
+    # fal.ai generative media
+    FAL_GENERATE_SCHEMA,
+    # Tencent Cloud Hunyuan-3D generation
+    TENCENT_HUNYUAN3D_SCHEMA,
     # Media
     AUDIO_SCHEMA,
     CONVERT_AUDIO_SCHEMA,
@@ -230,10 +238,12 @@ ALL_TOOLS = [
     *VAULT_SCHEMAS,
     *DOORDASH_SCHEMAS,
     *UBER_SCHEMAS,
-    *RINGBACK_SCHEMAS,
     *SOFASCORE_SCHEMAS,
     *SESSION_SCHEMAS,
     *LOCAL_VISION_SCHEMAS,
+    SEGMENT_SCHEMA,
+    DEPTH_SCHEMA,
+    PREP_ANIMATION_SCHEMA,
     DEEP_RESEARCH_SCHEMA,
     # X (Twitter) via twscrape
     X_BIRD_SEARCH_SCHEMA,
@@ -241,6 +251,8 @@ ALL_TOOLS = [
     X_BIRD_USER_SCHEMA,
     # Persistent cross-session memory
     *MEMORY_SCHEMAS,
+    # Verse (aiverse multi-agent sim) peer-ask
+    *VERSE_AGENT_SCHEMAS,
     # Mid-task plan/todo scratchpad
     *PLAN_TASK_SCHEMAS,
     ASK_LOCAL_AGENT_SCHEMA,
