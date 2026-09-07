@@ -27,6 +27,13 @@ def _resolve_pdf_path(path_str: str) -> Path:
 def pdf_to_markdown(pdf_path: str, output_dir: str | None = None) -> tuple[str, str]:
     """Convert a PDF file to a markdown document via anydoc (MIT, pdf-inspector backend).
 
+    Falls back to docling (layout-aware, OCR-capable) when anydoc can't extract
+    text at all — i.e. scanned/image-only PDFs. anydoc has no OCR path and
+    raises UnsupportedError on those; docling is ~1000x slower but is the only
+    one of the two that can read a scan. Benchmarked 2026-09-07: on
+    text-native PDFs anydoc stays default (faster, cleaner headings — docling
+    tends to split real text into spurious `##` headings).
+
     Args:
         pdf_path: Absolute or relative path to the source PDF file.
         output_dir: Directory where the .md file will be written.
@@ -47,7 +54,14 @@ def pdf_to_markdown(pdf_path: str, output_dir: str | None = None) -> tuple[str, 
     out_dir = Path(output_dir) if output_dir is not None else p.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    md_content = anydoc.to_markdown(str(p))
+    try:
+        md_content = anydoc.to_markdown(str(p))
+    except anydoc.UnsupportedError:
+        from docling.document_converter import DocumentConverter
+
+        result = DocumentConverter().convert(str(p))
+        md_content = result.document.export_to_markdown()
+
     md_file = out_dir / f"{p.stem}.md"
     md_file.write_text(md_content, encoding="utf-8")
 

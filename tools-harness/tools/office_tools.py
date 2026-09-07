@@ -47,6 +47,19 @@ def excel_to_markdown(file_path: str, output_dir: str | None = None) -> tuple[st
             raise PasswordProtectedError(f"Excel file is password-protected: {p.name}") from exc
         raise
 
+    # docling splits multiple logical tables on one sheet correctly; anydoc
+    # merges them into one wrong table. Benchmarked 2026-09-07. Prefer
+    # docling's version when it succeeds, else keep the anydoc result above.
+    try:
+        from docling.document_converter import DocumentConverter
+
+        result = DocumentConverter().convert(str(p))
+        docling_md = result.document.export_to_markdown()
+        if docling_md.strip():
+            md_content = docling_md
+    except Exception:
+        pass
+
     fill_grid = _excel_fill_colors(p)
     if fill_grid:
         md_content = f"{md_content}\n\n{fill_grid}" if md_content.strip() else fill_grid
