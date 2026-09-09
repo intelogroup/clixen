@@ -6,7 +6,13 @@ RUN cd /comfyui/custom_nodes && \
     pip install --no-cache-dir -r ComfyUI-Hunyuan3d-2-1/requirements.txt
 
 # custom_rasterizer + DifferentiableRenderer — precompiled wheels in repo are win_amd64 only,
-# this base is Linux so build from source (needs nvcc, worker-comfyui base ships CUDA toolkit)
+# this base is Linux so build from source. worker-comfyui base has CUDA *runtime* libs only,
+# no nvcc — install it via apt and symlink to /usr/local/cuda (torch's cpp_extension hardcodes
+# that path via CUDA_HOME, confirmed live: "nvcc not found at '/usr/local/cuda/bin/nvcc'")
+RUN apt-get update && apt-get install -y --no-install-recommends nvidia-cuda-toolkit && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr /usr/local/cuda
+
 # ponytail: build-from-source at image build time, ~5-10min layer, no upgrade path needed unless
 # node updates its extension source — pin the git clone above if that ever breaks the build.
 RUN cd /comfyui/custom_nodes/ComfyUI-Hunyuan3d-2-1/hy3dpaint/custom_rasterizer && \
