@@ -7,11 +7,16 @@ RUN cd /comfyui/custom_nodes && \
 
 # custom_rasterizer + DifferentiableRenderer — precompiled wheels in repo are win_amd64 only,
 # this base is Linux so build from source. worker-comfyui base has CUDA *runtime* libs only,
-# no nvcc — install it via apt and symlink to /usr/local/cuda (torch's cpp_extension hardcodes
-# that path via CUDA_HOME, confirmed live: "nvcc not found at '/usr/local/cuda/bin/nvcc'")
-RUN apt-get update && apt-get install -y --no-install-recommends nvidia-cuda-toolkit && \
-    rm -rf /var/lib/apt/lists/* && \
-    ln -sf /usr /usr/local/cuda
+# no nvcc. apt's nvidia-cuda-toolkit installs CUDA 12.0 — mismatches this image's torch (cu13),
+# confirmed live: "detected CUDA version (12.0) mismatches ... PyTorch (13.0)". Use the matching
+# pip nvcc wheel instead so the version always tracks whatever torch/cuXY this base ships.
+RUN pip install --no-cache-dir nvidia-cuda-nvcc-cu13 && \
+    NVCC_DIR=$(python -c "import nvidia.cuda_nvcc, os; print(os.path.dirname(nvidia.cuda_nvcc.__file__))") && \
+    mkdir -p /usr/local/cuda/bin /usr/local/cuda/include && \
+    ln -sf "$NVCC_DIR/bin/"* /usr/local/cuda/bin/ && \
+    ln -sf "$NVCC_DIR/include/"* /usr/local/cuda/include/
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH="/usr/local/cuda/bin:${PATH}"
 
 # ponytail: build-from-source at image build time, ~5-10min layer, no upgrade path needed unless
 # node updates its extension source — pin the git clone above if that ever breaks the build.
