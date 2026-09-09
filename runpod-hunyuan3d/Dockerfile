@@ -10,7 +10,7 @@ RUN cd /comfyui/custom_nodes && \
 # no nvcc. apt's nvidia-cuda-toolkit installs CUDA 12.0 — mismatches this image's torch (cu13),
 # confirmed live: "detected CUDA version (12.0) mismatches ... PyTorch (13.0)". Use the matching
 # pip nvcc wheel instead so the version always tracks whatever torch/cuXY this base ships.
-RUN pip install --no-cache-dir nvidia-cuda-nvcc-cu13 && \
+RUN pip install --no-cache-dir nvidia-cuda-nvcc && \
     NVCC_DIR=$(python -c "import nvidia.cuda_nvcc, os; print(os.path.dirname(nvidia.cuda_nvcc.__file__))") && \
     mkdir -p /usr/local/cuda/bin /usr/local/cuda/include && \
     ln -sf "$NVCC_DIR/bin/"* /usr/local/cuda/bin/ && \
