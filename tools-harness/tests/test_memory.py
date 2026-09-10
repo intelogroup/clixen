@@ -18,6 +18,15 @@ def temp_mem(tmp_path, monkeypatch):
     return kb
 
 
+@pytest.fixture
+def temp_signals(monkeypatch):
+    """Throwaway recall-signal store, so tests never write to the live sidecar DB."""
+    from store import memory_signals
+
+    monkeypatch.setattr(memory_signals, "_conn", memory_signals.connect(":memory:"))
+    return memory_signals
+
+
 def test_remember_then_recall(temp_mem):
     mem.remember("The user's favorite editor is helix.")
     block = mem.recall_block("what editor do I like?")
@@ -106,6 +115,43 @@ def test_search_sessions_still_finds_fold_summaries(temp_mem):
     result = mem.search_sessions("what did we discuss about deploying")
     assert "auth service" in result.lower()
     assert "chat123" in result
+
+
+def test_recall_records_usage_signals(temp_mem, temp_signals):
+    """Each recall logs which memory a query pulled, so usefulness can later be ranked
+    on demonstrated usage instead of embedding distance alone. Distinct wordings stay
+    distinct rows (that spread is the signal); a repeated wording just bumps its count."""
+    mem.remember("The user's favorite editor is helix.")
+
+    assert "helix" in mem.recall_block("what editor do I like?").lower()
+    assert "helix" in mem.recall_block("favorite text editor").lower()
+    assert "helix" in mem.recall_block("what editor do I like?").lower()
+
+    rows = temp_signals.signals_for()
+    assert len(rows) == 2, f"expected one row per distinct wording, got {rows}"
+    assert {r["hits"] for r in rows} == {1, 2}
+    assert all(0.0 <= r["total_score"] / r["hits"] <= 1.0 for r in rows)
+
+
+def test_always_tier_is_not_counted_as_a_recall(temp_mem, temp_signals):
+    """"always" memories bypass the similarity gate, so counting them would top out every
+    usage metric without the memory ever having matched anything."""
+    mem.remember("The user prefers terse answers.", tier="always")
+
+    assert "terse" in mem.recall_block("what is 2+2").lower()
+    assert temp_signals.signals_for() == []
+
+
+def test_recall_survives_a_broken_signal_store(temp_mem, temp_signals, monkeypatch):
+    """Signal writing is bookkeeping on a live turn — it must never take the turn down."""
+    import sqlite3
+
+    dead = sqlite3.connect(":memory:")
+    dead.close()
+    monkeypatch.setattr(temp_signals, "_conn", dead)
+
+    mem.remember("The user's favorite editor is helix.")
+    assert "helix" in mem.recall_block("what editor do I like?").lower()
 
 
 def test_recall_block_surfaces_fold_summary(temp_mem):

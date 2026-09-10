@@ -187,6 +187,25 @@ def _always_rows() -> list[dict]:
     return rows
 
 
+def _record_recall_signals(query: str, hits: list[dict]) -> None:
+    """Log which memories this query pulled, scaled to 0..1 (1 = exact match) so the
+    figure means the same thing across embed backends with different distance ranges."""
+    try:
+        from store.memory_signals import record_recalls
+
+        threshold = _recall_threshold()
+        record_recalls(
+            query,
+            [
+                (h["id"], max(0.0, 1.0 - float(h.get("_distance", threshold)) / threshold))
+                for h in hits
+                if h.get("id")
+            ],
+        )
+    except Exception as e:
+        log.debug("recall signal skipped: %s", e)
+
+
 def recall_block(query: str) -> str:
     """
     Harness hook: return a system-prompt block of memories relevant to `query`,
@@ -202,6 +221,11 @@ def recall_block(query: str) -> str:
         return ""
     # Only inject on-topic memories — otherwise every turn floods the prompt with all of them.
     hits = [h for h in hits if h.get("_distance", 99) <= _recall_threshold()]
+
+    # Record only what similarity actually retrieved. The "always" rows merged in below
+    # bypass the gate, so counting them would max out every usage metric without the
+    # memory ever having been a good match for anything.
+    _record_recall_signals(query or "", hits)
 
     # "always" tier bypasses the similarity gate entirely — merge in, dedup by id
     # (a topically-similar always fact may already be in hits from the search above).
