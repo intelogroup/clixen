@@ -1,0 +1,56 @@
+{
+  "1": {
+    "class_type": "Hy3D21LoadImageWithTransparency",
+    "inputs": {
+      "image": "input.png"
+    }
+  },
+  "2": {
+    "class_type": "Hy3D21MeshGenerator",
+    "inputs": {
+      "model": "hunyuan3d-dit-v2-1-fp16.ckpt",
+      "image": ["1", 2],
+      "steps": 30,
+      "guidance_scale": 5.0,
+      "seed": 0,
+      "attention_mode": "sdpa"
+    }
+  },
+  "3": {
+    "class_type": "Hy3D21VAELoader",
+    "inputs": {
+      "model_name": "hunyuan3d-vae-v2-1-fp16.ckpt"
+    }
+  },
+  "4": {
+    "class_type": "Hy3D21VAEDecode",
+    "inputs": {
+      "vae": ["3", 0],
+      "latents": ["2", 0],
+      "box_v": 1.01,
+      "octree_resolution": 384,
+      "num_chunks": 8000,
+      "mc_level": 0,
+      "mc_algo": "mc"
+    }
+  },
+  "5": {
+    "class_type": "Hy3D21PostprocessMesh",
+    "inputs": {
+      "trimesh": ["4", 0],
+      "remove_floaters": true,
+      "remove_degenerate_faces": true,
+      "reduce_faces": true,
+      "max_facenum": 40000,
+      "smooth_normals": false
+    }
+  },
+  "6": {
+    "class_type": "Hy3D21ExportMesh",
+    "inputs": {
+      "trimesh": ["5", 0],
+      "filename_prefix": "hy3d_mesh",
+      "file_format": "glb"
+    }
+  }
+}
