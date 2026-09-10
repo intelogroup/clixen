@@ -41,14 +41,24 @@ _RECALL_DIST = {"openai": 1.3, "ollama": 0.88}
 _FORGET_DIST = {"openai": 1.0, "ollama": 0.80}
 
 
-def _recall_threshold() -> float:
+def _memory_backend() -> str:
+    """The backend the memory store's vectors were built with.
+
+    Read off the store, not knowledge_base.EMBED_BACKEND: that global reflects whichever
+    embed ran last anywhere in the process and still holds its "ollama" default before
+    the first one, so a fresh process gated OpenAI distances (which run to ~1.3) against
+    the nomic cutoff of 0.88 and discarded every genuine match.
+    """
     from store import knowledge_base as _kbmod
-    return _RECALL_DIST.get(_kbmod.EMBED_BACKEND, 0.88)
+    return _kb().embed_backend or _kbmod.EMBED_BACKEND
+
+
+def _recall_threshold() -> float:
+    return _RECALL_DIST.get(_memory_backend(), 0.88)
 
 
 def _forget_threshold() -> float:
-    from store import knowledge_base as _kbmod
-    return _FORGET_DIST.get(_kbmod.EMBED_BACKEND, 0.80)
+    return _FORGET_DIST.get(_memory_backend(), 0.80)
 
 _mem_kb: KnowledgeBase | None = None
 _session_summary_lock = threading.RLock()
