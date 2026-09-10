@@ -336,11 +336,22 @@ _PROVIDERS: dict[str, tuple[str, str]] = {
 # an independent second try, not the same failure mode twice. Flash-lite dropped from
 # the rotation entirely — demonstrated real agentic weakness, only use it for simple
 # single-tool tasks if cost ever requires a third tier.
-DEFAULT_CLOUD_MODEL = "deepseek/deepseek-v4-flash"
-CLOUD_FALLBACK_MODEL = "openrouter/google/gemini-2.5-flash-lite"
+# 2026-09-02: DeepSeek account out of funds (402 Insufficient Balance) and
+# OpenRouter's gemini-2.5-flash-lite blocked by this account's ZDR privacy
+# setting (404) — both verified dead live. Neither is a code/key problem, so
+# reasoning above still applies once DeepSeek is funded / OpenRouter privacy
+# setting changed — swap DEFAULT_CLOUD_MODEL back then. Until then, default
+# straight to the one tier that's actually live (OPENAI_FALLBACK_MODEL) so
+# every call doesn't eat two guaranteed-failed round trips first.
+# 2026-09-10: bumped to gpt-5 (still the only live tier — DeepSeek and
+# OpenRouter both 402 out of credit). gpt-5 400'd on temperature=0.7
+# (rejects anything but the default of 1) — raw_completion() now omits
+# temperature for the gpt-5 family instead of sending it. Verified live.
+DEFAULT_CLOUD_MODEL = "openai/gpt-5"
+CLOUD_FALLBACK_MODEL = "openai/gpt-5"
 # Last-resort tier: reached only when both above fail (dead provider / 402 /
-# 5xx / network). OpenAI direct via OPENAI_REAL_API_KEY, cheap tier.
-OPENAI_FALLBACK_MODEL = "openai/gpt-4o-mini"
+# 5xx / network). OpenAI direct via OPENAI_API_KEY (see openai/ tier above).
+OPENAI_FALLBACK_MODEL = "openai/gpt-5"
 # Cheapest vision-capable model actually reachable on this provider-restricted
 # OpenRouter key (see the {anthropic, cloudflare, google-ai-studio} note above) —
 # every other cheap vision option tested (Qwen-VL, Nemotron, Nova, DeepInfra-hosted
@@ -1051,13 +1062,17 @@ def raw_completion(
             ]
         sent.append(m)
 
+    # gpt-5-family rejects any temperature other than the default (1) — 400s
+    # on the 0.7 every other model here accepts. Omit the field entirely for
+    # that family instead of threading a per-model default through callers.
+    def _req(rm: str) -> dict:
+        r = {"model": rm, "messages": sent, "tools": tools or None}
+        if not rm.startswith("gpt-5"):
+            r["temperature"] = temperature
+        return r
+
     try:
-        request = {
-            "model": real_model,
-            "messages": sent,
-            "tools": tools or None,
-            "temperature": temperature,
-        }
+        request = _req(real_model)
         resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
     except Exception as e:
         if model == OPENAI_FALLBACK_MODEL or not fallback:
@@ -1074,12 +1089,7 @@ def raw_completion(
             if timeout is not None:
                 options["timeout"] = timeout
             client = client.with_options(**options)
-        request = {
-            "model": real_model,
-            "messages": sent,
-            "tools": tools or None,
-            "temperature": temperature,
-        }
+        request = _req(real_model)
         resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
     _clear_dead(model)
     _track_usage(real_model, getattr(resp, "usage", None))
