@@ -21,6 +21,8 @@ import time
 from pathlib import Path
 
 from clients.ollama_client import DEFAULT_MODEL
+from clients import cloud_client
+from clients.cloud_client import DEFAULT_CLOUD_MODEL
 import ollama
 from pydantic import BaseModel, Field
 
@@ -378,12 +380,15 @@ def _run_tool(name: str, args: dict) -> str:
 
 def run_path_specialist(
     query: str,
-    model: str = DEFAULT_MODEL,
+    model: str = DEFAULT_CLOUD_MODEL,
     cwd: str | None = None,
     max_steps: int = 8,   # API compat; effective fallback cap is 3
 ) -> PathResult:
     t0 = time.time()
-    cwd = cwd or os.getcwd()
+    # Chat has no real shell cwd — default to home, not the server process's
+    # own cwd (tools-harness/), which made every unqualified "../x" the model
+    # reasoned about resolve one level off from what the user meant.
+    cwd = cwd or os.path.expanduser("~")
 
     # ── Fast path: 0 LLM calls ──
     direct = _try_direct_find(query, cwd)
@@ -410,17 +415,29 @@ def run_path_specialist(
     model_summary = ""
     error: str | None = None
 
-    _ollama_client = ollama.Client(timeout=30)
+    # Cloud-first, matching project standard (local gemma4 is opt-in only,
+    # and depends on the Ollama daemon + its external model store both being
+    # up — see 2026-09-10 outage where an unmounted drive took local models
+    # down and the path specialist had no fallback). raw_completion() is the
+    # non-looping single-call primitive (used the same way by the LangGraph
+    # local-agent's call_model) — caller drives its own tool-exec loop, same
+    # shape as ollama.Client().chat() below, so the parsing code is shared.
+    _use_cloud = cloud_client.is_cloud_model(model)
+    _ollama_client = None if _use_cloud else ollama.Client(timeout=30)
     for step in range(llm_cap):
         try:
-            response = _ollama_client.chat(
-                model=model,
-                messages=messages,
-                tools=tools,
-                options={"temperature": 0.0},
-            )
+            if _use_cloud:
+                choice = cloud_client.raw_completion(model=model, messages=messages, tools=tools)
+                response = choice
+            else:
+                response = _ollama_client.chat(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    options={"temperature": 0.0},
+                )
         except Exception as e:
-            error = f"ollama call failed at step {step}: {type(e).__name__}: {e}"
+            error = f"{'cloud' if _use_cloud else 'ollama'} call failed at step {step}: {type(e).__name__}: {e}"
             _log.warning("[path_specialist] %s", error)
             break
 

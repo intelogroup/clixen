@@ -334,14 +334,18 @@ def dispatch(
     if not name:
         return None
 
-    # ponytail: specialists call ollama.chat() directly (no cloud_client fallback,
-    # they're a local-only fast ReAct loop) — a cloud-routed model string
-    # (e.g. "deepseek/deepseek-v4-flash", passed through unchanged since
-    # cloud-first routing landed) 404s against local Ollama since no local
-    # model has that name. Clamp to the local default here, the one place
-    # every specialist call funnels through, instead of patching all 8 files.
+    # ponytail: most specialists call ollama.chat() directly (no cloud_client
+    # fallback, they're a local-only fast ReAct loop) — a cloud-routed model
+    # string (e.g. "deepseek/deepseek-v4-flash", passed through unchanged
+    # since cloud-first routing landed) 404s against local Ollama since no
+    # local model has that name. Clamp to the local default here, the one
+    # place every specialist call funnels through, instead of patching all
+    # 8 files. "path" is exempt — 2026-09-10: it's cloud-capable (routes
+    # through cloud_client.raw_completion when given a cloud model string),
+    # matching the project's cloud-first standard, and no longer depends on
+    # the local Ollama daemon / its external model store being up.
     from clients import cloud_client, ollama_client
-    if cloud_client.is_cloud_model(model):
+    if name != "path" and cloud_client.is_cloud_model(model):
         model = ollama_client.DEFAULT_MODEL
 
     fn = _DISPATCHERS[name]
