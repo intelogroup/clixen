@@ -193,18 +193,12 @@ def _llm_extract(
         {"role": "user", "content": query},
     ]
     try:
-        resp = ollama.chat(
-            model=model,
-            messages=messages,
-            tools=tools,
-            options={"temperature": 0.1, "num_ctx": 4096},
-        )
+        from agents.specialists._llm_step import chat_step
+        _, tool_calls = chat_step(ollama, model, messages, tools)
     except Exception as e:
         _log.warning("[form-specialist] fallback LLM call failed: %s", e)
         return None, {}
 
-    msg = resp.get("message", {})
-    tool_calls = msg.get("tool_calls") or []
     for tc in tool_calls:
         fn = tc.get("function", tc) if isinstance(tc, dict) else getattr(tc, "function", None)
         if not fn:

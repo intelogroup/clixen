@@ -206,22 +206,15 @@ def run_audio_specialist(
             )
 
         try:
-            resp = ollama.chat(
-                model=model,
-                messages=messages,
-                tools=tools,
-                options={"temperature": 0.1, "num_ctx": 8192},
-            )
+            from clients import cloud_client
+            from agents.specialists._llm_step import chat_step
+            content, tool_calls = chat_step(ollama, model, messages, tools)
         except Exception as e:
             return AudioResult(
                 tool_trace=tool_trace,
                 elapsed_s=time.time() - t0,
-                error=f"ollama error: {e}",
+                error=f"{'cloud' if cloud_client.is_cloud_model(model) else 'ollama'} error: {e}",
             )
-
-        msg = resp.get("message", {})
-        content = msg.get("content", "") or ""
-        tool_calls = msg.get("tool_calls") or []
 
         if not tool_calls:
             transcript = content

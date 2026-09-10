@@ -104,7 +104,10 @@ def run_write_specialist(
     # raise so the except below can turn it into a normal timeout result instead
     # of an indefinite hang (confirmed live: a multi-doc write request stalled
     # 10+min with ollama runner idle at 0% CPU, no forward progress).
-    _ollama_client = ollama.Client(timeout=min(timeout_s, 90.0))
+    from clients import cloud_client
+    from agents.specialists._llm_step import chat_step
+    _use_cloud = cloud_client.is_cloud_model(model)
+    _ollama_client = None if _use_cloud else ollama.Client(timeout=min(timeout_s, 90.0))
 
     for step in range(max_steps):
         if time.time() - t0 > timeout_s:
@@ -116,23 +119,14 @@ def run_write_specialist(
             )
 
         try:
-            resp = _ollama_client.chat(
-                model=model,
-                messages=messages,
-                tools=tools,
-                options={"temperature": 0.1, "num_ctx": 8192},
-            )
+            content, tool_calls = chat_step(_ollama_client, model, messages, tools)
         except Exception as e:
             return WriteResult(
                 paths=created_paths,
                 tool_trace=tool_trace,
                 elapsed_s=time.time() - t0,
-                error=f"ollama error: {e}",
+                error=f"{'cloud' if _use_cloud else 'ollama'} error: {e}",
             )
-
-        msg = resp.get("message", {})
-        content = msg.get("content", "") or ""
-        tool_calls = msg.get("tool_calls") or []
 
         if not tool_calls:
             break
