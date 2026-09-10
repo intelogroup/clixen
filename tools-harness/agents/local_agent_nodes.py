@@ -113,6 +113,10 @@ def _build_system_prompt(task: str, tool_schemas: list[dict], home: str,
         "- Use actual tool calls; do not describe hypothetical calls.",
         "- Work in small steps: inspect, act, verify, then report.",
         "- Use exact absolute paths from tool results. Never invent paths or field values.",
+        "- You have full read/write access to every directory under the user's home — nothing is "
+        "sandboxed. A relative path like \"../x\" has no real shell cwd behind it and may resolve "
+        f"oddly; if a lookup on a relative or ambiguous path fails, retry once with the absolute "
+        f"path under {home} before telling the user it doesn't exist.",
         "- Do not repeat a failed call unless the approach or arguments change.",
         "- Never claim success without a confirming tool result.",
         "- For numeric or derived questions, calculate from the supplied evidence and show the arithmetic briefly; do not stop at a missing table cell when the surrounding notes provide a formula or value.",
