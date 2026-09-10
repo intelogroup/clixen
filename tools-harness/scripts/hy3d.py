@@ -178,15 +178,15 @@ def cmd_up(a) -> None:
 
     pod = api("pods", "POST", {
         "name": "hy3d-ephemeral",
-        "imageName": IMAGE,
+        "imageName": a.image,
         "gpuTypeIds": GPUS,
         "gpuCount": 1,
-        "containerDiskInGb": 60,
+        "containerDiskInGb": a.disk,
         # No network volume on purpose: one mounted at /workspace would shadow
         # the image's own /workspace and hide image_to_texture.py and
         # hunyuan3d_final_req.txt.
         "volumeInGb": 0,
-        "ports": [f"{FILE_PORT}/http", "22/tcp"],
+        "ports": [f"{FILE_PORT}/http", "8188/http", "22/tcp"],
         "cloudType": a.cloud,
         "supportPublicIp": True,
     })
@@ -209,6 +209,14 @@ def cmd_up(a) -> None:
         print(f"[up] SSH never came up. Pod is STILL BILLING: hy3d.py down")
         raise SystemExit(1)
     print(f"[up] ssh ready: {host}")
+
+    if a.no_setup:
+        s = json.loads(STATE.read_text())
+        s["host"] = host
+        STATE.write_text(json.dumps(s))
+        print(f"[up] --no-setup: skipping dependency install. ssh host: {host}")
+        print(f"[up] when finished:  hy3d.py down   (${cost}/hr until you do)")
+        return
 
     print("[up] installing dependencies (~4-6 min)...")
     out = ssh(SETUP, host, timeout=1800)
@@ -337,6 +345,10 @@ def main() -> None:
 
     up = sub.add_parser("up", help="create the pod and install deps (starts billing)")
     up.add_argument("--cloud", default="SECURE", choices=["SECURE", "COMMUNITY"])
+    up.add_argument("--image", default=IMAGE, help="container image to boot")
+    up.add_argument("--disk", type=int, default=60, help="container disk in GB")
+    up.add_argument("--no-setup", action="store_true",
+                    help="boot only, skip the dependency install (for evaluating an image)")
     up.set_defaults(fn=cmd_up)
 
     run = sub.add_parser("run", help="image -> mesh on the running pod")
