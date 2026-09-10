@@ -25,5 +25,11 @@
   },
   "overrides": {
     "qs": "^6.16.0"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "github:WhiskeySockets/Baileys#7e7b0757e3f9f3c7789fb1cfd2f241d5002a199a": true,
+    "esbuild@0.28.1": true,
+    "protobufjs@7.6.5": true
   }
 }
