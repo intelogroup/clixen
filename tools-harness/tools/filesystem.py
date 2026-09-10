@@ -69,6 +69,17 @@ def _resolve_path(path_str: str) -> Path:
                 p = candidate.resolve()
                 break
 
+    # "../foo/bar"-shaped paths from chat (model has no real shell cwd, so ".."
+    # is a guess, not a real parent) — strip leading ".." segments and re-anchor
+    # the remaining tail onto home. macOS/APFS is case-insensitive by default so
+    # "developer/x" still finds "Developer/x" here.
+    if not p.is_absolute() and not p.exists():
+        tail = [seg for seg in Path(path_str).parts if seg not in ("..", ".")]
+        if tail:
+            candidate = Path(_HOME).joinpath(*tail)
+            if candidate.exists():
+                p = candidate.resolve()
+
     from tools.path_policy import validate_path
     validated_str = validate_path(str(p), write=False)
     return Path(validated_str).resolve()
