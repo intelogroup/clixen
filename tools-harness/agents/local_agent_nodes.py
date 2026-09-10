@@ -42,6 +42,8 @@ from tools.filesystem import find_files
 from tools.injection_guard import wrap_external_output
 from clients.cloud_client import is_cloud_model
 from clients.ollama_client import DEFAULT_MODEL as _LOCAL_DEFAULT_MODEL, _trace_resp, _run_local
+from clients.cancellation import is_run_aborted
+from log_config import CURRENT_RUN_ID
 from log_config import setup_logging as _setup_logging
 
 _log = _setup_logging("local_agent_nodes")
@@ -209,6 +211,18 @@ async def call_model(state: LocalAgentState) -> dict:
     wrap_up_nudged = state.wrap_up_nudged
 
     _log.info("[local-agent/graph] step=%d model=%s", step, model)
+
+    # The caller (_run_subagent's future.result(timeout=...)) may have already
+    # given up on this run and moved on — shutdown(wait=False) doesn't stop
+    # this thread, so without this check it keeps burning real LLM rounds
+    # with nothing left listening for the result. See clients/cancellation.py.
+    if is_run_aborted(CURRENT_RUN_ID.get()):
+        _log.info("[local-agent/graph] step=%d run_id=%s aborted by caller timeout, stopping",
+                   step, CURRENT_RUN_ID.get())
+        return {
+            "messages": [AIMessage(content="[aborted: caller timed out waiting for this subagent]")],
+            "step_count": step,
+        }
 
     # Soft step-cap warning: at 80% of max_steps, nudge the model to wrap up
     # NOW instead of silently hitting the hard cap in should_continue and

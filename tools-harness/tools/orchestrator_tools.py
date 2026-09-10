@@ -765,6 +765,13 @@ def _run_subagent(intent: str, query: str, timeout: int = 120) -> str:
         res = fut.result(timeout=timeout)
     except _FutureTO:
         res = f"[subagent timeout] {intent} subagent did not return within {timeout}s"
+        # shutdown(wait=False) below does not stop the worker thread — it
+        # keeps running the abandoned pipeline (more LLM rounds, real cost)
+        # with nothing listening for the result. Mark the run_id aborted so
+        # the local-agent step loop (agents/local_agent_nodes.py:call_model)
+        # notices and stops at its next step boundary. See clients/cancellation.py.
+        from clients.cancellation import abort_run
+        abort_run(rid)
     finally:
         _pool.shutdown(wait=False)
     try:
