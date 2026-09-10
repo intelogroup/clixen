@@ -737,7 +737,7 @@ _BUILTIN_WORKFLOWS = [
         "task_name":     "Science-niche breakthrough scout",
         "trigger_type":  "schedule",
         "action_type":   "notification",
-        "schedule":      {"interval_seconds": 1800},  # every 30 min
+        "schedule":      _cron_schedule("0 8,20 * * *"),  # twice a day, 8am/8pm
         "config":        {},
         "dedupe_key":    "science_scout",
     },
@@ -746,8 +746,8 @@ _BUILTIN_WORKFLOWS = [
         "task_name":     "World Monitor global intelligence scan",
         "trigger_type":  "schedule",
         "action_type":   "notification",
-        "schedule":      {"interval_seconds": 1800},  # every 30 min, staggered vs science_scout (below)
-        "config":        {"poll_hours": 0.5},
+        "schedule":      _cron_schedule("5 8,20 * * *"),  # twice a day, staggered 5 min vs science_scout
+        "config":        {"poll_hours": 12},
         "dedupe_key":    "world_monitor",
     },
 ]
