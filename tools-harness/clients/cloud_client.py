@@ -832,12 +832,15 @@ def _run_tool_loop(
         _extra = {}
         if force_tool_choice and _round == 0:
             _extra["tool_choice"] = {"type": "function", "function": {"name": force_tool_choice}}
+        # gpt-5-family renamed max_tokens -> max_completion_tokens; the old
+        # name 400s ("Unsupported parameter: 'max_tokens'...").
+        _tok_kwarg = "max_completion_tokens" if real_model.startswith("gpt-5") else "max_tokens"
         _call = lambda _on_token: _stream_completion(
             client, _on_token,
             model=real_model,
             messages=messages,
             tools=tools or None,
-            max_tokens=8192,
+            **{_tok_kwarg: 8192},
             **_extra, **_reasoning,
         )
         resp = _with_deadline(_call, on_token, round_timeout, model=real_model)
