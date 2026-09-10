@@ -306,7 +306,11 @@ _PROVIDERS: dict[str, tuple[str, str]] = {
     # OpenAI direct (OPENAI_REAL_API_KEY) — last-resort tier when OpenRouter and
     # DeepSeek both fail (verified live 2026-07-31: key valid, chat completions
     # work). gpt-4o-mini is the cheap tier; only used on failure paths.
-    "openai/": ("https://api.openai.com/v1", "OPENAI_REAL_API_KEY"),
+    # 2026-09-10: OPENAI_REAL_API_KEY went dead (401, invalid) — pointed at
+    # OPENAI_API_KEY (the embedder's key, store/knowledge_base.py) instead,
+    # confirmed live. Two keys existed to keep the embedder and this chat
+    # tier independently rotatable; with only one live key that's moot.
+    "openai/": ("https://api.openai.com/v1", "OPENAI_API_KEY"),
  }
 
 # NOTE: this account's OpenRouter key is provider-restricted (Settings -> Preferences
