@@ -35,6 +35,19 @@ def _reset_run_id_context():
     orchestrator_tools._SUBAGENT_CACHE.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_recall_signals(monkeypatch):
+    """tools.memory_tools.recall_block() logs a usage signal for every memory it injects,
+    into a sqlite store under the user's real Application Support dir. Any test that calls
+    it — most of tests/test_memory.py, plus anything exercising a specialist or the
+    orchestrator — would otherwise file synthetic test facts as genuine recall history,
+    which is exactly the data memory ranking is meant to trust. Hand each test its own.
+    """
+    from store import memory_signals
+
+    monkeypatch.setattr(memory_signals, "_conn", memory_signals.connect(":memory:"))
+
+
 def safe_delete_test_workflow(workflow_id: str) -> None:
     """Delete a workflow_instances row created by a test — refuses if the row
     has a non-empty dedupe_key, which is set ONLY by
