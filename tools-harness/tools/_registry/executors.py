@@ -95,6 +95,49 @@ EXECUTORS = {
         extract=args.get("extract", "text"),
         stealth=args.get("stealth", False),
     ),
+    "apify_run_actor": lambda args: apify_run_actor_exec(
+        actor_id=args["actor_id"],
+        input=args.get("input", {}),
+        max_results=args.get("max_results", 20),
+        wait_seconds=args.get("wait_seconds", 300),
+    ),
+    "apify_list_actors": lambda args: apify_list_actors_exec(),
+    "apify_run_my_actor": lambda args: apify_run_my_actor_exec(
+        input=args.get("input", {}),
+        max_results=args.get("max_results", 20),
+        wait_seconds=args.get("wait_seconds", 300),
+    ),
+    "fal_generate": lambda args: fal_generate_exec(
+        model_id=args["model_id"],
+        prompt=args.get("prompt"),
+        input=args.get("input", {}),
+        image_size=args.get("image_size"),
+        num_images=args.get("num_images", 1),
+        num_inference_steps=args.get("num_inference_steps"),
+        seed=args.get("seed"),
+        wait_seconds=args.get("wait_seconds", 300),
+    ),
+    "tencent_hunyuan3d_generate": lambda args: tencent_hunyuan3d_generate_exec(
+        prompt=args.get("prompt"),
+        image_url=args.get("image_url"),
+        model=args.get("model", "3.0"),
+        wait_seconds=args.get("wait_seconds", 300),
+    ),
+    "tripo3d_generate": lambda args: tripo3d_generate_exec(
+        prompt=args.get("prompt"),
+        image=args.get("image"),
+        texture=args.get("texture", True),
+        model_version=args.get("model_version"),
+        wait_seconds=args.get("wait_seconds", 300),
+    ),
+    "stl_forge_generate": lambda args: stl_forge_generate_exec(
+        image=args["image"],
+        target_faces=args.get("target_faces", 100000),
+        mc_resolution=args.get("mc_resolution", 256),
+        quant=args.get("quant", "fp16"),
+        force_inline=args.get("force_inline", False),
+        wait_seconds=args.get("wait_seconds", 300),
+    ),
     "transcribe_audio": lambda args: audio_execute(
         file_path=args["file_path"],
         language=args.get("language", ""),
@@ -650,6 +693,8 @@ EXECUTORS = {
     **AUTOMATION_EXECUTORS,
     # Persistent cross-session memory
     **MEMORY_EXECUTORS,
+    # Verse (aiverse multi-agent sim) peer-ask
+    **VERSE_AGENT_EXECUTORS,
     # Mid-task plan/todo scratchpad
     **PLAN_TASK_EXECUTORS,
     # Skills hub
@@ -700,6 +745,7 @@ EXECUTORS = {
     "search_youtube": lambda args: yt_search_execute(
         query=args["query"],
         max_results=args.get("max_results", 5),
+        recent_only=args.get("recent_only", False),
     ),
     "get_youtube_transcript": lambda args: yt_transcript_execute(
         video_url=args["video_url"],
@@ -770,6 +816,35 @@ EXECUTORS = {
     "sofascore_get_tournaments": lambda args: get_tournaments(sport=args.get("sport", "football")),
     "local_vision_snap": lambda args: local_vision_snap(),
     "local_vision_highlight": lambda args: local_vision_highlight(),
+    "segment_image": lambda args: __import__("tools.segment", fromlist=["segment_image"]).segment_image(
+        image_path=args["image_path"],
+        prompt=args.get("prompt", ""),
+        output_path=args.get("output_path", ""),
+    ),
+    "estimate_depth": lambda args: __import__("tools.depth", fromlist=["estimate_depth"]).estimate_depth(
+        image_path=args["image_path"],
+        model_size=args.get("model_size", "small"),
+        output_path=args.get("output_path", ""),
+    ),
+    "prep_animation": lambda args: __import__(
+        "tools.prep_animation", fromlist=["prep_animation"]
+    ).prep_animation(
+        image_path=args["image_path"],
+        subject_prompt=args.get("subject_prompt", "person"),
+        out_dir=args.get("out_dir", ""),
+        width=args.get("width", 768),
+        height=args.get("height", 512),
+        length=args.get("length", 81),
+        fps=args.get("fps", 16),
+        steps=args.get("steps", 8),
+        cfg=args.get("cfg", 2.0),
+        seed=args.get("seed", 0),
+        custom_motion=args.get("custom_motion", ""),
+        breathing=args.get("breathing", True),
+        head_sway=args.get("head_sway", True),
+        blink=args.get("blink", False),
+        hair_drift=args.get("hair_drift", False),
+    ),
     "session_login": lambda args: session_login(
         service=args["service"],
         timeout_s=args.get("timeout_s", 120),

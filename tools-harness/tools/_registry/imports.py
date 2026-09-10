@@ -52,6 +52,14 @@ from tools.tencent_hunyuan3d import (
     TENCENT_HUNYUAN3D_SCHEMA,
     tencent_hunyuan3d_generate as tencent_hunyuan3d_generate_exec,
 )
+from tools.tripo3d import (
+    TRIPO3D_SCHEMA,
+    tripo3d_generate as tripo3d_generate_exec,
+)
+from tools.runpod_stl_forge import (
+    STL_FORGE_SCHEMA,
+    stl_forge_generate as stl_forge_generate_exec,
+)
 
 _search_log = _logging.getLogger("websearch")
 

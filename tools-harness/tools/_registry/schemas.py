@@ -31,6 +31,10 @@ ALL_TOOLS = [
     FAL_GENERATE_SCHEMA,
     # Tencent Cloud Hunyuan-3D generation
     TENCENT_HUNYUAN3D_SCHEMA,
+    # Tripo3D generation (image/text -> mesh)
+    TRIPO3D_SCHEMA,
+    # RunPod Serverless STL Forge (image -> 3D-printable STL)
+    STL_FORGE_SCHEMA,
     # Media
     AUDIO_SCHEMA,
     CONVERT_AUDIO_SCHEMA,
