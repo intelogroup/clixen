@@ -60,8 +60,8 @@ dependencies = [
   "paper-qa>=5.0.0",
   "reportlab>=4.0.0",
   "scrapling[fetchers]>=0.4.0",
-  "setuptools<81",  # pkg_resources removed in 81+, webrtcvad (resemblyzer dep) still imports it
-  "mcp>=2.0.0",
+  "setuptools>=83.0.0",  # tools/voiceprint.py shims pkg_resources (importlib.metadata-backed) for webrtcvad
+  "mcp<2.0.0",
   "pillow>=12.3.0",
   "lxml>=6.1.0",
   "urllib3>=2.7.0",
@@ -71,6 +71,9 @@ dependencies = [
   "matplotlib>=3.9,<4",
   "cryptography>=49.0.1",
   "pypdf>=6.16.1",
+  "pocket-tts>=2.1.0",
+  "fastmcp>=2.14.1",
+  "mlx-audio>=0.5.3",
 ]
 
 [project.optional-dependencies]
