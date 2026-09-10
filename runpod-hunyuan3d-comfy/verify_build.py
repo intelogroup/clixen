@@ -31,6 +31,25 @@ if not (torch.version.cuda or "").startswith("12.8"):
 import custom_rasterizer  # noqa: E402
 import mesh_processor  # noqa: E402
 
+# The node's own dependencies, checked in the venv start.sh actually launches.
+# comfy-node-install puts these in comfy-cli's workspace venv (/comfyui/.venv),
+# which is NOT the one that serves requests -- an easy way to ship an image that
+# builds cleanly and then fails on its first job with an ImportError.
+missing = []
+for mod in ("trimesh", "pymeshlab", "pygltflib", "xatlas", "open3d",
+            "omegaconf", "meshlib", "timm", "diffusers", "transformers"):
+    try:
+        __import__(mod)
+    except ImportError as e:
+        missing.append(f"{mod} ({e})")
+
+if missing:
+    sys.exit(
+        "verify_build: these node dependencies are absent from the runtime venv "
+        "(" + sys.prefix + "): " + ", ".join(missing)
+    )
+
 print(f"verify_build: ok — torch {torch.__version__}, cuda {torch.version.cuda}")
+print(f"verify_build: runtime venv {sys.prefix}")
 print(f"verify_build: custom_rasterizer {custom_rasterizer.__file__}")
 print(f"verify_build: mesh_processor {mesh_processor.__file__}")

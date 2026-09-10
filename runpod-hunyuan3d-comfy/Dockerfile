@@ -22,6 +22,8 @@ FROM runpod/worker-comfyui:5.10.0-base-cuda12.8.1
 # be there too.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
+        python3-dev \
+        ninja-build \
         cuda-nvcc-12-8 \
         cuda-cudart-dev-12-8 \
         libgl1 \
@@ -44,6 +46,21 @@ RUN python -c "import torch, pathlib; pathlib.Path('/torch-baseline.txt').write_
 # torch, which is what makes this safe to install -- but verify_build.py still
 # checks, rather than trusting it.
 RUN comfy-node-install https://github.com/visualbruno/ComfyUI-Hunyuan3d-2-1
+
+# comfy-node-install resolves the node's requirements with ComfyUI-Manager,
+# which installs into comfy-cli's workspace venv (/comfyui/.venv). start.sh
+# launches ComfyUI from /opt/venv instead -- the base image says so itself and
+# mirrors custom_nodes/*/requirements.txt into /opt/venv to compensate, but that
+# runs while building the base, before this node exists. So mirror this node's
+# requirements here too, or trimesh/pymeshlab/open3d/meshlib are missing at
+# request time while the build still looks clean.
+#
+# The transformers/huggingface-hub pin is re-applied in the same layer for the
+# reason the base gives: this requirements.txt lists both unpinned, and
+# transformers 5.x / huggingface-hub 1.x crash ComfyUI at startup. Same RUN, so
+# the unwanted versions are not left behind in the layer.
+RUN uv pip install -r /comfyui/custom_nodes/ComfyUI-Hunyuan3d-2-1/requirements.txt \
+    && uv pip install "transformers>=4.50.3,<5" "huggingface-hub<1.0"
 
 # Compile the two CUDA extensions. This is the step that broke both previous
 # attempts; it now fails the build rather than the request.
