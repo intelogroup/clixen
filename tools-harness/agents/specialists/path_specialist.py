@@ -262,6 +262,24 @@ def _parse_query_intent(query: str, cwd: str) -> tuple[str, str | None, str | No
                 scope = os.path.expanduser(path_tmpl)
                 break
 
+    # Scope: relative path ("../developer/ugent-app", "developer/x") — the
+    # gap that let "list ../developer/ugent-app" fall through to listing cwd
+    # instead of the named directory (only tilde/absolute/alias were handled
+    # above). Route through the same resolver the real filesystem tools use
+    # (tools/filesystem.py._resolve_path) so this heuristic and the actual
+    # tool call agree on what a relative path means, instead of duplicating
+    # that logic here.
+    if not scope:
+        m = re.search(r"(?:\.{1,2}/)?[\w.\-]+(?:/[\w.\-]+)+", query)
+        if m:
+            from tools.filesystem import _resolve_path
+            try:
+                candidate = _resolve_path(m.group(0))
+                if candidate.is_dir():
+                    scope = str(candidate)
+            except Exception:
+                pass
+
     # Pattern: explicit filename.ext
     pattern: str | None = None
     m = _FILE_EXT_RE.search(query)
