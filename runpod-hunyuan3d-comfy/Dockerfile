@@ -20,12 +20,20 @@ FROM runpod/worker-comfyui:5.10.0-base-cuda12.8.1
 # which has no nvcc. The two extensions below are compiled CUDA/C++, so the
 # build needs the toolkit -- and nvcc on its own is not a compiler, gcc has to
 # be there too.
+#
+# cudart-dev alone is not enough either: the extensions include torch's
+# ATen/cuda/CUDAContextLight.h, which includes cusparse.h, cublas_v2.h and
+# cusolverDn.h, so those three -dev packages have to be present or the very
+# first .cpp fails with "cusparse.h: No such file or directory".
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         python3-dev \
         ninja-build \
         cuda-nvcc-12-8 \
         cuda-cudart-dev-12-8 \
+        libcusparse-dev-12-8 \
+        libcublas-dev-12-8 \
+        libcusolver-dev-12-8 \
         libgl1 \
         libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
