@@ -28,7 +28,7 @@ def clean_db(tmp_path, monkeypatch):
 def kb(tmp_path, monkeypatch):
     """A real KnowledgeBase with embedding stubbed to a hash-based deterministic
     vector — near-identical text -> near-identical vector, without Ollama."""
-    def fake_embed(text: str) -> list[float]:
+    def fake_embed(text: str, backend: str | None = None) -> list[float]:
         import hashlib
         h = hashlib.sha256(text.strip().lower().encode()).digest()
         vec = [b / 255.0 for b in h] * 96  # pad to 768 dims
@@ -91,7 +91,7 @@ def test_links_are_append_only(clean_db, kb):
 
 def test_dead_subreddit_dropped_after_threshold(clean_db, kb, monkeypatch):
     monkeypatch.setattr(reddit_intel, "collect_new_posts", lambda subs, run_id=None: [])
-    monkeypatch.setattr("store.knowledge_base._embed", lambda text: [0.0] * 768)
+    monkeypatch.setattr("store.knowledge_base._embed", lambda text, backend=None: [0.0] * 768)
     for _ in range(reddit_intel.DEAD_SCAN_THRESHOLD):
         reddit_intel.handle({"id": "wf-drop", "config": {}})
     assert store.list_active_subreddits() == []
@@ -101,7 +101,7 @@ def test_discovery_triggers_when_below_min_active(clean_db, kb, monkeypatch):
     store.seed_watched_subreddits(["onesub"])  # below MIN_ACTIVE_SUBREDDITS
     monkeypatch.setattr(reddit_intel, "collect_new_posts", lambda subs, run_id=None: [])
     monkeypatch.setattr(reddit_intel, "discover_subreddits", lambda existing, n=1: [("newsub", "test")])
-    monkeypatch.setattr("store.knowledge_base._embed", lambda text: [0.0] * 768)
+    monkeypatch.setattr("store.knowledge_base._embed", lambda text, backend=None: [0.0] * 768)
 
     result = reddit_intel.handle({"id": "wf-discover", "config": {}})
     assert "newsub" in result["subreddits_scanned"]
@@ -111,7 +111,7 @@ def test_config_subreddits_bypass_watched_list(clean_db, kb, monkeypatch):
     """Explicit config['subreddits'] must never touch/drop the self-managed list."""
     store.seed_watched_subreddits(["managed"])
     monkeypatch.setattr(reddit_intel, "collect_new_posts", lambda subs, run_id=None: [])
-    monkeypatch.setattr("store.knowledge_base._embed", lambda text: [0.0] * 768)
+    monkeypatch.setattr("store.knowledge_base._embed", lambda text, backend=None: [0.0] * 768)
 
     result = reddit_intel.handle({"id": "wf-cfg", "config": {"subreddits": ["custom"]}})
     assert result["subreddits_scanned"] == ["custom"]

@@ -36,7 +36,7 @@ def clean_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def kb(tmp_path, monkeypatch):
-    def fake_embed(text: str) -> list[float]:
+    def fake_embed(text: str, backend: str | None = None) -> list[float]:
         import hashlib
         h = hashlib.sha256(text.strip().lower().encode()).digest()
         vec = [b / 255.0 for b in h] * 96

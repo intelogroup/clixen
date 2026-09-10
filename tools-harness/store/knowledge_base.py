@@ -83,27 +83,36 @@ def _resolve_db_path() -> str:
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
 
-def _embed(text: str) -> list[float]:
+class EmbedBackendUnavailable(RuntimeError):
+    """The backend a store's vectors were built with can't be reached right now.
+
+    Raised instead of quietly embedding with the other backend: nomic-embed and
+    text-embedding-3-small are different vector spaces, and comparing across them
+    yields plausible-looking distances that mean nothing (see _embed).
+    """
+
+
+def _embed_openai(text: str) -> list[float]:
     import os
 
     global EMBED_BACKEND
-
     api_key = os.environ.get("OPENAI_API_KEY")
-    if api_key:
-        try:
-            r = requests.post(
-                "https://api.openai.com/v1/embeddings",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={"model": OPENAI_EMBED_MODEL, "input": text[:4096], "dimensions": EMBED_DIM},
-                timeout=10,
-            )
-            r.raise_for_status()
-            vec = r.json()["data"][0]["embedding"]
-            EMBED_BACKEND = "openai"
-            return _normalize(vec)
-        except Exception:
-            log.debug("OpenAI embedding failed, falling back to local Ollama", exc_info=True)
+    if not api_key:
+        raise EmbedBackendUnavailable("OPENAI_API_KEY is not set")
+    r = requests.post(
+        "https://api.openai.com/v1/embeddings",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={"model": OPENAI_EMBED_MODEL, "input": text[:4096], "dimensions": EMBED_DIM},
+        timeout=10,
+    )
+    r.raise_for_status()
+    vec = r.json()["data"][0]["embedding"]
+    EMBED_BACKEND = "openai"
+    return _normalize(vec)
 
+
+def _embed_ollama(text: str) -> list[float]:
+    global EMBED_BACKEND
     r = requests.post(
         f"{OLLAMA_BASE}/v1/embeddings",
         json={"model": EMBED_MODEL, "input": text[:4096]},
@@ -113,6 +122,37 @@ def _embed(text: str) -> list[float]:
     vec = r.json()["data"][0]["embedding"]
     EMBED_BACKEND = "ollama"
     return _normalize(vec)
+
+
+def _embed(text: str, backend: str | None = None) -> list[float]:
+    """Embed `text`. With `backend` set, use exactly that one and fail if it's down.
+
+    The fallback below is only safe for a store with no vectors in it yet. Falling
+    from one backend to the other against existing vectors silently corrupts every
+    comparison: both models are pinned to 768 dims (EMBED_DIM), so a cross-space
+    search raises nothing and returns confident nonsense — measured 2026-09-10 on
+    the live memory store, where a fact searched by its own exact text came back at
+    distance 1.49 behind four unrelated rows, and recall_block() had been returning
+    "" for every query for as long as Ollama had been down.
+    """
+    if backend == "openai":
+        return _embed_openai(text)
+    if backend == "ollama":
+        try:
+            return _embed_ollama(text)
+        except EmbedBackendUnavailable:
+            raise
+        except Exception as e:
+            raise EmbedBackendUnavailable(f"Ollama embedding unavailable: {e}") from e
+
+    import os
+
+    if os.environ.get("OPENAI_API_KEY"):
+        try:
+            return _embed_openai(text)
+        except Exception:
+            log.debug("OpenAI embedding failed, falling back to local Ollama", exc_info=True)
+    return _embed_ollama(text)
 
 
 def _normalize(vec: list[float]) -> list[float]:
@@ -159,7 +199,76 @@ class KnowledgeBase:
             ensure_data_dir()
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db = lancedb.connect(db_path)
+        self._stamp_path = Path(f"{db_path}.embed_backend")
         self._init_table()
+        self.embed_backend = self._resolve_embed_backend()
+
+    def _resolve_embed_backend(self) -> str | None:
+        """Which vector space this store's rows live in, or None for an empty store
+        that hasn't committed to one yet.
+
+        Kept in a sibling file rather than a column: _init_table drops and recreates
+        the table whenever SCHEMA's field set changes, so adding a field here would
+        wipe every stored memory (see tools/memory_tools._build_tags).
+        """
+        stamped = ""
+        try:
+            stamped = self._stamp_path.read_text().strip()
+        except OSError:
+            pass
+        if stamped in ("openai", "ollama"):
+            return stamped
+        if self.table.count_rows() == 0:
+            return None
+        probed = self._probe_embed_backend()
+        if probed:
+            self._write_embed_backend(probed)
+            log.warning("stamped %s as embedded with %r (probed)", self._stamp_path.name, probed)
+        return probed
+
+    def _probe_embed_backend(self, sample_size: int = 12) -> str | None:
+        """Work out which backend produced this store's vectors by re-embedding a sample
+        of rows and seeing which model reproduces what's on disk.
+
+        Measured, not assumed: this store looked like a nomic store by history, but 51 of
+        its 75 rows turned out to be OpenAI vectors written while Ollama was down. A guess
+        here strands the majority of a user's memory, so an unreachable backend returns
+        None (stay unstamped, decide later) rather than defaulting to the other one.
+        """
+        import random
+
+        # Spread the sample over the whole table: rows come back in insertion order, and
+        # the backend that wrote the oldest rows is exactly the one likely to have been
+        # replaced since. A first-N sample read this store as 100% nomic when two thirds
+        # of it is OpenAI.
+        pool = [
+            r for r in self.table.search().limit(500).to_list()
+            if r.get("content") and r.get("vector") is not None
+        ]
+        if not pool:
+            return None
+        rows = random.sample(pool, min(sample_size, len(pool)))
+
+        best, best_matches = None, 0
+        for backend in ("openai", "ollama"):
+            matches, reachable = 0, True
+            for r in rows:
+                try:
+                    fresh = np.array(_embed(r["content"], backend=backend), dtype=np.float32)
+                except Exception:
+                    reachable = False
+                    break  # no verdict available from this backend right now
+                if float(np.linalg.norm(np.array(r["vector"], dtype=np.float32) - fresh)) < 0.35:
+                    matches += 1
+            if reachable and matches > best_matches:
+                best, best_matches = backend, matches
+        return best
+
+    def _write_embed_backend(self, backend: str) -> None:
+        try:
+            self._stamp_path.write_text(backend + "\n")
+        except OSError as e:
+            log.warning("could not record embed backend for this store: %s", e)
 
     def _init_table(self):
         if "knowledge" not in self.db.list_tables().tables:
@@ -199,7 +308,13 @@ class KnowledgeBase:
         ids = []
         for chunk in chunks:
             cid = _content_id(chunk)
-            vector = _embed(chunk)
+            # Raises EmbedBackendUnavailable rather than writing a vector from the
+            # other backend into this store — one mixed row is unsearchable forever,
+            # while a refused write is just a write to retry when the backend is back.
+            vector = _embed(chunk, backend=self.embed_backend)
+            if self.embed_backend is None:
+                self.embed_backend = EMBED_BACKEND
+                self._write_embed_backend(EMBED_BACKEND)
             self.table.add([{
                 "id":         cid,
                 "source":     source,
@@ -231,7 +346,14 @@ class KnowledgeBase:
         not after.
         Over-fetches by 4x (lesson: don't under-fetch then run out after stale filter).
         """
-        qvec = _embed(query)
+        try:
+            qvec = _embed(query, backend=self.embed_backend)
+        except EmbedBackendUnavailable as e:
+            # Nothing in this store is searchable until its backend is back. Empty is
+            # the honest answer; the alternative is cross-space distances that look
+            # like real matches. Callers already treat [] as "no hit".
+            log.warning("search unavailable — %s (store embedded with %s)", e, self.embed_backend)
+            return []
         search = self.table.search(qvec)
         if source_filter:
             search = search.where(f"source = '{source_filter}'", prefilter=True)
