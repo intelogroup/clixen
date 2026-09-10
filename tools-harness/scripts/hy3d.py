@@ -59,24 +59,91 @@ GPUS = [
     "NVIDIA RTX A6000",
 ]
 
-# The base image ships the CUDA toolchain and the app source but NOT the Python
-# dependencies. hunyuan3d_final_req.txt, never requirements.txt: the latter pins
-# transformers==4.49.0 with torch unpinned, which sends pip into near-infinite
-# backtracking and can replace the cu118 torch everything depends on.
+BUILD = f"{REMOTE}/build_setup"
+SRC = f"{BUILD}/Hunyuan3D-2"
+BIREFNET = f"{REMOTE}/BiRefNet"
+
+# The base image ships the CUDA toolchain and /workspace/setup.sh but NOT the
+# Python dependencies, the application package, or the compiled CUDA extensions.
+# This is setup.sh's sequence with its two environment-destroying steps removed.
+#
+# Never `pip install -r requirements.txt` (either the app's or BiRefNet's):
+#   - The app's leaves torch unpinned, so pip backtracks essentially forever,
+#     walking accelerate down to 0.21 and kornia to 0.4.1.
+#   - BiRefNet's lists `torch` outright. `--no-deps` does NOT save you: it blocks
+#     transitive dependencies but still installs every listed package, so pip
+#     happily replaces torch 2.1.0+cu118 with a PyPI build and every CUDA
+#     extension compiled above stops loading with
+#     "libcublasLt.so.*[0-9] not found in the system path".
+# BiRefNet is cloned only for `image_proc`, which is pure Python, so its
+# requirements are never installed at all.
+#
 # gradio is imported at module level by image_to_texture.py above the point where
 # the UI is built; scikit-image is commented out of requirements.txt but still
 # imported by hy3dgen; meshlib backs FaceReducer, which is on the geometry path,
 # not the texture path. numpy stays on 1.x or cu118 torch breaks.
 SETUP = f"""
+set -e
 cd {REMOTE}
+TORCH_BEFORE=$(python -c "import torch; print(torch.__version__)")
+echo "torch at start: $TORCH_BEFORE"
+
 pip install --no-cache-dir -r {REMOTE}/hunyuan3d_final_req.txt 2>&1 | tail -3
+# The image's torch is 2.1.0+cu118, and transformers >= 4.50 calls
+# torch.utils._pytree.register_pytree_node, which only became public in torch
+# 2.2 — importing it dies with AttributeError before any model loads. 4.49.0 is
+# upstream's own pin and imports cleanly against torch 2.1.
+pip install --no-cache-dir "transformers==4.49.0" 2>&1 | tail -2
 pip install --no-cache-dir gradio scikit-image meshlib hf_transfer \\
     opencv-python-headless "numpy<2" 2>&1 | tail -3
+# nvdiffrast is imported at module level by the texture stage, so it blocks even
+# a geometry-only run. Pinned: master has broken against this torch before.
+pip install --no-cache-dir "git+https://github.com/NVlabs/nvdiffrast.git@v0.3.4" 2>&1 | tail -2
+
+# The application package itself. --no-deps because its setup.py would otherwise
+# re-resolve the dependency set we just pinned by hand.
+mkdir -p {BUILD}
+if [ ! -d {SRC} ]; then
+    git clone --depth 1 https://github.com/sovit-123/Hunyuan3D-2.git {SRC} 2>&1 | tail -1
+fi
+cd {SRC}
+pip install --no-cache-dir --no-deps -e . 2>&1 | tail -2
+
+# Two CUDA extensions, compiled against the image's nvcc 11.8 / cu118 torch.
+# This is the slow part of a cold boot: roughly 15-25 minutes.
+echo "building custom_rasterizer (slow)..."
+cd {SRC}/hy3dgen/texgen/custom_rasterizer && python3 setup.py install 2>&1 | tail -3
+echo "building differentiable_renderer (slow)..."
+cd {SRC}/hy3dgen/texgen/differentiable_renderer && python3 setup.py install 2>&1 | tail -3
+
+# image_proc lives at the BiRefNet repo root and is imported by
+# image_to_texture.py. Source only — see the warning above about its requirements.
+if [ ! -d {BIREFNET} ]; then
+    git clone --depth 1 https://github.com/ZhengPeng7/BiRefNet.git {BIREFNET} 2>&1 | tail -1
+fi
+
 export HF_HUB_ENABLE_HF_TRANSFER=1
-pkill -f "http.server {FILE_PORT}" 2>/dev/null
+pkill -f "http.server {FILE_PORT}" 2>/dev/null || true
 cd {REMOTE} && nohup python -m http.server {FILE_PORT} >/tmp/http.log 2>&1 &
 sleep 1
-python -c "import torch, cv2, gradio, transformers; print('deps ok', torch.__version__)"
+
+# The check that matters: nothing above may have replaced torch. If it did, the
+# extensions just compiled are dead and the pod is not worth keeping.
+cd {REMOTE}
+python - <<'PYEOF'
+import sys
+import torch
+print("torch after setup:", torch.__version__)
+assert torch.__version__.startswith("2.1.0"), (
+    f"torch was replaced during setup: {{torch.__version__}} — "
+    "a pip step pulled in a non-cu118 build, the CUDA extensions are now dead")
+assert torch.version.cuda.startswith("11.8"), f"not a cu118 torch: {{torch.version.cuda}}"
+sys.path.insert(0, {BIREFNET!r})
+import cv2, gradio, transformers, nvdiffrast, hy3dgen, image_proc
+import custom_rasterizer, mesh_processor
+print("deps ok", torch.__version__, "cuda", torch.version.cuda,
+      "avail", torch.cuda.is_available())
+PYEOF
 echo SETUP"_COMPLETE"
 """
 
@@ -218,8 +285,10 @@ def cmd_up(a) -> None:
         print(f"[up] when finished:  hy3d.py down   (${cost}/hr until you do)")
         return
 
-    print("[up] installing dependencies (~4-6 min)...")
-    out = ssh(SETUP, host, timeout=1800)
+    # Cold boot compiles two CUDA extensions from source; there is no shortcut
+    # short of baking them into an image.
+    print("[up] installing dependencies + compiling CUDA extensions (~20-30 min)...")
+    out = ssh(SETUP, host, timeout=3600)
     if "SETUP_COMPLETE" not in out:
         print(out[-2500:])
         print("[up] setup FAILED. Pod is STILL BILLING: hy3d.py down")
@@ -270,6 +339,8 @@ def cmd_run(a) -> None:
     runner = f'''
 import sys, os, glob, time
 os.chdir("{REMOTE}")
+# image_proc is at the BiRefNet repo root, not installed as a package.
+sys.path.insert(0, "{BIREFNET}")
 sys.argv = ["image_to_texture.py"]
 src = open("image_to_texture.py").read()
 src = src[:src.index("with gr.Blocks()")]
