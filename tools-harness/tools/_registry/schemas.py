@@ -33,6 +33,8 @@ ALL_TOOLS = [
     TENCENT_HUNYUAN3D_SCHEMA,
     # Tripo3D generation (image/text -> mesh)
     TRIPO3D_SCHEMA,
+    # Self-hosted Hunyuan3D on a RunPod serverless endpoint (image -> mesh)
+    RUNPOD_COMFY3D_SCHEMA,
     # RunPod Serverless STL Forge (image -> 3D-printable STL)
     STL_FORGE_SCHEMA,
     # Media

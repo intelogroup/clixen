@@ -130,6 +130,14 @@ EXECUTORS = {
         model_version=args.get("model_version"),
         wait_seconds=args.get("wait_seconds", 300),
     ),
+    "runpod_comfy3d_generate": lambda args: runpod_comfy3d_generate_exec(
+        image=args.get("image"),
+        output_path=args.get("output_path"),
+        steps=args.get("steps", 30),
+        seed=args.get("seed", 0),
+        max_facenum=args.get("max_facenum", 40000),
+        wait_seconds=args.get("wait_seconds", 900),
+    ),
     "stl_forge_generate": lambda args: stl_forge_generate_exec(
         image=args["image"],
         target_faces=args.get("target_faces", 100000),

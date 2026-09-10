@@ -56,6 +56,10 @@ from tools.tripo3d import (
     TRIPO3D_SCHEMA,
     tripo3d_generate as tripo3d_generate_exec,
 )
+from tools.runpod_comfy3d import (
+    RUNPOD_COMFY3D_SCHEMA,
+    runpod_comfy3d_generate as runpod_comfy3d_generate_exec,
+)
 from tools.runpod_stl_forge import (
     STL_FORGE_SCHEMA,
     stl_forge_generate as stl_forge_generate_exec,
