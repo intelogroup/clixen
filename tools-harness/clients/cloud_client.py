@@ -1045,13 +1045,26 @@ def raw_completion(
             options["timeout"] = timeout
         client = client.with_options(**options)
 
+    # OpenAI's schema requires each assistant tool_call to carry "id"/"type" and
+    # each following tool-role reply to echo that id back as "tool_call_id" —
+    # ollama's chat API needs neither, so every specialist that round-trips
+    # tool calls through this shared parsing code (path/read/write/research/
+    # scraper/video/audio/data/form specialists) omits both. Synthesize ids
+    # here, the one place every cloud call funnels through, instead of
+    # patching each specialist's "tool" message append site.
     sent = []
+    _pending_ids: list[str] = []
     for m in messages:
         if m.get("role") == "assistant" and m.get("tool_calls"):
             m = dict(m)
-            m["tool_calls"] = [
-                {
-                    **tc,
+            new_tool_calls = []
+            _pending_ids = []
+            for i, tc in enumerate(m["tool_calls"]):
+                tc_id = tc.get("id") or f"call_{len(sent)}_{i}"
+                _pending_ids.append(tc_id)
+                new_tool_calls.append({
+                    "id": tc_id,
+                    "type": tc.get("type", "function"),
                     "function": {
                         **tc["function"],
                         "arguments": (
@@ -1060,9 +1073,11 @@ def raw_completion(
                             else tc["function"]["arguments"]
                         ),
                     },
-                }
-                for tc in m["tool_calls"]
-            ]
+                })
+            m["tool_calls"] = new_tool_calls
+        elif m.get("role") == "tool" and not m.get("tool_call_id") and _pending_ids:
+            m = dict(m)
+            m["tool_call_id"] = _pending_ids.pop(0)
         sent.append(m)
 
     # gpt-5-family rejects any temperature other than the default (1) — 400s
