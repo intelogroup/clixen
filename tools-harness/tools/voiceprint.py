@@ -32,9 +32,41 @@ ENROLL_DURATION_S = 5  # how much speech to capture for enrollment
 _encoder = None  # lazy singleton
 
 
+def _ensure_pkg_resources_shim() -> None:
+    """webrtcvad (resemblyzer's VAD dependency) does `import pkg_resources`
+    purely to read its own version via pkg_resources.get_distribution(...).
+    pkg_resources was removed from setuptools 81+ — this repo pinned
+    setuptools<81 just to keep that one deprecated import alive, which kept
+    a moderate-severity Dependabot alert (sdist exclusion bypass) open with
+    no real upgrade path. Stand in a tiny shim backed by importlib.metadata
+    (stdlib) instead, so setuptools can go to latest. No-op if the real
+    pkg_resources is still installed.
+    """
+    import sys
+    if sys.modules.get("pkg_resources") is not None:
+        return
+    try:
+        import pkg_resources  # noqa: F401
+        return
+    except ImportError:
+        pass
+    import importlib.metadata as _im
+    import types
+    shim = types.ModuleType("pkg_resources")
+
+    def get_distribution(name):
+        class _Dist:
+            version = _im.version(name)
+        return _Dist()
+
+    shim.get_distribution = get_distribution
+    sys.modules["pkg_resources"] = shim
+
+
 def _get_encoder():
     global _encoder
     if _encoder is None:
+        _ensure_pkg_resources_shim()
         from resemblyzer import VoiceEncoder
         _encoder = VoiceEncoder()
     return _encoder
