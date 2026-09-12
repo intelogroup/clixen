@@ -347,11 +347,38 @@ _PROVIDERS: dict[str, tuple[str, str]] = {
 # OpenRouter both 402 out of credit). gpt-5 400'd on temperature=0.7
 # (rejects anything but the default of 1) — raw_completion() now omits
 # temperature for the gpt-5 family instead of sending it. Verified live.
-DEFAULT_CLOUD_MODEL = "openai/gpt-5"
-CLOUD_FALLBACK_MODEL = "openai/gpt-5"
+# 2026-09-11: swapped gpt-5 -> gpt-5-mini, gpt-5 reasoning latency was
+# compounding through harness.py's multi-round tool loop + verify-on-absence
+# retry (each round = another gpt-5 call). Same family, same temperature/
+# max_completion_tokens handling in this file already covers it.
+# 2026-09-11 (later same day): gpt-5-mini FAILED golden_queries.py live suite
+# 1/8 (was 100% before DeepSeek/OpenRouter went dead) — verified live, not a
+# suite/mock artifact. Trace showed it re-calling list_emails/read_email/
+# get_latest_email with identical args dozens of times per single query
+# instead of reusing already-fetched results, burning rounds until timeout
+# (4/8 failures were pure timeouts). schedule_scan_no_search_operators also
+# regressed the exact CCCS 2026-07-10 bug this test pins (never called
+# list_emails with an empty query). Swapped to gpt-4o-mini — non-reasoning,
+# no evidence of this tool-call-looping behavior, was the original doc'd
+# fallback before the gpt-5 family bump. Omits max_completion_tokens (not
+# gpt-5-family) and gets temperature back (not gpt-5-family) via the
+# startswith("gpt-5") branches elsewhere in this file — no other change
+# needed. Re-verify against golden_queries.py before trusting this tier.
+DEFAULT_CLOUD_MODEL = "openai/gpt-4o-mini"
+CLOUD_FALLBACK_MODEL = "openai/gpt-4o-mini"
 # Last-resort tier: reached only when both above fail (dead provider / 402 /
 # 5xx / network). OpenAI direct via OPENAI_API_KEY (see openai/ tier above).
-OPENAI_FALLBACK_MODEL = "openai/gpt-5"
+OPENAI_FALLBACK_MODEL = "openai/gpt-4o-mini"
+# 2026-09-12: OPENAI_API_KEY confirmed live but out of credit (429
+# credit_balance_exhausted on every chat completion) — every tier above was
+# collapsed onto this one dead model, so this rung stopped being live-added
+# insurance. Added one more rung below it: OpenRouter's free auto-router
+# ("openrouter/free", verified live same day: 200, real completion,
+# auto-picked nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free). Kept
+# OPENAI_FALLBACK_MODEL as-is (not repointed) so it recovers on its own once
+# the account is topped up. Re-verify against golden_queries.py before
+# trusting FREE_FALLBACK_MODEL for agentic tool-calling — only smoke-tested.
+FREE_FALLBACK_MODEL = "openrouter/openrouter/free"
 # Cheapest vision-capable model actually reachable on this provider-restricted
 # OpenRouter key (see the {anthropic, cloudflare, google-ai-studio} note above) —
 # every other cheap vision option tested (Qwen-VL, Nemotron, Nova, DeepInfra-hosted
@@ -1093,22 +1120,36 @@ def raw_completion(
         request = _req(real_model)
         resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
     except Exception as e:
-        if model == OPENAI_FALLBACK_MODEL or not fallback:
+        if model == OPENAI_FALLBACK_MODEL or model == FREE_FALLBACK_MODEL or not fallback:
             raise
         if _is_payment_error(e):
             _mark_dead(model)
         _log.warning("[cloud_client] raw_completion %s failed (%s), retrying on OpenAI fallback %s",
                      model, e, OPENAI_FALLBACK_MODEL)
-        client, real_model = _resolve(OPENAI_FALLBACK_MODEL)
-        if not retry or timeout is not None:
-            options = {}
-            if not retry:
-                options["max_retries"] = 0
-            if timeout is not None:
-                options["timeout"] = timeout
-            client = client.with_options(**options)
-        request = _req(real_model)
-        resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
+        try:
+            client, real_model = _resolve(OPENAI_FALLBACK_MODEL)
+            if not retry or timeout is not None:
+                options = {}
+                if not retry:
+                    options["max_retries"] = 0
+                if timeout is not None:
+                    options["timeout"] = timeout
+                client = client.with_options(**options)
+            request = _req(real_model)
+            resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
+        except Exception as e2:
+            _log.warning("[cloud_client] raw_completion OpenAI fallback %s also failed (%s), last resort %s",
+                         OPENAI_FALLBACK_MODEL, e2, FREE_FALLBACK_MODEL)
+            client, real_model = _resolve(FREE_FALLBACK_MODEL)
+            if not retry or timeout is not None:
+                options = {}
+                if not retry:
+                    options["max_retries"] = 0
+                if timeout is not None:
+                    options["timeout"] = timeout
+                client = client.with_options(**options)
+            request = _req(real_model)
+            resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
     _clear_dead(model)
     _track_usage(real_model, getattr(resp, "usage", None))
     return resp.choices[0]
@@ -1181,6 +1222,11 @@ def chat(
             _log.info("[cloud_client] fallback %s's provider is also dead, using %s directly", model, OPENAI_FALLBACK_MODEL)
             _emit_fallback_notice(on_token, model, OPENAI_FALLBACK_MODEL)
             model = OPENAI_FALLBACK_MODEL
+            fallback_model = FREE_FALLBACK_MODEL
+            if _is_dead(model):
+                _log.info("[cloud_client] OpenAI fallback %s is also dead, using %s directly", model, FREE_FALLBACK_MODEL)
+                _emit_fallback_notice(on_token, model, FREE_FALLBACK_MODEL)
+                model = FREE_FALLBACK_MODEL
     if images and model != CLOUD_VISION_MODEL:
         # Only CLOUD_VISION_MODEL is verified to accept image_url content blocks —
         # DeepSeek 400s on them outright ("unknown variant image_url, expected
@@ -1249,13 +1295,23 @@ def chat(
                 round_timeout=round_timeout,
             )
         except Exception as e2:
-            if fallback_model == OPENAI_FALLBACK_MODEL:
+            if fallback_model in (OPENAI_FALLBACK_MODEL, FREE_FALLBACK_MODEL):
                 raise
             _log.warning("[cloud_client] fallback %s also failed (%s), last resort OpenAI %s",
                          fallback_model, e2, OPENAI_FALLBACK_MODEL)
             _emit_fallback_notice(on_token, fallback_model, OPENAI_FALLBACK_MODEL)
-            return _run_tool_loop(
-                OPENAI_FALLBACK_MODEL, list(messages), tools, on_token, max_rounds,
-                run_id=run_id, force_tool_choice=force_tool_choice, reasoning_effort=reasoning_effort,
-                round_timeout=round_timeout,
-            )
+            try:
+                return _run_tool_loop(
+                    OPENAI_FALLBACK_MODEL, list(messages), tools, on_token, max_rounds,
+                    run_id=run_id, force_tool_choice=force_tool_choice, reasoning_effort=reasoning_effort,
+                    round_timeout=round_timeout,
+                )
+            except Exception as e3:
+                _log.warning("[cloud_client] OpenAI last resort %s also failed (%s), free tier %s",
+                             OPENAI_FALLBACK_MODEL, e3, FREE_FALLBACK_MODEL)
+                _emit_fallback_notice(on_token, OPENAI_FALLBACK_MODEL, FREE_FALLBACK_MODEL)
+                return _run_tool_loop(
+                    FREE_FALLBACK_MODEL, list(messages), tools, on_token, max_rounds,
+                    run_id=run_id, force_tool_choice=force_tool_choice, reasoning_effort=reasoning_effort,
+                    round_timeout=round_timeout,
+                )
