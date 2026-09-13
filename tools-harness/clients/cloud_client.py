@@ -163,7 +163,21 @@ def _reasoning_extra_body(model: str, reasoning_effort: str | None) -> dict:
     """OpenRouter's unified `reasoning.effort` knob (low/medium/high) — adaptive
     thinking depth per call. Only openrouter/-prefixed models are verified to accept
     it (Claude extended-thinking passthrough); DeepSeek's direct API 400s on an
-    unknown field, so silently drop there rather than crash the call."""
+    unknown field, so silently drop there rather than crash the call.
+
+    FREE_FALLBACK_MODEL ("openrouter/openrouter/free") always gets
+    reasoning.exclude=true regardless of the caller's effort — verified live
+    2026-09-13: golden_queries.py's suite blew every latency budget (7/8
+    failed, mostly timeouts) because the free auto-router kept landing on
+    reasoning models (nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,
+    nvidia/nemotron-3-super-120b-a12b:free) that emit a multi-hundred-token
+    reasoning preamble before the actual answer even at effort=low. exclude
+    (vs. effort=low alone) reliably drove reasoning tokens to 0 in repeated
+    live trials (11s -> ~1s typical) — this is an emergency last-resort
+    tier, latency matters more than depth here.
+    """
+    if model == FREE_FALLBACK_MODEL:
+        return {"extra_body": {"reasoning": {"exclude": True}}}
     if not reasoning_effort or not model.startswith("openrouter/"):
         return {}
     return {"extra_body": {"reasoning": {"effort": reasoning_effort}}}
