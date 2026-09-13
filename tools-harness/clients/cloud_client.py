@@ -1244,8 +1244,6 @@ def chat(
             reasoning_effort=reasoning_effort, round_timeout=round_timeout,
         )
     except Exception as e:
-        if model == fallback_model:
-            raise
         if isinstance(e, QueryAbortedException):
             # 2026-07-11: a caller-side soft-timeout (e.g. brabble_hook.py's 45s
             # "voice users can't wait forever" timer) hits /chat/abort, which sets
@@ -1286,32 +1284,29 @@ def chat(
                     break
         if _is_payment_error(e):
             _mark_dead(model)
-        _log.warning("[cloud_client] %s failed (%s), retrying on fallback %s", model, e, fallback_model)
-        _emit_fallback_notice(on_token, model, fallback_model)
-        try:
-            return _run_tool_loop(
-                fallback_model, list(messages), tools, on_token, max_rounds,
-                run_id=run_id, force_tool_choice=force_tool_choice, reasoning_effort=reasoning_effort,
-                round_timeout=round_timeout,
-            )
-        except Exception as e2:
-            if fallback_model in (OPENAI_FALLBACK_MODEL, FREE_FALLBACK_MODEL):
-                raise
-            _log.warning("[cloud_client] fallback %s also failed (%s), last resort OpenAI %s",
-                         fallback_model, e2, OPENAI_FALLBACK_MODEL)
-            _emit_fallback_notice(on_token, fallback_model, OPENAI_FALLBACK_MODEL)
+        # Remaining tiers to try in order, skipping any that duplicate the model
+        # that just failed (e.g. fallback_model/OPENAI_FALLBACK_MODEL/
+        # FREE_FALLBACK_MODEL are all currently the same string while OpenAI's
+        # out of credit — retrying the identical dead model twice wastes a
+        # guaranteed-402 round trip instead of reaching the one tier that's live).
+        tried = {model}
+        remaining = [m for m in (fallback_model, OPENAI_FALLBACK_MODEL, FREE_FALLBACK_MODEL) if m not in tried]
+        last_exc = e
+        for next_model in remaining:
+            if next_model in tried:
+                continue
+            tried.add(next_model)
+            _log.warning("[cloud_client] %s failed (%s), retrying on %s", model, last_exc, next_model)
+            _emit_fallback_notice(on_token, model, next_model)
             try:
                 return _run_tool_loop(
-                    OPENAI_FALLBACK_MODEL, list(messages), tools, on_token, max_rounds,
+                    next_model, list(messages), tools, on_token, max_rounds,
                     run_id=run_id, force_tool_choice=force_tool_choice, reasoning_effort=reasoning_effort,
                     round_timeout=round_timeout,
                 )
-            except Exception as e3:
-                _log.warning("[cloud_client] OpenAI last resort %s also failed (%s), free tier %s",
-                             OPENAI_FALLBACK_MODEL, e3, FREE_FALLBACK_MODEL)
-                _emit_fallback_notice(on_token, OPENAI_FALLBACK_MODEL, FREE_FALLBACK_MODEL)
-                return _run_tool_loop(
-                    FREE_FALLBACK_MODEL, list(messages), tools, on_token, max_rounds,
-                    run_id=run_id, force_tool_choice=force_tool_choice, reasoning_effort=reasoning_effort,
-                    round_timeout=round_timeout,
-                )
+            except Exception as e_next:
+                if _is_payment_error(e_next):
+                    _mark_dead(next_model)
+                model = next_model
+                last_exc = e_next
+        raise last_exc
