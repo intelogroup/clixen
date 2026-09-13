@@ -165,19 +165,16 @@ def _reasoning_extra_body(model: str, reasoning_effort: str | None) -> dict:
     it (Claude extended-thinking passthrough); DeepSeek's direct API 400s on an
     unknown field, so silently drop there rather than crash the call.
 
-    FREE_FALLBACK_MODEL ("openrouter/openrouter/free") always gets
-    reasoning.exclude=true regardless of the caller's effort — verified live
-    2026-09-13: golden_queries.py's suite blew every latency budget (7/8
-    failed, mostly timeouts) because the free auto-router kept landing on
-    reasoning models (nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,
-    nvidia/nemotron-3-super-120b-a12b:free) that emit a multi-hundred-token
-    reasoning preamble before the actual answer even at effort=low. exclude
-    (vs. effort=low alone) reliably drove reasoning tokens to 0 in repeated
-    live trials (11s -> ~1s typical) — this is an emergency last-resort
-    tier, latency matters more than depth here.
+    FREE_FALLBACK_MODEL always gets reasoning.exclude=true regardless of the
+    caller's effort (cut typical latency from 11-33s to 1-3s, see the
+    FREE_FALLBACK_MODEL comment above) plus OpenRouter's own server-side
+    "models" fallback array set to FREE_FALLBACK_CANDIDATES, so a 502
+    "provider overloaded" or similar on the primary candidate is retried on
+    the next candidate by OpenRouter itself instead of surfacing as a
+    KeyError on a body with no "choices" (reproduced live).
     """
     if model == FREE_FALLBACK_MODEL:
-        return {"extra_body": {"reasoning": {"exclude": True}}}
+        return {"extra_body": {"reasoning": {"exclude": True}, "models": FREE_FALLBACK_CANDIDATES}}
     if not reasoning_effort or not model.startswith("openrouter/"):
         return {}
     return {"extra_body": {"reasoning": {"effort": reasoning_effort}}}
@@ -386,13 +383,35 @@ OPENAI_FALLBACK_MODEL = "openai/gpt-4o-mini"
 # 2026-09-12: OPENAI_API_KEY confirmed live but out of credit (429
 # credit_balance_exhausted on every chat completion) — every tier above was
 # collapsed onto this one dead model, so this rung stopped being live-added
-# insurance. Added one more rung below it: OpenRouter's free auto-router
-# ("openrouter/free", verified live same day: 200, real completion,
-# auto-picked nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free). Kept
+# insurance. Added one more rung below it: OpenRouter's free tier. Kept
 # OPENAI_FALLBACK_MODEL as-is (not repointed) so it recovers on its own once
-# the account is topped up. Re-verify against golden_queries.py before
-# trusting FREE_FALLBACK_MODEL for agentic tool-calling — only smoke-tested.
-FREE_FALLBACK_MODEL = "openrouter/openrouter/free"
+# the account is topped up.
+#
+# 2026-09-13: originally pointed at the "openrouter/free" wildcard
+# auto-router. golden_queries.py's live regression suite exposed two real
+# problems with that, both verified live:
+#   1. It kept landing on reasoning models that emit a multi-hundred-token
+#      preamble even at reasoning.effort=low, blowing every latency budget
+#      (7/8 failed, mostly timeouts). Fixed separately via
+#      reasoning.exclude=true in _reasoning_extra_body (see below) — cut
+#      typical latency from 11-33s to 1-3s.
+#   2. It can ALSO land on nvidia/nemotron-3.5-content-safety:free — a
+#      safety classifier, not a chat model — which answers every prompt
+#      with the literal string "User Safety: safe" regardless of content.
+#      Reproduced live repeatedly; reasoning settings can't fix a routing
+#      choice. This alone caused 2/8 golden_queries failures even after (1)
+#      was fixed.
+# Replaced the wildcard with an explicit candidate list (below), sent via
+# OpenRouter's own server-side "models" fallback array instead of trusting
+# its free-tier auto-router to only pick real chat models. Verified live,
+# 8/8 trials with tool-calling: fast (1.2-3.5s), correct tool_calls, zero
+# wrong-model or malformed-body responses across the run.
+FREE_FALLBACK_MODEL = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+FREE_FALLBACK_CANDIDATES = [
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "liquid/lfm-2.5-2.6b:free",
+]
 # Cheapest vision-capable model actually reachable on this provider-restricted
 # OpenRouter key (see the {anthropic, cloudflare, google-ai-studio} note above) —
 # every other cheap vision option tested (Qwen-VL, Nemotron, Nova, DeepInfra-hosted
