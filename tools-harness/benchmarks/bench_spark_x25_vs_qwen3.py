@@ -36,7 +36,7 @@ import time
 import urllib.request
 
 OLLAMA_BASE = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-DEFAULT_MODELS = "spark-x2.5:4b,qwen3:8b"
+DEFAULT_MODELS = "spark-x2.5:4b,qwen3.5:4b,qwen3:8b"
 
 
 def post(path: str, payload: dict, timeout: int = 180) -> dict:
