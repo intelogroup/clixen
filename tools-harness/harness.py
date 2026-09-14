@@ -1090,7 +1090,7 @@ def _run_impl(
 
         # ponytail: post-process any captured diagram URLs into render_diagram calls
         result = _process_diagram_urls(result)
-        return result, orchestrator_model, "orchestrator"
+        return result, cloud_client.LAST_SERVED_MODEL.get() or orchestrator_model, "orchestrator"
 
     _is_plan = bool(chat_id) and str(chat_id).startswith("plan_") or force_plan_mode
 
@@ -1914,7 +1914,7 @@ def _run_impl(
                         compact_old_turns(chat_id, routed_model)
                 if tts:
                     _speak(result, voice=tts_voice)
-                return result, routed_model, intent
+                return result, cloud_client.LAST_SERVED_MODEL.get() or routed_model, intent
 
         # Specialist dispatch: route to dedicated sub-agent if patterns match.
         # (Data-file analysis is handled earlier, ungated by intent — see [data-specialist/early].)
@@ -2152,7 +2152,7 @@ def _run_impl(
             import tools.registry as _reg
 
             _reg.PLAN_MODE_ACTIVE = False
-            return result, routed_model, intent
+            return result, cloud_client.LAST_SERVED_MODEL.get() or routed_model, intent
 
     # LLM call is outside the lock — it's slow and chat-independent
     _max_rounds = (
