@@ -375,7 +375,19 @@ _PROVIDERS: dict[str, tuple[str, str]] = {
 # gpt-5-family) and gets temperature back (not gpt-5-family) via the
 # startswith("gpt-5") branches elsewhere in this file — no other change
 # needed. Re-verify against golden_queries.py before trusting this tier.
-DEFAULT_CLOUD_MODEL = "openai/gpt-4o-mini"
+# 2026-09-13: OPENAI_API_KEY still out of credit — every real call was
+# wasting 2 guaranteed-dead round trips (openai 429, again via the fallback
+# cascade) before ever reaching a tier that actually works. Pointed straight
+# at FREE_FALLBACK_MODEL (see its definition below — same string, duplicated
+# here since it isn't defined yet at this point in the file) now that it's
+# been pinned to a vetted model + verified live via golden_queries.py and
+# real-task testing (5/5 correct, no misroutes). CLOUD_FALLBACK_MODEL stays
+# on openai/gpt-4o-mini — cheap to still try it once per call in case the
+# account gets topped up, before falling through to OPENAI_FALLBACK_MODEL/
+# FREE_FALLBACK_MODEL. Revert DEFAULT_CLOUD_MODEL to openai/gpt-4o-mini once
+# credit is restored — free tier is last-resort by design, not a permanent
+# primary (latency is variable run-to-run, see golden_queries history above).
+DEFAULT_CLOUD_MODEL = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
 CLOUD_FALLBACK_MODEL = "openai/gpt-4o-mini"
 # Last-resort tier: reached only when both above fail (dead provider / 402 /
 # 5xx / network). OpenAI direct via OPENAI_API_KEY (see openai/ tier above).
