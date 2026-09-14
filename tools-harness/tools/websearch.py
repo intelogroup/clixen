@@ -243,6 +243,47 @@ def _search(query: str, time_range: str = "") -> SearchResult:
                 return r
         return SearchResult(content="", ok=False, error="Brave Search failed or no key", source="brave", query=query)
 
+    def _run_browserbase():
+        # Added 2026-09-14 as one more fallback tier: Exa (402, out of credit),
+        # Tavily (432, over usage limit), and Brave (422, invalid key) were all
+        # simultaneously dead, and SearXNG's docker container wasn't running —
+        # left the whole fallback tier with nothing. Verified live via
+        # `browse cloud search` before wiring in. REST endpoint per
+        # docs.browserbase.com/platform/search/overview — no Python SDK
+        # installed, raw POST matches every other backend here (brave_search.py
+        # etc.). Response items carry title/url/publishedDate but no body
+        # snippet, unlike Exa/Tavily — summarize() gets less to work with per
+        # result, but still a real fallback instead of a hard failure.
+        if not os.environ.get("BROWSERBASE_API_KEY"):
+            return SearchResult(content="", ok=False, error="Browserbase key not set", source="browserbase", query=query)
+        try:
+            import requests
+            resp = requests.post(
+                "https://api.browserbase.com/v1/search",
+                headers={
+                    "Content-Type": "application/json",
+                    "x-bb-api-key": os.environ["BROWSERBASE_API_KEY"],
+                },
+                json={"query": query, "numResults": 8},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            items = [
+                SearchSnippet(
+                    title=r.get("title", "") or "",
+                    url=r.get("url", "") or "",
+                    snippet=r.get("title", "") or "",
+                    published_date=(r.get("publishedDate", "") or "")[:10],
+                )
+                for r in data.get("results", [])
+            ]
+            if items:
+                return SearchResult(content="", ok=True, source="browserbase", query=query, items=items)
+        except Exception as e:
+            return SearchResult(content="", ok=False, error=str(e), source="browserbase", query=query)
+        return SearchResult(content="", ok=False, error="Browserbase returned no results", source="browserbase", query=query)
+
     def _run_arxiv():
         from tools.arxiv_search import execute as arxiv_execute
         return arxiv_execute(query, max_results=3)
@@ -401,11 +442,13 @@ def _search(query: str, time_range: str = "") -> SearchResult:
             _log.debug("search: tavily fallback failed (%s) -> falling back to searxng/ddg/brave",
                        tav.error if tav else "none")
 
-    # FALLBACK: SearXNG + DDG + Brave (parallel) only when Tavily/Exa did not deliver.
+    # FALLBACK: SearXNG + DDG + Brave + Browserbase (parallel) only when Tavily/Exa did not deliver.
     if not results:
         fallback_tasks = [("searxng", _run_searxng), ("ddg", _run_ddg)]
         if os.environ.get("BRAVE_SEARCH_API_KEY"):
             fallback_tasks.append(("brave", _run_brave))
+        if os.environ.get("BROWSERBASE_API_KEY"):
+            fallback_tasks.append(("browserbase", _run_browserbase))
         results.extend(_gather(fallback_tasks))
 
     # Collect the academic backends that were running in parallel with the web search.
