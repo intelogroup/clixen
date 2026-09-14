@@ -529,10 +529,18 @@ def run(*args, **kwargs):
     run_id = kwargs.get("run_id") or uuid.uuid4().hex[:8]
     from log_config import CURRENT_RUN_ID
     token = CURRENT_RUN_ID.set(run_id)
+    # Same leak risk as CURRENT_RUN_ID: chat_ui's threadpool reuses OS
+    # threads across requests, and cloud_client.LAST_SERVED_MODEL is a
+    # ContextVar keyed to that thread's context — reset it here so a stale
+    # value from a PRIOR request's cloud call can't leak into this request's
+    # return label if this one never touches cloud_client at all (e.g. a
+    # pure local/offline ollama reply).
+    served_token = cloud_client.LAST_SERVED_MODEL.set("")
     try:
         return _run_impl(*args, **kwargs)
     finally:
         CURRENT_RUN_ID.reset(token)
+        cloud_client.LAST_SERVED_MODEL.reset(served_token)
         # Plan mode sets a process-global read-only flag for tool blocking. Reset it
         # on every exit so a plan request can never leave write tools permanently
         # locked (the old reset lived only on the url_fetch fast-path — unreachable
@@ -2194,7 +2202,14 @@ def _run_impl(
     if tts:
         _speak(result, voice=tts_voice)
 
-    return result, routed_model, intent
+    # routed_model is what was requested, not necessarily what answered — a
+    # dead-provider cascade (see cloud_client.chat()) can serve the actual
+    # completion from a different tier entirely. LAST_SERVED_MODEL reports
+    # which one actually ran; only trust it for cloud calls (ollama_client
+    # never sets it, so it stays "" and this correctly falls back to
+    # routed_model for local/offline replies).
+    _served_model = cloud_client.LAST_SERVED_MODEL.get() or routed_model
+    return result, _served_model, intent
 
 
 def run_for_messaging(*args, **kwargs):

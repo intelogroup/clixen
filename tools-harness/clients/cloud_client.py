@@ -458,6 +458,16 @@ def _dead_window(prefix: str) -> float:
 # Not thread-safe; fine for the sequential benchmark/CLI use cases this serves.
 _usage_totals: dict[str, dict[str, int]] = {}
 
+# The model that actually served the most recent successful completion in
+# this context (same request-scoped ContextVar pattern as log_config's
+# CURRENT_RUN_ID) — set on every successful round, so after chat()/
+# raw_completion() returns it holds whichever tier in the fallback cascade
+# actually answered, not just the tier the caller originally requested.
+# harness.py's return-value model label was reporting the originally-routed
+# model even when the whole DeepSeek/OpenAI chain was dead and the answer
+# actually came from FREE_FALLBACK_MODEL — verified live 2026-09-13.
+LAST_SERVED_MODEL: contextvars.ContextVar[str] = contextvars.ContextVar("last_served_model", default="")
+
 
 def get_usage_totals() -> dict[str, dict[str, int]]:
     return {k: dict(v) for k, v in _usage_totals.items()}
@@ -907,6 +917,7 @@ def _run_tool_loop(
         usage = getattr(resp, "usage", None)
         _clear_dead(model)
         _track_usage(real_model, usage)
+        LAST_SERVED_MODEL.set(model)
         # 2026-07-11: diagnostic-only addition — finish_reason was never logged
         # or checked anywhere in this file, so a response silently cut short by
         # the API's own (unset here) max_tokens ceiling looked identical to a
@@ -1149,6 +1160,7 @@ def raw_completion(
             r["temperature"] = temperature
         return r
 
+    served_model = model
     try:
         request = _req(real_model)
         resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
@@ -1160,6 +1172,7 @@ def raw_completion(
         _log.warning("[cloud_client] raw_completion %s failed (%s), retrying on OpenAI fallback %s",
                      model, e, OPENAI_FALLBACK_MODEL)
         try:
+            served_model = OPENAI_FALLBACK_MODEL
             client, real_model = _resolve(OPENAI_FALLBACK_MODEL)
             if not retry or timeout is not None:
                 options = {}
@@ -1173,6 +1186,7 @@ def raw_completion(
         except Exception as e2:
             _log.warning("[cloud_client] raw_completion OpenAI fallback %s also failed (%s), last resort %s",
                          OPENAI_FALLBACK_MODEL, e2, FREE_FALLBACK_MODEL)
+            served_model = FREE_FALLBACK_MODEL
             client, real_model = _resolve(FREE_FALLBACK_MODEL)
             if not retry or timeout is not None:
                 options = {}
@@ -1185,6 +1199,7 @@ def raw_completion(
             resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
     _clear_dead(model)
     _track_usage(real_model, getattr(resp, "usage", None))
+    LAST_SERVED_MODEL.set(served_model)
     return resp.choices[0]
 
 def chat(
