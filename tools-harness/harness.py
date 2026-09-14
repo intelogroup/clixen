@@ -1512,14 +1512,38 @@ def _run_impl(
         _wants_summary = any(
             w in query.lower() for w in ("summarize", "summarise", "summary", "tldr", "brief")
         )
-        # Root cause of a live miss (2026-07-10) this used to guard with a dedicated
-        # keyword-triggered branch: the model invented its own subject:(...)/after:/before:
-        # filters on "do I have X today" queries, missing a same-day reminder received
-        # the day before. Deleted 2026-08-02 — LIST_EMAILS_SCHEMA's description now
-        # carries the same categorical "always empty query" guidance to every dispatch
-        # path, verified live to hold even under this function's generic "else" prompt
-        # below (schema constrains the tool call regardless of which system_prompt wins).
-        if _wants_telegram:
+        _wants_schedule_scan = any(
+            w in query.lower() for w in (
+                "due", "assignment", "deadline", "upcoming", "scheduled",
+                "homework", "project", "reminder", "confirmed",
+            )
+        )
+        # Root cause of a live miss (2026-07-10): the model invented its own
+        # subject:(...)/after:/before: filters on "do I have X today" queries,
+        # missing a same-day reminder received the day before. A dedicated
+        # branch here was deleted 2026-08-02 on the theory that
+        # LIST_EMAILS_SCHEMA's description alone would hold across every
+        # dispatch path — it doesn't: this exact regression reproduced live
+        # again 2026-09-13 (golden_queries.py's schedule_scan_no_search_operators,
+        # every run this session) on the free-tier fallback model. Worse, with
+        # no branch for schedule-shaped queries at all, they fell through to
+        # the generic "else" below, which tells the model to fetch only
+        # get_latest_email() and summarize it — wrong instruction for "do I
+        # have anything due," actively pushing the model to improvise its own
+        # search instead. Restored as an explicit branch, checked before
+        # _wants_telegram/else, reinforcing (not replacing) the schema text.
+        if _wants_schedule_scan:
+            system_prompt = (
+                "You are an email assistant checking for schedule/due-date/assignment items. "
+                "Call list_emails with an EMPTY query (no search operators — no is:, from:, "
+                "subject:, after:, before:) and read the returned snippets yourself. Reminder "
+                "and confirmation emails arrive BEFORE their event date, so date filters and "
+                "guessed subject keywords miss them. If the empty-query scan doesn't surface "
+                "an obvious match, that is NOT a reason to call list_emails again with a search "
+                "operator — re-read the snippets or read_email one of them instead, or answer "
+                "that nothing was found."
+            )
+        elif _wants_telegram:
             system_prompt = (
                 "You are an email assistant. Follow these steps exactly:\n\n"
                 "STEP 1: Call get_latest_email() — returns the full email body in one shot.\n"
