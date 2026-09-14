@@ -64,9 +64,20 @@ def local_chat(**kwargs):
             return cloud_client.chat(**kwargs, bypass_budget=True)
         except Exception:
             _log.warning("[local_chat] cloud failed, falling back to local", exc_info=True)
-            kwargs["model"] = ollama_client.DEFAULT_MODEL
-            return ollama_client.chat(**kwargs)
-    return ollama_client.chat(**kwargs)
+            last_exc = None
+            for local_model in (ollama_client.DEFAULT_MODEL, "qwen3.5:4b", "llama3.1:8b"):
+                kwargs["model"] = local_model
+                try:
+                    result = ollama_client.chat(**kwargs)
+                    cloud_client.LAST_SERVED_MODEL.set(local_model)
+                    return result
+                except Exception as e:
+                    _log.warning("[local_chat] local model %s failed too", local_model, exc_info=True)
+                    last_exc = e
+            raise last_exc
+    result = ollama_client.chat(**kwargs)
+    cloud_client.LAST_SERVED_MODEL.set(model)
+    return result
 from tools.websearch import search as _run_websearch
 from tools.query_guard import check_all as _guard_check, _WEATHER_REPLY
 from agents.specialists.dispatch import dispatch as _specialist_dispatch
