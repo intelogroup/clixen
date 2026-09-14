@@ -41,7 +41,11 @@ GOLDEN_QUERIES = [
         "query": "What emails did I get this morning?",
         "must_call": {"ask_email_agent"},
         "answer_must_not_match": r"as an ai|i (?:cannot|can't) access",
-        "max_seconds": 120,
+        # ponytail: 120s timed out live (deadline 180s) while running on
+        # FREE_FALLBACK_MODEL during the 2026-09-13 OpenAI-outage suite run —
+        # per-round latency is fine (1-16s observed) but multi-round tool
+        # loops on this tier compound past the DeepSeek/Haiku-tuned budget.
+        "max_seconds": 180,
     },
     {
         "name": "calendar_week_view",
@@ -68,7 +72,9 @@ GOLDEN_QUERIES = [
         "query": "Summarize my recent emails about failed or missed deliveries",
         "must_call": {"ask_email_agent"},
         "forbid_escalation": True,
-        "max_seconds": 120,
+        # ponytail: same FREE_FALLBACK_MODEL latency-budget bump as
+        # morning_email_summary above, 2026-09-13.
+        "max_seconds": 180,
     },
     {
         "name": "absence_honesty",
@@ -87,7 +93,10 @@ GOLDEN_QUERIES = [
         "query": "Verify email and iMessage for any confirmed assignments coming this month",
         "must_call_any": _COMMITMENT,
         "min_sources": 2,
-        "max_seconds": 180,
+        # ponytail: 180s timed out live (deadline 270s) on FREE_FALLBACK_MODEL,
+        # 2026-09-13 — a 2-source fan-out like due_tomorrow_fanout above, which
+        # already needed 200s; this one also does imessage_search, bump higher.
+        "max_seconds": 220,
     },
     {
         "name": "schedule_scan_no_search_operators",
