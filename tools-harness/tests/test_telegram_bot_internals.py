@@ -363,3 +363,67 @@ def test_msg_age_secs_fresh_and_stale(monkeypatch):
     stale = _FakeUpdate(_FakeMessage())
     stale.message.date = now - datetime.timedelta(hours=2)
     assert _tb._msg_age_secs(stale) > _tb._STALE_SKIP_SECS
+
+
+# ---------------------------------------------------------------------------
+# _friendly_error_text — never leak a raw traceback/exception string to the
+# user. Confirmed live 2026-09-18: a 4hr internet outage produced 270x raw
+# "httpx.ConnectError: All connection attempts failed" and a mid-command
+# crash sent the literal Python exception text ("Unexpected error: Error
+# code: 429 - {'error': {...'code': 'credit_balance_exhausted'}}") straight
+# to the user's chat.
+# ---------------------------------------------------------------------------
+
+
+def test_friendly_error_network_outage():
+    exc = Exception("httpx.ConnectError: All connection attempts failed")
+    msg = tb._friendly_error_text(exc)
+    assert "ConnectError" not in msg and "httpx" not in msg
+    assert "connecting" in msg.lower() or "connect" in msg.lower()
+
+
+def test_friendly_error_model_not_found():
+    exc = RuntimeError("Ollama model 'gemma4:12b' not found — run `ollama pull gemma4:12b`.")
+    msg = tb._friendly_error_text(exc)
+    assert "ollama pull" not in msg
+    assert "model" in msg.lower()
+
+
+def test_friendly_error_credit_exhausted():
+    exc = Exception(
+        "Error code: 429 - {'error': {'message': 'You have no credits remaining. "
+        "Add credits to continue using the API at "
+        "https://platform.openai.com/settings/organization/billing/.', "
+        "'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}"
+    )
+    msg = tb._friendly_error_text(exc)
+    assert "platform.openai.com" not in msg
+    assert "top-up" in msg.lower() or "limit" in msg.lower()
+
+
+def test_friendly_error_unknown_falls_back_to_generic_apology():
+    msg = tb._friendly_error_text(Exception("some totally unknown internal thing broke"))
+    assert "unknown internal thing" not in msg
+    assert "went wrong" in msg.lower()
+
+
+def test_friendly_error_handles_none():
+    # error_handler can be invoked with ctx.error unset — must not crash.
+    assert isinstance(tb._friendly_error_text(None), str)
+
+
+def test_error_handler_network_error_logs_one_line_no_traceback(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    fake = MagicMock()
+    monkeypatch.setattr(tb, "log", fake)
+    ctx = SimpleNamespace(error=tb.NetworkError("httpx.ConnectError: All connection attempts failed"))
+    asyncio.run(tb.error_handler(None, ctx))
+    fake.warning.assert_called_once()
+    fake.error.assert_not_called()
+
+    fake.reset_mock()
+    asyncio.run(tb.error_handler(None, SimpleNamespace(error=ValueError("boom"))))
+    fake.error.assert_called_once()

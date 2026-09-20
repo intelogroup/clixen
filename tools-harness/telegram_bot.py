@@ -1484,12 +1484,38 @@ async def cmd_agent(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ---------------------------------------------------------------------------
 
 
+# 2026-09-18: confirmed live — a 4hr internet outage produced 270x raw
+# "telegram.error.NetworkError: httpx.ConnectError: All connection attempts
+# failed" tracebacks, and any mid-command crash sent the user the literal
+# Python exception text ("Unexpected error: Error code: 429 - {'error': ...").
+# Neither is something a non-technical user should ever see. Classify by
+# exception type/message into one friendly line; unknown errors still get a
+# generic apology, never the raw exception.
+def _friendly_error_text(exc: BaseException | None) -> str:
+    text = str(exc or "")
+    name = type(exc).__name__ if exc is not None else ""
+    if "ConnectError" in text or "NetworkError" in name or "Connection" in text:
+        return "Having trouble connecting right now — I'll keep trying. Give it a minute and resend if I don't reply."
+    if "not found" in text and ("model" in text.lower() or "ollama" in text.lower()):
+        return "One of my local models isn't loaded right now — I'll fall back to another one. Try again in a moment."
+    if "credit_balance_exhausted" in text or "insufficient_quota" in text:
+        return "I've hit an API usage limit — this needs a top-up on my end, not something you can fix. Try again later."
+    if "RateLimitError" in name or "429" in text:
+        return "I'm being rate-limited right now. Give it a few seconds and try again."
+    if "Timeout" in name or "timed out" in text.lower():
+        return "That took too long and timed out. Try again, or ask something shorter."
+    return "Something went wrong on my end handling that. Try again in a bit."
+
+
 async def error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE):
     """Catch-all: log and notify the user on any unhandled exception."""
-    log.error("Unhandled exception", exc_info=ctx.error)
+    if isinstance(ctx.error, _TG_NET_ERRORS):
+        log.warning("Telegram network error (retrying): %s", ctx.error)
+    else:
+        log.error("Unhandled exception", exc_info=ctx.error)
     if isinstance(update, Update) and update.message:
         try:
-            await update.message.reply_text(f"Unexpected error: {ctx.error}")
+            await update.message.reply_text(_friendly_error_text(ctx.error))
         except Exception:
             pass
 
