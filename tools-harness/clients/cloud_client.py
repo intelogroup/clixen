@@ -422,7 +422,11 @@ FREE_FALLBACK_MODEL = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
 FREE_FALLBACK_CANDIDATES = [
     "nvidia/nemotron-3-super-120b-a12b:free",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    "liquid/lfm-2.5-2.6b:free",
+    # Last rung: OpenRouter's free auto-router. OpenRouter caps "models" at 3, so it
+    # replaced liquid/lfm-2.5-2.6b (returned empty content in live test 2026-09-21).
+    # Only reached after both vetted models fail/429, so its content-safety-model
+    # misroute (see 2026-09-13 note above) is a last-resort risk, not the default.
+    "openrouter/free",
 ]
 # Cheapest vision-capable model actually reachable on this provider-restricted
 # OpenRouter key (see the {anthropic, cloudflare, google-ai-studio} note above) —
