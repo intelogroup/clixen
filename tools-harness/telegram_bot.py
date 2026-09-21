@@ -1050,6 +1050,7 @@ def _capture_screenshot(screenshot_path: str) -> tuple[bool, str]:
 
 
 def _analyze_screenshot_ocr(query: str, ocr_text: str, on_token=None) -> str | None:
+    prompt = None
     try:
         import ollama
         from clients.ollama_client import DEFAULT_MODEL as _OCR_MODEL
@@ -1092,7 +1093,27 @@ def _analyze_screenshot_ocr(query: str, ocr_text: str, on_token=None) -> str | N
         return full
     except Exception as e:
         log.warning("OCR-reason path failed: %s", e)
-        return None
+        if not prompt:
+            return None
+        # Local Ollama down/unreachable — the OCR text is already extracted, so a
+        # text-only cloud completion answers the same question.
+        try:
+            from clients import cloud_client
+            choice = cloud_client.raw_completion(
+                model=cloud_client.DEFAULT_CLOUD_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                tools=[],
+                bypass_budget=True,
+                timeout=60,
+            )
+            full = (choice.message.content or "").strip()
+            if full and on_token:
+                on_token(full)
+            log.info("[screenshot] cloud ocr-reason fallback answered (%d chars)", len(full))
+            return full or None
+        except Exception as e2:
+            log.warning("OCR-reason cloud fallback failed: %s", e2)
+            return None
 
 
 def _age_label(secs: float) -> str:
