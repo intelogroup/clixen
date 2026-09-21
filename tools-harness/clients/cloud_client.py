@@ -568,7 +568,7 @@ def _is_payment_error(e: Exception) -> bool:
     # provider dead instead of retrying it on every call until then.
     return (
         "402" in msg or "insufficient" in msg or "requires more credits" in msg
-        or "429" in msg or "rate limit exceeded" in msg or "credit_balance_exhausted" in msg
+        or "rate limit exceeded" in msg or "credit_balance_exhausted" in msg
     )
 
 
