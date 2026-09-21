@@ -559,10 +559,17 @@ def _emit_fallback_notice(on_token, from_model: str, to_model: str) -> None:
 
 
 def _is_payment_error(e: Exception) -> bool:
-    if getattr(e, "status_code", None) == 402:
+    if getattr(e, "status_code", None) in (402, 429):
         return True
     msg = str(e).lower()
-    return "402" in msg or "insufficient" in msg or "requires more credits" in msg
+    # 429 daily/monthly quota exhaustion (e.g. OpenRouter's
+    # "free-models-per-day" cap) behaves like a payment error, not a transient
+    # burst limit — it won't clear until the provider's own reset, so mark the
+    # provider dead instead of retrying it on every call until then.
+    return (
+        "402" in msg or "insufficient" in msg or "requires more credits" in msg
+        or "429" in msg or "rate limit exceeded" in msg or "credit_balance_exhausted" in msg
+    )
 
 
 def _resolve(model: str) -> tuple[OpenAI, str]:
