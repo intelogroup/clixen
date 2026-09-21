@@ -1176,6 +1176,45 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         Path(photo_path).unlink(missing_ok=True)
 
 
+_UPLOAD_DIR = Path.home() / ".config" / "g4l" / "data" / "telegram_uploads"
+
+
+async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Uploaded file (pdf/docx/xlsx...) — download, extract text, dispatch as a normal query
+    with the text inline so follow-ups ("the pdf I sent") find it in conversation history.
+    Previously no Document handler existed, so PTB dropped these updates silently."""
+    if not _allowed(update):
+        log.warning("Blocked user %s", update.effective_user.id)
+        return
+
+    doc = update.message.document
+    caption = (update.message.caption or "").strip()
+    chat_id = str(update.effective_chat.id)
+    log.info("document from %s (%s, %s bytes, caption=%r)", update.effective_user.id,
+             doc.file_name, doc.file_size, caption[:80])
+    await update.message.chat.send_action("typing")
+
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^\w.\-]", "_", doc.file_name or "upload")
+    dest = _UPLOAD_DIR / f"{int(time.time())}_{safe}"
+    try:
+        tg_file = await _tg_retry(lambda: doc.get_file(), "document.get_file")
+        await _tg_retry(lambda: tg_file.download_to_drive(str(dest)), "document.download")
+    except Exception as e:
+        log.warning("[document] download failed: %s", e)
+        await update.message.reply_text(f"Couldn't download that file: {e}")
+        return
+
+    from tools.structured import read_document
+    text = await asyncio.to_thread(read_document, str(dest))
+    log.info("[document] saved %s, extracted %d chars", dest, len(text))
+    query = (
+        f"{caption or 'Summarize this file.'}\n\n"
+        f"[Uploaded file: {doc.file_name} — saved at {dest}]\n{text}"
+    )
+    await _dispatch_query(update, query, chat_id, _msg_age_secs(update))
+
+
 _APPROVE_DENY_RE = re.compile(r"^(APPROVE|DENY)\s+([a-f0-9]{6,32})$", re.IGNORECASE)
 
 
@@ -1601,6 +1640,7 @@ def main():
     app.add_handler(CommandHandler("tutor", cmd_tutor))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_error_handler(error_handler)
 
