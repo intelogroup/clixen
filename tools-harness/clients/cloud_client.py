@@ -1298,6 +1298,15 @@ def chat(
                 _log.info("[cloud_client] OpenAI fallback %s is also dead, using %s directly", model, FREE_FALLBACK_MODEL)
                 _emit_fallback_notice(on_token, model, FREE_FALLBACK_MODEL)
                 model = FREE_FALLBACK_MODEL
+        if _is_dead(model):
+            # All three cloud tiers (primary/OpenAI/free) are confirmed dead —
+            # skip the guaranteed-fail round trip (and its own internal SDK
+            # retries) and raise straight away. local_chat() in harness.py
+            # catches any exception from chat() and falls back to
+            # ollama_client with DEFAULT_MODEL, so this is the fast path to
+            # that existing local fallback instead of grinding through one
+            # more dead call first.
+            raise RuntimeError(f"all cloud tiers dead ({model} exhausted) — forcing local fallback")
     if images and model != CLOUD_VISION_MODEL:
         # Only CLOUD_VISION_MODEL is verified to accept image_url content blocks —
         # DeepSeek 400s on them outright ("unknown variant image_url, expected
