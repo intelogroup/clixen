@@ -27,6 +27,7 @@ proper nouns) come back as U+2753 and get silently dropped by the vocab
 filter, same as any other out-of-vocab symbol — no espeak fallback.
 """
 
+import importlib.machinery
 import sys
 import types
 
@@ -73,6 +74,12 @@ def _stub_gpl_deps() -> None:
     sys.modules["phonemizer.backend"] = backend_mod
     sys.modules["phonemizer.backend.espeak"] = espeak_mod
     sys.modules["phonemizer.backend.espeak.wrapper"] = wrapper_mod
+
+    # importlib.util.find_spec (called by transformers) raises ValueError on a
+    # sys.modules entry whose __spec__ is None, which bare ModuleType() leaves.
+    for name in ("espeakng_loader", "phonemizer", "phonemizer.backend",
+                 "phonemizer.backend.espeak", "phonemizer.backend.espeak.wrapper"):
+        sys.modules[name].__spec__ = importlib.machinery.ModuleSpec(name, None)
 
     _STUBBED = True
 
