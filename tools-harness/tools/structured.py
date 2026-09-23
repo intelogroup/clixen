@@ -626,7 +626,7 @@ def read_pdf(path: str, pages: str = "1-10") -> str:
     text = _pdftotext_pages(p, start, end)
     if _embedded_text_len(text) >= 20:
         return f"PDF: {p} ({total} pages total)\n\n{text}"[:30000]
-    ocr = _ocr_pdf_pages(str(p), start, end, total)
+    ocr = _liteparse_pdf_pages(str(p), start, end, total) or _ocr_pdf_pages(str(p), start, end, total)
     if ocr:
         return ocr[:30000]
     return f"PDF read error: no extractable text in selected pages {start}-{end}"
@@ -687,6 +687,34 @@ _PDF_HEADER_RE = re.compile(r"^PDF: .*\((\d+) pages total\)$|^--- Page \d+ ---$"
 
 def _embedded_text_len(text: str) -> int:
     return len(re.sub(r"\s+", "", _PDF_HEADER_RE.sub("", text)))
+
+
+def _liteparse_pdf_pages(path: str, start: int, end: int, total: int) -> str:
+    """Scanned-PDF OCR via LiteParse CLI (~4x faster than render+OCR per page).
+
+    Returns "" when the binary is missing or fails so caller falls back to
+    `_ocr_pdf_pages`. Install: `npm i -g @llamaindex/liteparse`.
+    """
+    binary = shutil.which("liteparse")
+    if not binary or not start or not end:
+        return ""
+    tmp_dir = Path(tempfile.mkdtemp(prefix="pdf_liteparse_"))
+    try:
+        out = tmp_dir / "out.json"
+        subprocess.run(
+            [binary, "parse", path, "--format", "json", "-o", str(out), "--target-pages", f"{start}-{end}"],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        pages = json.loads(out.read_text())["pages"]
+        parts = [f"PDF: {path} ({total} pages total)"]
+        parts += [f"--- Page {pg['page']} ---\n{pg['text']}" for pg in pages]
+        return "\n\n".join(parts) if _embedded_text_len("\n".join(parts)) >= 20 else ""
+    except Exception:
+        return ""
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _ocr_pdf_pages(path: str, start: int, end: int, total: int) -> str:
