@@ -80,8 +80,14 @@ def transcribe_audio(
     global _model_cache
     with _model_lock:
         if model_size not in _model_cache:
+            # compute_type="int8" on CTranslate2/CPU on Apple Silicon lacks a
+            # real int8 GEMM kernel — confirmed live 2026-09-22: it silently
+            # produced divide-by-zero/overflow/NaN in the mel-spectrogram
+            # matmul (feature_extractor.py) and hallucinated fluent-sounding
+            # but content-free transcripts instead of erroring. float32 is
+            # the numerically safe path on this platform; slower, but correct.
             _model_cache[model_size] = WhisperModel(
-                model_size, device="cpu", compute_type="int8"
+                model_size, device="cpu", compute_type="float32"
             )
         model = _model_cache[model_size]
 
@@ -105,6 +111,71 @@ def transcribe_audio(
         "duration_sec": round(info.duration, 2),
         "language": info.language,
         "truncated": truncated,
+    }
+
+
+_creole_model = None
+_creole_processor = None
+_creole_lock = Lock()
+
+# generic Whisper (even large-v3) is a known weak spot for Haitian Creole — a
+# low-resource language it wasn't trained much on (confirmed live 2026-09-22:
+# large-v3 language-ID confidence sat at 0.26-0.59 on real Creole clips, and
+# leaned French). This community fine-tune produces genuine Kreyòl with real
+# orthography instead — verified by cross-checking against large-v3 output on
+# the same clips: both surfaced the same underlying content (school
+# construction, concrete pouring, a water/drainage problem), so it's real
+# signal, not noise, and this model's version reads far cleaner.
+_CREOLE_MODEL_ID = "ZeeshanGeoPk/haitian-speech-to-text"
+
+
+def transcribe_haitian_creole(file_path: str, max_new_tokens: int = 440) -> dict:
+    """Transcribe audio with a Whisper fine-tune for Haitian Creole.
+
+    Loads audio via ffmpeg directly (not torchaudio — sidesteps it entirely;
+    a decode step is all that's needed here, no torchaudio-specific features
+    used) into a raw float32 PCM array, matching what WhisperProcessor wants.
+
+    Chunks into <=28s windows before generating — this model's decoder has a
+    hard 448-token limit (config.max_target_positions, not a knob you can
+    raise past), so anything longer than ~1-2 minutes of speech silently cut
+    off mid-sentence in one generate() call (confirmed live 2026-09-22, a
+    ~99s clip). 28s (not the full 30s Whisper's encoder window supports)
+    leaves headroom so a word isn't split exactly on a chunk boundary.
+    """
+    resolved = _resolve_audio_path(file_path)
+    proc = subprocess.run(
+        ["ffmpeg", "-i", resolved, "-f", "f32le", "-ac", "1", "-ar", "16000", "-"],
+        capture_output=True, check=True,
+    )
+    import numpy as np
+    audio = np.frombuffer(proc.stdout, dtype=np.float32)
+
+    global _creole_model, _creole_processor
+    with _creole_lock:
+        if _creole_model is None:
+            from transformers import WhisperProcessor, WhisperForConditionalGeneration
+            _creole_processor = WhisperProcessor.from_pretrained(_CREOLE_MODEL_ID)
+            _creole_model = WhisperForConditionalGeneration.from_pretrained(_CREOLE_MODEL_ID)
+        processor, model = _creole_processor, _creole_model
+
+    chunk_samples = 28 * 16000
+    parts = []
+    for start in range(0, max(len(audio), 1), chunk_samples):
+        chunk = audio[start:start + chunk_samples]
+        if len(chunk) < 1600:  # <0.1s tail sliver — nothing usable in it
+            continue
+        inputs = processor(chunk, sampling_rate=16000, return_tensors="pt").input_features
+        ids = model.generate(inputs, max_new_tokens=max_new_tokens)
+        part = processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+        if part:
+            parts.append(part)
+
+    return {
+        "text": " ".join(parts),
+        "duration_sec": round(len(audio) / 16000, 2),
+        "language": "ht",
+        "truncated": False,
     }
 
 
