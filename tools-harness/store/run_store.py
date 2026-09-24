@@ -22,15 +22,31 @@ Contract (docs/plans/2026-09-24-long-horizon-agent-upgrade.md):
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from store import dbclose
 
-_DB_PATH = Path(__file__).parent.parent / "data" / "run_store.sqlite"
+# CLIXEN_RUN_STORE relocates the journal (child processes and tests must share
+# one file; the supervisor passes it through the child env).
+_DB_PATH = Path(os.environ.get("CLIXEN_RUN_STORE")
+                or Path(__file__).parent.parent / "data" / "run_store.sqlite")
+
+# Retention (plan performance budget: 500 runs / 30 days). Overridable in
+# tests; prune_runs enforces it on create.
+_MAX_RUNS = 500
+_MAX_AGE_S = 30 * 24 * 3600
+
+# Journal schema version — bumped when event semantics change so an old
+# journal is quarantined rather than silently mis-replayed (plan failure-modes
+# table: schema drift ⇒ quarantine + explicit restart, never silent replay).
+SCHEMA_VERSION = 1
+_DEFAULT_MAX_ATTEMPTS = 3
 
 # Lifecycle states from the plan's Interaction State Table.
 STATUSES = (
@@ -145,7 +161,26 @@ def _conn() -> sqlite3.Connection:
         "CREATE TABLE IF NOT EXISTS runs ("
         "run_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,"
         "trigger TEXT NOT NULL, goal TEXT NOT NULL, policy TEXT NOT NULL,"
-        "status TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, last_seq INTEGER NOT NULL DEFAULT 0)"
+        "status TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, last_seq INTEGER NOT NULL DEFAULT 0, "
+        "pid INTEGER, lease_expires_at REAL NOT NULL DEFAULT 0)"
+    )
+    # Additive migrations — DBs created before M3 lack these columns.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(runs)")}
+    for col, ddl in (("pid", "ALTER TABLE runs ADD COLUMN pid INTEGER"),
+                     ("lease_expires_at",
+                      "ALTER TABLE runs ADD COLUMN lease_expires_at REAL NOT NULL DEFAULT 0")):
+        if col not in cols:
+            conn.execute(ddl)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?)",
+        (str(SCHEMA_VERSION),),
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS dead_letters ("
+        "run_id TEXT PRIMARY KEY, reason TEXT NOT NULL, at TEXT NOT NULL)"
     )
     conn.execute(
         "CREATE TABLE IF NOT EXISTS run_events ("
@@ -156,7 +191,23 @@ def _conn() -> sqlite3.Connection:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_run_events_kind ON run_events (run_id, kind, seq)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runs_lease ON runs(status, lease_expires_at)"
+    )
     return conn
+
+
+def schema_version() -> int:
+    """Persisted journal schema version (SCHEMA_VERSION above).
+
+    A journal written by a DIFFERENT version is quarantined on resume rather
+    than silently mis-replayed (plan failure-modes: schema drift ⇒
+    quarantine + explicit restart).
+    """
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    return int(row[0]) if row else SCHEMA_VERSION
 
 
 def _now() -> str:
@@ -301,11 +352,134 @@ def get_events(run_id: str, after_seq: int = 0) -> list[dict]:
     ]
 
 
+def claim_lease(run_id: str, pid: int, ttl_s: float = 60.0,
+                max_attempts: int = _DEFAULT_MAX_ATTEMPTS) -> int:
+    """Take execution ownership of a run: bump attempt, record the child pid
+    and a lease deadline, transition to running. Over the attempt cap the run
+    is failed and dead-lettered (M3). Returns the new attempt count."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT status, attempt FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"no run {run_id!r}")
+        status, attempt = row
+        attempt += 1
+        conn.execute(
+            "UPDATE runs SET attempt = ?, pid = ?, lease_expires_at = ?, updated_at = ?"
+            " WHERE run_id = ?",
+            (attempt, int(pid), time.time() + float(ttl_s), _now(), run_id),
+        )
+    if status != "running":
+        set_status(run_id, "running")
+    # Claiming IS a liveness record — a run that finishes in under one
+    # heartbeat interval still leaves a lease event behind.
+    append_event(run_id, "heartbeat",
+                 {"lease": round(time.time() + float(ttl_s)), "attempt": attempt,
+                  "pid": int(pid)})
+    # max_attempts is the TOTAL number of executions allowed; the claim that
+    # would be the (cap+1)th never runs — the run is dead-lettered instead.
+    if attempt >= max_attempts:
+        reason = f"exceeded {max_attempts} attempts (crashed repeatedly)"
+        append_event(run_id, "heartbeat", {"attempt": attempt, "reason": "dead-letter"})
+        mark_dead_lettered(run_id, reason)
+    return attempt
+
+
+def renew_lease(run_id: str, ttl_s: float = 60.0) -> float:
+    """Extend the lease and journal a heartbeat. Returns the new deadline."""
+    deadline = time.time() + float(ttl_s)
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE runs SET lease_expires_at = ?, updated_at = ? WHERE run_id = ?",
+            (deadline, _now(), run_id))
+    append_event(run_id, "heartbeat",
+                 {"lease": round(deadline), "ttl_s": float(ttl_s)})
+    return deadline
+
+
+def release_lease(run_id: str) -> None:
+    """Drop pid + lease — the child finished or was reaped."""
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE runs SET pid = NULL, lease_expires_at = 0, updated_at = ?"
+            " WHERE run_id = ?", (_now(), run_id))
+
+
+def stale_runs(status: str = "running") -> list[dict]:
+    """Runs whose execution lease has expired (crashed/wedged child)."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT run_id FROM runs WHERE status = ? AND lease_expires_at > 0"
+            " AND lease_expires_at < ? ORDER BY updated_at",
+            (status, time.time())).fetchall()
+    return [r for (rid,) in rows if (r := get_run(rid)) is not None]
+
+
+def mark_dead_lettered(run_id: str, reason: str) -> None:
+    """Move an over-attempted run to the dead-letter queue (status failed)."""
+    with _conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO dead_letters (run_id, reason, at) VALUES (?, ?, ?)",
+            (run_id, reason, _now()))
+    try:
+        set_status(run_id, "failed")
+    except ValueError:
+        pass  # already terminal — the DLQ row is the record
+
+
+def list_dead_letters(limit: int = 50) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT run_id, reason, at FROM dead_letters ORDER BY at DESC LIMIT ?",
+            (limit,)).fetchall()
+    return [{"run_id": r[0], "reason": r[1], "at": r[2]} for r in rows]
+
+
+def prune_runs(max_runs: int | None = None, max_age_s: int | None = None) -> int:
+    """Retention (plan perf budget: 500 runs / 30 days). Keeps the newest
+    `max_runs` rows and anything younger than `max_age_s`; ACTIVE runs
+    (queued/running/paused/steer-waiting/retrying) are never evicted. Returns
+    how many runs were removed."""
+    cap = _MAX_RUNS if max_runs is None else max_runs
+    age = _MAX_AGE_S if max_age_s is None else max_age_s
+    cutoff = time.time() - age
+    active = {"queued", "running", "paused", "steer-waiting", "retrying"}
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT run_id, status, created_at FROM runs"
+            " ORDER BY created_at DESC, rowid DESC"  # rowid tiebreak: same-ms runs
+        ).fetchall()  # must order newest-first deterministically
+        victims = []
+        kept_terminal = 0
+        for rid, status, created in rows:
+            if status in active:
+                continue  # never evict live work; it does not consume the cap
+            if kept_terminal < cap and _epoch(created) >= cutoff:
+                kept_terminal += 1
+                continue
+            victims.append(rid)
+        for rid in victims:
+            conn.execute("DELETE FROM run_events WHERE run_id = ?", (rid,))
+            conn.execute("DELETE FROM runs WHERE run_id = ?", (rid,))
+    return len(victims)
+
+
+def _epoch(value) -> float:
+    """created_at is stored as an ISO string; tolerate epoch floats too."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except (TypeError, ValueError):
+        return time.time()
+
+
 def get_run(run_id: str) -> dict | None:
     with _conn() as conn:
         row = conn.execute(
             "SELECT run_id, created_at, updated_at, trigger, goal, policy,"
-            " status, attempt, last_seq FROM runs WHERE run_id = ?",
+            " status, attempt, last_seq, pid, lease_expires_at"
+            " FROM runs WHERE run_id = ?",
             (run_id,),
         ).fetchone()
     if not row:
@@ -314,6 +488,7 @@ def get_run(run_id: str) -> dict | None:
         "run_id": row[0], "created_at": row[1], "updated_at": row[2],
         "trigger": row[3], "goal": row[4], "policy": json.loads(row[5]),
         "status": row[6], "attempt": row[7], "last_seq": row[8],
+        "pid": row[9], "lease_expires_at": row[10] or 0,
         "resumable": row[6] in _RESUMABLE,
     }
 

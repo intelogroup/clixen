@@ -107,3 +107,17 @@ def test_control_on_terminal_run_reports_not_ok(monkeypatch):
     rs.set_status(rid, "succeeded")
     resp = c.post(f"/api/runs/{rid}/control", json={"action": "pause"})
     assert resp.json()["ok"] is False
+
+
+def test_process_mode_spawns_a_supervised_child(monkeypatch):
+    c = _authed(_client())
+    spawned = {}
+
+    def fake_spawn(run_id, **kw):
+        spawned["run_id"] = run_id
+        return object()
+
+    monkeypatch.setattr("jobs.run_supervisor.spawn_run", fake_spawn)
+    resp = c.post("/api/runs", json={"goal": "long task", "mode": "process"})
+    assert resp.status_code == 200, resp.text
+    assert spawned["run_id"] == resp.json()["run_id"]

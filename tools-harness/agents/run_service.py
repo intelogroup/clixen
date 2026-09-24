@@ -16,6 +16,7 @@ Design notes:
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -47,22 +48,52 @@ def _default_execute(run_id: str, model: str, tools: list[str], system: str,
 
 def start_run(goal: str, tools: list[str] | None = None, *, model: str = DEFAULT_MODEL,
               system: str = "", policy: dict | None = None,
-              trigger: str = "chat-send", execute=None) -> str:
+              trigger: str = "chat-send", execute=None, mode: str | None = None) -> str:
     """Journal the run + goal and kick off execution. Returns the run_id —
     the caller never waits for the answer (plan IO contract: the sender is
-    never blocked; progress arrives on the event stream)."""
+    never blocked; progress arrives on the event stream).
+
+    mode: "thread" (default) runs in a daemon thread; "process" spawns a
+    supervised child process (M3). Env `CLIXEN_RUN_MODE` sets the default.
+    """
     rid = rs.create_run(goal, trigger=trigger, policy=policy or {})
     rs.append_event(rid, "user_msg", {"text": goal})
-    runner = execute or (lambda r: _default_execute(r, model, tools or [], system,
-                                                    policy))
-    if getattr(execute, "_sync", False) or execute is not None:
-        # Explicit executor (tests, or a caller that wants synchronous behavior)
-        # runs inline; the default path is the background thread.
-        runner(rid)
-    else:
-        threading.Thread(target=runner, args=(rid,), name=f"run-{rid[:8]}",
-                         daemon=True).start()
+    if execute is not None:
+        execute(rid)  # explicit executor (tests / synchronous callers)
+        return rid
+    if (mode or os.environ.get("CLIXEN_RUN_MODE", "thread")) == "process":
+        from jobs import run_supervisor
+
+        run_supervisor.spawn_run(rid, model=model, tools=tools or [], system=system)
+        return rid
+    threading.Thread(
+        target=_default_execute,
+        args=(rid, model, tools or [], system, policy),
+        name=f"run-{rid[:8]}", daemon=True,
+    ).start()
     return rid
+
+
+def resume_run(run_id: str, *, model: str = DEFAULT_MODEL, tools: list[str] | None = None,
+               system: str = "", mode: str | None = None) -> str:
+    """Resume a resumable run: journal the intent, then either wake an inline
+    thread or spawn a fresh supervised child (never adopt the old one)."""
+    run = rs.get_run(run_id)
+    if run is None:
+        return f"[runs] no run {run_id!r}"
+    if not run["resumable"]:
+        return f"[runs] Run {run['status']} is not resumable — start a new run."
+    rs.append_control(run_id, "resume")
+    if (mode or os.environ.get("CLIXEN_RUN_MODE", "thread")) == "process":
+        from jobs import run_supervisor
+
+        run_supervisor.spawn_run(run_id, model=model, tools=tools or [], system=system)
+    else:
+        threading.Thread(
+            target=_default_execute, args=(run_id, model, tools or [], system,
+                                           run.get("policy") or {}),
+            name=f"run-{run_id[:8]}", daemon=True).start()
+    return f"Resuming run {run_id[:8]}."
 
 
 def stream_events(run_id: str, after_seq: int = 0, poll_s: float = 0.25,

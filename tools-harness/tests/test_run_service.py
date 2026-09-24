@@ -88,5 +88,21 @@ def test_run_card_view_is_minimal_and_safe():
     assert "password" not in str(card).lower()
 
 
+def test_resume_run_rejects_terminal_and_resumes_resumable(monkeypatch):
+    from agents import run_service
+    rid = rs.create_run("g", policy={})
+    rs.set_status(rid, "running")
+    rs.set_status(rid, "paused")
+    started = {}
+    monkeypatch.setattr(run_service, "_default_execute",
+                        lambda *a, **k: started.setdefault("ran", True))
+    out = run_service.resume_run(rid)
+    assert out.startswith("Resuming")
+    assert [c["action"] for c in rs.pending_controls(rid)] == ["resume"]
+    rs.set_status(rid, "running")
+    rs.set_status(rid, "succeeded")
+    assert "not resumable" in run_service.resume_run(rid)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

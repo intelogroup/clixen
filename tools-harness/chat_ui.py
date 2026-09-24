@@ -871,6 +871,7 @@ def create_run(request: Request, payload: dict):
         tools=payload.get("tools") or [],
         model=payload.get("model") or run_service.DEFAULT_MODEL,
         policy=payload.get("policy") or {},
+        mode=payload.get("mode"),
     )
     return run_service.run_card(rid)
 

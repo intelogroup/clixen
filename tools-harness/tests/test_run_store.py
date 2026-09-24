@@ -160,6 +160,95 @@ def test_round_snapshot_scrubs_secrets():
     assert ev["payload"]["extra"]["token"] == "[REDACTED:token]"
 
 
+# ── M3 supervisor substrate: lease, pid, dead-letter, schema version ──────
+
+def test_schema_version_is_persisted_and_bumped_safely():
+    v = rs.schema_version()
+    assert isinstance(v, int) and v >= 1
+    assert rs.schema_version() == v  # idempotent
+
+
+def test_claim_lease_sets_pid_lease_and_attempt():
+    rid = rs.create_run("g")
+    assert rs.claim_lease(rid, pid=4242, ttl_s=60) == 1
+    run = rs.get_run(rid)
+    assert run["status"] == "running" and run["attempt"] == 1
+    assert run["pid"] == 4242
+    assert run["lease_expires_at"] > 0
+
+
+def test_claim_lease_resumes_paused_run():
+    rid = rs.create_run("g")
+    rs.set_status(rid, "running")
+    rs.set_status(rid, "paused")
+    assert rs.claim_lease(rid, pid=7, ttl_s=60) == 1  # first CLAIM = attempt 1
+    assert rs.get_run(rid)["status"] == "running"
+
+
+def test_renew_lease_extends_and_heartbeat_event_is_written():
+    rid = rs.create_run("g")
+    rs.claim_lease(rid, pid=1, ttl_s=1)
+    before = rs.get_run(rid)["lease_expires_at"]
+    rs.renew_lease(rid, ttl_s=600)
+    after = rs.get_run(rid)["lease_expires_at"]
+    assert after > before
+    beats = [e for e in rs.get_events(rid) if e["kind"] == "heartbeat"]
+    assert beats and "lease" in str(beats[-1]["payload"])
+
+
+def test_stale_runs_finds_only_expired_leases():
+    fresh = rs.create_run("fresh")
+    rs.claim_lease(fresh, pid=1, ttl_s=600)
+    dead = rs.create_run("dead")
+    rs.claim_lease(dead, pid=2, ttl_s=0)  # already expired
+    stale = [r["run_id"] for r in rs.stale_runs()]
+    assert dead in stale and fresh not in stale
+
+
+def test_dead_letter_after_max_attempts():
+    rid = rs.create_run("g")
+    rs.claim_lease(rid, pid=1, ttl_s=0)
+    rs.claim_lease(rid, pid=2, ttl_s=0)   # attempt 2
+    rs.claim_lease(rid, pid=3, ttl_s=0)   # attempt 3 → over the cap
+    assert rs.get_run(rid)["status"] == "failed"
+    dlq = rs.list_dead_letters()
+    assert dlq and dlq[0]["run_id"] == rid
+    assert "attempts" in dlq[0]["reason"]
+
+
+def test_dead_letter_cap_is_configurable():
+    rid = rs.create_run("g")
+    for _ in range(2):
+        rs.claim_lease(rid, pid=1, ttl_s=0, max_attempts=2)
+    assert rs.get_run(rid)["status"] == "failed"
+    assert rs.list_dead_letters()[0]["run_id"] == rid
+
+
+def test_release_lease_clears_pid():
+    rid = rs.create_run("g")
+    rs.claim_lease(rid, pid=99, ttl_s=60)
+    rs.release_lease(rid)
+    run = rs.get_run(rid)
+    assert run["pid"] is None and run["lease_expires_at"] == 0
+
+
+def test_prune_runs_enforces_cap_but_never_active():
+    rs._MAX_RUNS = 3
+    ids = []
+    for i in range(5):
+        rid = rs.create_run(f"g{i}")
+        rs.set_status(rid, "running")
+        rs.set_status(rid, "succeeded")  # terminal ⇒ prunable
+        ids.append(rid)
+    active = rs.create_run("still queued")
+    rs.prune_runs()
+    remaining = {r["run_id"] for r in rs.list_runs(limit=50)}
+    assert len(remaining) == 4  # 3 newest terminal + the active one
+    assert ids[0] not in remaining and ids[-1] in remaining
+    assert active in remaining, "an active (queued) run must never be pruned"
+
+
+
 # ── Control intents (M2: pause / resume / kill / steer) ──────────────────
 
 def test_append_control_records_intent_without_status_change():
