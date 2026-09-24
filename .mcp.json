@@ -16,6 +16,21 @@
     "browseros": {
       "type": "http",
       "url": "http://127.0.0.1:9000/mcp"
+    },
+    "higgsfield-bridge": {
+      "type": "http",
+      "url": "https://bridge.higgsfield.ai/mcp"
+    },
+    "comfyui": {
+      "command": "npx",
+      "args": [
+        "--yes",
+        "comfyui-mcp@latest"
+      ]
+    },
+    "comfy-cloud": {
+      "type": "http",
+      "url": "https://cloud.comfy.org/mcp"
     }
   }
 }

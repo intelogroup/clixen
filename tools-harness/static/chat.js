@@ -718,19 +718,18 @@ function autoResize() {
 sendBtn.addEventListener('click',send);
 inputEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 inputEl.addEventListener('input',autoResize);
-document.addEventListener('keydown',e=>{
-  if((e.metaKey||e.ctrlKey)&&e.key==='n'){
-    e.preventDefault();
-    const s=createSession('New chat'); setActiveId(s.id);
-    document.getElementById('messages').innerHTML='';
-    renderSidebar(); checkWelcome(); inputEl.focus();
-  }
-});
-document.getElementById('new-chat-btn').addEventListener('click',()=>{
+function startNewChat(){
   const s=createSession('New chat'); setActiveId(s.id);
   document.getElementById('messages').innerHTML='';
   renderSidebar(); checkWelcome(); inputEl.focus();
+}
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='n'){
+    e.preventDefault();
+    startNewChat();
+  }
 });
+document.getElementById('new-chat-btn').addEventListener('click',startNewChat);
 
 workspaceBtn.addEventListener('click', openWorkspaceModal);
 document.getElementById('workspace-close').addEventListener('click', closeWorkspaceModal);
@@ -985,3 +984,30 @@ window.openWorkspaceModal = function() {
   if (typeof _openWorkspaceModalOrig === 'function') _openWorkspaceModalOrig();
   loadCookbookSystemProfile();
 };
+
+if (document.modelContext) {
+  document.modelContext.registerTool({
+    name: 'send_message',
+    description: 'Send a chat message to Clixen in the active session. Reply streams into the UI asynchronously; this tool does not wait for it.',
+    inputSchema: {
+      type: 'object',
+      properties: { message: { type: 'string', description: 'The message text to send.' } },
+      required: ['message'],
+    },
+    execute: async ({ message }) => {
+      inputEl.value = message;
+      await send();
+      return { sent: message };
+    },
+  });
+
+  document.modelContext.registerTool({
+    name: 'new_chat',
+    description: 'Start a new chat session, clearing the current conversation view.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      startNewChat();
+      return { started: true };
+    },
+  });
+}

@@ -22,6 +22,7 @@ Or add to ~/.claude/settings.json mcpServers:
     }
 """
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -32,7 +33,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 from fastmcp import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, ToolResult
 
 from tools.registry import ALL_TOOLS, execute_tool
 
@@ -43,9 +44,12 @@ class RegistryTool(Tool):
     """An MCP tool whose input schema and execution both come straight from
     tools/registry.py — no per-tool function to hand-write or keep in sync."""
 
-    async def run(self, arguments: dict) -> object:
-        result = execute_tool(self.name, arguments)
-        return self.convert_result(result)
+    async def run(self, arguments: dict) -> ToolResult:
+        # execute_tool is sync; some executors (browser.py) use Playwright's
+        # sync API, which refuses to run in a thread with a running asyncio
+        # loop. asyncio.to_thread hands it a plain worker thread instead.
+        result = await asyncio.to_thread(execute_tool, self.name, arguments)
+        return ToolResult(content=result)
 
 
 for _t in ALL_TOOLS:
