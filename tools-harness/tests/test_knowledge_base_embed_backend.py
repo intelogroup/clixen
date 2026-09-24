@@ -13,8 +13,12 @@ import pytest
 from store import knowledge_base as kb
 
 
-def _fake_backends(monkeypatch, available=("openai", "ollama")):
-    """Give each backend its own distinguishable vector space."""
+def _fake_backends(monkeypatch, available=("openai", "ollama", "gguf")):
+    """Give each backend its own distinguishable vector space.
+
+    "gguf" shares the ollama space on purpose — it is the same nomic model run
+    through llama.cpp, not a third space (see kb._embed_gguf).
+    """
     space = {"openai": 1.0, "ollama": -1.0}
 
     def fake_openai(text: str) -> list[float]:
@@ -29,8 +33,15 @@ def _fake_backends(monkeypatch, available=("openai", "ollama")):
         kb.EMBED_BACKEND = "ollama"
         return [space["ollama"]] * kb.EMBED_DIM
 
+    def fake_gguf(text: str) -> list[float]:
+        if "gguf" not in available:
+            raise kb.EmbedBackendUnavailable("no llama-server")
+        kb.EMBED_BACKEND = "ollama"
+        return [space["ollama"]] * kb.EMBED_DIM
+
     monkeypatch.setattr(kb, "_embed_openai", fake_openai)
     monkeypatch.setattr(kb, "_embed_ollama", fake_ollama)
+    monkeypatch.setattr(kb, "_embed_gguf", fake_gguf)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
 
@@ -91,3 +102,103 @@ def test_unstamped_store_stays_undecided_when_no_backend_answers(tmp_path, monke
 
     _fake_backends(monkeypatch, available=())
     assert kb.KnowledgeBase(db_path=path).embed_backend is None
+
+
+def test_ollama_down_gguf_serves_the_same_space(tmp_path, monkeypatch):
+    """A down Ollama must not strand an ollama-stamped store: llama.cpp runs the
+    same nomic-embed-text model, so it answers in the same space and the stamp
+    stays "ollama"."""
+    _fake_backends(monkeypatch, available=("ollama", "gguf"))
+    path = str(tmp_path / "k.lance")
+    kb.KnowledgeBase(db_path=path).store("the user's dog is named Biscuit", source="manual")
+
+    _fake_backends(monkeypatch, available=("gguf",))  # Ollama daemon down, GGUF up
+    store = kb.KnowledgeBase(db_path=path)
+    assert store.search("dog") != []
+    store.store("second row", source="manual")
+    assert store.table.count_rows() == 2
+    assert store.embed_backend == "ollama"
+
+
+def test_both_ollama_and_gguf_down_still_refuses_cross_space(tmp_path, monkeypatch):
+    """With both runtimes of the nomic space gone, writes must still refuse rather
+    than silently switch to the OpenAI space."""
+    _fake_backends(monkeypatch, available=("ollama", "gguf"))
+    path = str(tmp_path / "k.lance")
+    kb.KnowledgeBase(db_path=path).store("row", source="manual")
+
+    _fake_backends(monkeypatch, available=("openai",))
+    with pytest.raises(kb.EmbedBackendUnavailable, match="GGUF fallback failed"):
+        kb.KnowledgeBase(db_path=path).store("second row", source="manual")
+
+
+class _FakeResp:
+    def __init__(self, body):
+        self._body = body
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._body
+
+
+def test_verify_rejects_a_foreign_llama_server_on_the_port(monkeypatch):
+    """/health only proves *some* llama-server is there. On this machine 8090 is a
+    bge-reranker daemon whose /v1/embeddings answers all-zeros — trusting it would
+    write garbage vectors into the store, the exact corruption _embed prevents."""
+    url = "http://127.0.0.1:9999"
+    kb._GGUF_VERIFIED.discard(url)
+
+    monkeypatch.setattr(
+        kb.requests, "post",
+        lambda *a, **kw: _FakeResp({
+            "model": "/repo/models/bge-reranker-v2-m3-Q8_0.gguf",
+            "data": [{"embedding": [0.0] * kb.EMBED_DIM}],
+        }),
+    )
+    with pytest.raises(kb.EmbedBackendUnavailable, match="not nomic"):
+        kb._verify_gguf_server(url)
+
+
+def test_verify_rejects_wrong_dims_and_zero_vectors(monkeypatch):
+    url = "http://127.0.0.1:9998"
+    kb._GGUF_VERIFIED.discard(url)
+
+    monkeypatch.setattr(
+        kb.requests, "post",
+        lambda *a, **kw: _FakeResp({
+            "model": "nomic-embed-text-v1.5.Q8_0.gguf",
+            "data": [{"embedding": [0.1] * 1024}],  # bge-m3-sized, not nomic
+        }),
+    )
+    with pytest.raises(kb.EmbedBackendUnavailable, match="want 768"):
+        kb._verify_gguf_server(url)
+
+    monkeypatch.setattr(
+        kb.requests, "post",
+        lambda *a, **kw: _FakeResp({
+            "model": "nomic-embed-text-v1.5.Q8_0.gguf",
+            "data": [{"embedding": [0.0] * kb.EMBED_DIM}],
+        }),
+    )
+    with pytest.raises(kb.EmbedBackendUnavailable, match="degenerate"):
+        kb._verify_gguf_server(url)
+
+
+def test_verify_accepts_a_real_nomic_server_and_caches_it(monkeypatch):
+    url = "http://127.0.0.1:9997"
+    kb._GGUF_VERIFIED.discard(url)
+    calls = []
+
+    def fake_post(*a, **kw):
+        calls.append(1)
+        return _FakeResp({
+            "model": "/repo/models/nomic-embed-text-v1.5.Q8_0.gguf",
+            "data": [{"embedding": [1.0] + [0.0] * (kb.EMBED_DIM - 1)}],  # unit norm
+        })
+
+    monkeypatch.setattr(kb.requests, "post", fake_post)
+    kb._verify_gguf_server(url)
+    kb._verify_gguf_server(url)  # cached — no second probe
+    assert len(calls) == 1

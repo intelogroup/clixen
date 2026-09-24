@@ -1,5 +1,5 @@
 """
-Persistent knowledge base — LanceDB + OpenAI text-embedding-3-small (cloud), nomic-embed-text (Ollama) as fallback.
+Persistent knowledge base — LanceDB + OpenAI text-embedding-3-small (cloud), nomic-embed-text (Ollama) as fallback; llama.cpp GGUF llama-server as the Ollama-down fallback (SAME nomic vector space, see _embed_gguf).
 
 Lessons applied from malaria_thesis + zl_master_board/polo-ingest:
   1. Paragraph-aware chunking with overlap (not naive char splits)
@@ -124,6 +124,201 @@ def _embed_ollama(text: str) -> list[float]:
     return _normalize(vec)
 
 
+# ---------------------------------------------------------------------------
+# GGUF fallback — the SAME nomic-embed-text-v1.5 vector space as Ollama, but
+# served by the llama.cpp `llama-server` binary (brew install llama.cpp)
+# instead of the Ollama daemon. Consulted only when Ollama itself is
+# unreachable (see _embed), so the store's embed-backend stamp ("ollama")
+# stays truthful: same model, same vector space, different runtime — NOT a
+# third backend. A genuinely different HF model (e.g. Qwen3-Embedding) would
+# need its own space/stamp and a full re-embed; keep it out of this path.
+#
+# Env knobs:
+#   CLIXEN_GGUF_EMBED=0        disable the fallback entirely (default: on)
+#   CLIXEN_GGUF_EMBED_URL      base URL of an already-running llama-server
+#                              (default http://127.0.0.1:8091 — 8090 is used
+#                              by the bge-reranker daemon on this machine)
+#   CLIXEN_EMBED_GGUF          path to the GGUF file (default
+#                              <repo>/models/<GGUF_FILENAME>, same gitignored
+#                              dir that already holds bge-reranker)
+# ---------------------------------------------------------------------------
+GGUF_FILENAME = "nomic-embed-text-v1.5.Q8_0.gguf"  # ~144MB, Apache-2.0
+GGUF_HF_URL = (
+    "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF"
+    f"/resolve/main/{GGUF_FILENAME}"
+)
+_GGUF_PROC: "subprocess.Popen | None" = None
+_GGUF_VERIFIED: set = set()  # base_urls whose /v1/embeddings has been checked
+
+
+def _gguf_enabled() -> bool:
+    import os
+    return os.environ.get("CLIXEN_GGUF_EMBED", "1").strip().lower() not in ("0", "off", "no")
+
+
+def _gguf_model_path() -> Path:
+    import os
+    env = os.environ.get("CLIXEN_EMBED_GGUF")
+    if env:
+        return Path(env)
+    return Path(__file__).resolve().parents[2] / "models" / GGUF_FILENAME
+
+
+def _ensure_gguf_model(path: Path) -> Path:
+    if path.is_file() and path.stat().st_size > 0:
+        return path
+    import os
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # pid-suffixed temp file: two processes may race the first download; each
+    # writes its own .part and the atomic replace keeps whichever lands first.
+    tmp = path.with_name(f"{path.name}.part.{os.getpid()}")
+    log.info("downloading GGUF embedding model %s -> %s", GGUF_HF_URL, path)
+    with requests.get(GGUF_HF_URL, stream=True, timeout=60) as r:
+        r.raise_for_status()
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_content(1 << 20):
+                f.write(chunk)
+    tmp.replace(path)
+    return path
+
+
+def _gguf_health(base_url: str) -> bool:
+    try:
+        return requests.get(f"{base_url}/health", timeout=2).ok
+    except Exception:
+        return False
+
+
+def _stop_gguf_server() -> None:
+    global _GGUF_PROC
+    proc = _GGUF_PROC
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+
+
+def _verify_gguf_server(base_url: str) -> None:
+    """Confirm base_url answers in the nomic 768-dim space before trusting it.
+
+    /health only proves *some* llama-server is there — on this very machine
+    port 8090 is a bge-reranker daemon whose /v1/embeddings answers an
+    all-zeros vector. Trusting that would silently corrupt the store, the
+    exact failure mode this whole module exists to prevent (see _embed).
+    """
+    if base_url in _GGUF_VERIFIED:
+        return
+    r = requests.post(
+        f"{base_url}/v1/embeddings",
+        json={"model": "nomic-embed-text-v1.5", "input": "ping"},
+        timeout=10,
+    )
+    r.raise_for_status()
+    body = r.json()
+    data = body.get("data") or []
+    vec = data[0].get("embedding") if data else None
+    served = Path(str(body.get("model") or "")).name.lower()
+    want = _gguf_model_path().name.lower()
+    if not vec or len(vec) != EMBED_DIM:
+        raise EmbedBackendUnavailable(
+            f"{base_url} served {served or 'no model!'} at "
+            f"{len(vec) if vec else 0} dims (want {EMBED_DIM} nomic) — "
+            "not a nomic-embed-text server; set CLIXEN_GGUF_EMBED_URL"
+        )
+    if "nomic" not in served and served != want:
+        raise EmbedBackendUnavailable(
+            f"{base_url} serves {body.get('model')!r}, not nomic-embed-text "
+            "— set CLIXEN_GGUF_EMBED_URL"
+        )
+    if float(np.linalg.norm(np.array(vec, dtype=np.float32))) < 0.1:
+        raise EmbedBackendUnavailable(
+            f"{base_url} served a degenerate (near-zero) vector — refusing to "
+            "write it into the store; set CLIXEN_GGUF_EMBED_URL"
+        )
+    _GGUF_VERIFIED.add(base_url)
+
+
+def _ensure_gguf_server(base_url: str) -> None:
+    """A llama-server answering on base_url, spawned here if nobody runs one.
+
+    If something else already serves the port (a system daemon, another clixen
+    process), we verify it is actually a nomic embedding server (_verify) —
+    a foreign llama-server on the port is rejected, not used. Only a process
+    we spawned gets terminated at atexit. The port-race case (someone binds
+    between our health check and spawn) resolves the same way: our child dies
+    of a bind error, the winner's server answers the poll.
+    """
+    global _GGUF_PROC
+    import shutil
+    import subprocess
+    from urllib.parse import urlsplit
+
+    if base_url in _GGUF_VERIFIED:
+        return
+    if not _gguf_health(base_url):
+        if _GGUF_PROC is None or _GGUF_PROC.poll() is not None:
+            binary = shutil.which("llama-server")
+            if not binary:
+                raise EmbedBackendUnavailable(
+                    "llama-server not found on PATH (brew install llama.cpp)"
+                )
+            model = _ensure_gguf_model(_gguf_model_path())
+            port = str(urlsplit(base_url).port or 8091)
+            _GGUF_PROC = subprocess.Popen(
+                [
+                    binary,
+                    "--model", str(model),
+                    "--embedding",
+                    "--host", "127.0.0.1",
+                    "--port", port,
+                    "-c", "2048",  # nomic-embed-text-v1.5's training context
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            import atexit
+            atexit.register(_stop_gguf_server)
+        deadline = time.time() + 120  # generous: first run may still be downloading
+        while time.time() < deadline:
+            if _gguf_health(base_url):
+                break
+            if _GGUF_PROC.poll() is not None:
+                raise EmbedBackendUnavailable(
+                    f"llama-server exited {_GGUF_PROC.returncode} before /health "
+                    "was ready (port conflict? try CLIXEN_GGUF_EMBED_URL)"
+                )
+            time.sleep(0.5)
+        else:
+            raise EmbedBackendUnavailable("llama-server did not become ready within 120s")
+    _verify_gguf_server(base_url)
+
+
+def _embed_gguf(text: str) -> list[float]:
+    """nomic-embed-text-v1.5 GGUF via llama.cpp — the SAME space as _embed_ollama.
+
+    Reached only when Ollama itself is unreachable. Sets EMBED_BACKEND =
+    "ollama" deliberately: this IS the ollama vector space, so the store stamp
+    must keep saying "ollama".
+    """
+    import os
+    global EMBED_BACKEND
+    if not _gguf_enabled():
+        raise EmbedBackendUnavailable("GGUF embed fallback disabled (CLIXEN_GGUF_EMBED=0)")
+    base = os.environ.get("CLIXEN_GGUF_EMBED_URL", "http://127.0.0.1:8091").rstrip("/")
+    _ensure_gguf_server(base)
+    r = requests.post(
+        f"{base}/v1/embeddings",
+        json={"model": "nomic-embed-text-v1.5", "input": text[:4096]},
+        timeout=30,
+    )
+    r.raise_for_status()
+    vec = r.json()["data"][0]["embedding"]
+    EMBED_BACKEND = "ollama"
+    return _normalize(vec)
+
+
 def _embed(text: str, backend: str | None = None) -> list[float]:
     """Embed `text`. With `backend` set, use exactly that one and fail if it's down.
 
@@ -143,7 +338,14 @@ def _embed(text: str, backend: str | None = None) -> list[float]:
         except EmbedBackendUnavailable:
             raise
         except Exception as e:
-            raise EmbedBackendUnavailable(f"Ollama embedding unavailable: {e}") from e
+            # Same vector space through llama.cpp — this is a runtime fallback,
+            # not the cross-backend switch the docstring above warns about.
+            try:
+                return _embed_gguf(text)
+            except Exception as ge:
+                raise EmbedBackendUnavailable(
+                    f"Ollama embedding unavailable: {e}; GGUF fallback failed: {ge}"
+                ) from e
 
     import os
 
@@ -152,7 +354,13 @@ def _embed(text: str, backend: str | None = None) -> list[float]:
             return _embed_openai(text)
         except Exception:
             log.debug("OpenAI embedding failed, falling back to local Ollama", exc_info=True)
-    return _embed_ollama(text)
+    try:
+        return _embed_ollama(text)
+    except EmbedBackendUnavailable:
+        raise
+    except Exception:
+        log.debug("Ollama unreachable, trying GGUF llama-server fallback", exc_info=True)
+        return _embed_gguf(text)
 
 
 def _normalize(vec: list[float]) -> list[float]:
