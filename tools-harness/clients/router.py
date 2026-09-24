@@ -956,4 +956,11 @@ TASK_ROUTING: dict[str, dict] = {
         "max_rounds": 1,
         "system_prompt_key": "automation",
     },
+    # Same stub pattern: handled entirely via jobs.verse_ask_poll_job.
+    "verse_ask_poll": {
+        "model": CLOUD_MODEL,
+        "tools": [],
+        "max_rounds": 1,
+        "system_prompt_key": "automation",
+    },
 }
