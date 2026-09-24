@@ -128,17 +128,31 @@ SKILLS.append(_s(
 SKILLS.append(_s(
     "Browse Web", "Navigate a website, inspect content, or fill forms.",
     "Browser",
-    ["browser_navigate", "browser_snapshot", "browser_get_url", "browser_click",
+    ["browser_open", "browser_tree", "browser_click_ref", "browser_fill_ref",
+     "browser_fill_secret", "browser_select_ref", "browser_check_ref",
+     "browser_press_key", "browser_scroll_page", "browser_wait_for",
+     "browser_status", "browser_capture", "browser_quit",
+     "browser_navigate", "browser_snapshot", "browser_get_url", "browser_click",
      "browser_type", "browser_wait", "browser_get_content", "browser_screenshot"],
-    "You are a browser automation agent. You control a headless Chromium browser using tool calls.\n"
-    "DISCOVERY: Always call browser_snapshot() after navigate or click to see the current page structure.\n"
-    "Never guess selectors — read them from the snapshot.\n"
-    "If checkboxes/buttons don't respond to browser_click(), use browser_run_js() with jQuery.\n"
-    "After form submits that trigger redirects, call browser_get_url() to confirm where you landed.\n"
+    "You are a browser automation agent. You drive a VISIBLE Chrome window using tool calls.\n"
+    "FLOW: browser_open(url) first, then browser_tree() to see the page as @refs "
+    "('@e3 [textbox] \"Email\"'). Act with browser_click_ref/browser_fill_ref/browser_select_ref/"
+    "browser_check_ref; call browser_tree() again after any click or navigation — refs go stale.\n"
+    "Never guess selectors — read @refs from the tree. If a ref errors as stale, re-snapshot.\n"
+    "PASSWORDS/2FA: never type secrets with browser_fill_ref — use browser_fill_secret(ref, service) "
+    "so the value comes from the vault without entering the conversation; check vault_list first "
+    "and ask the user to provide + vault_save credentials if missing.\n"
+    "The browser_window is visible to the user: if you hit a CAPTCHA or 2FA prompt, tell the user "
+    "to complete it in the open window, then browser_wait_for and continue.\n"
+    "Verify outcomes: after submits/redirects call browser_status() to confirm where you landed. "
+    "For ambiguous visual pages, browser_capture() a screenshot.\n"
+    "The headless browser_navigate/browser_snapshot tools are a separate session for plain "
+    "read-only scraping — do not mix the two sessions within one login flow.\n"
+    "Call browser_quit() when the task is fully complete.\n"
     "Never call browser_close(). Complete ALL steps before reporting back.",
     ["browse", "open website", "go to", "navigate to", "login to", "fill form",
      "check website", "screenshot", "visit"],
-    max_rounds=15, icon="browser",
+    max_rounds=20, icon="browser",
 ))
 
 # ── Filesystem ─────────────────────────────────────────────────────────────

@@ -208,6 +208,8 @@ ALL_TOOLS = [
     DOWNLOAD_URL_SCHEMA,
     # Browser automation
     *ALL_BROWSER_SCHEMAS,
+    # Headed (visible) browser — refs + vault-safe typing (tools/headed_browser.py)
+    *HEADED_BROWSER_SCHEMAS,
     # Automation management
     *AUTOMATION_TOOLS_SCHEMAS,
     # Skills hub

@@ -656,6 +656,54 @@ EXECUTORS = {
     "browser_load_session": lambda args: browser_load_session(
         name=args.get("name", "default"),
     ),
+    # Headed (visible) browser — tools/headed_browser.py
+    "browser_open": lambda args: browser_open(
+        url=args.get("url", ""),
+        headless=args.get("headless"),
+    ),
+    "browser_tree": lambda args: browser_tree(
+        max_chars=args.get("max_chars", 6000),
+        interactive_only=args.get("interactive_only", True),
+    ),
+    "browser_click_ref": lambda args: browser_click_ref(
+        ref=args["ref"],
+        force=args.get("force", False),
+    ),
+    "browser_fill_ref": lambda args: browser_fill_ref(
+        ref=args["ref"],
+        text=args["text"],
+        press_enter=args.get("press_enter", False),
+    ),
+    "browser_fill_secret": lambda args: browser_fill_secret(
+        ref=args["ref"],
+        service=args["service"],
+        field=args.get("field", "password"),
+    ),
+    "browser_select_ref": lambda args: browser_select_ref(
+        ref=args["ref"],
+        value=args["value"],
+    ),
+    "browser_check_ref": lambda args: browser_check_ref(
+        ref=args["ref"],
+        checked=args.get("checked", True),
+    ),
+    "browser_press_key": lambda args: browser_press_key(key=args["key"]),
+    "browser_scroll_page": lambda args: browser_scroll_page(
+        direction=args.get("direction", "down"),
+        amount=args.get("amount", 800),
+    ),
+    "browser_wait_for": lambda args: browser_wait_for(
+        text=args.get("text", ""),
+        selector=args.get("selector", ""),
+        timeout_s=args.get("timeout_s", 10),
+    ),
+    "browser_status": lambda args: browser_status(),
+    "browser_capture": lambda args: browser_capture(
+        path=args.get("path", ""),
+        full_page=args.get("full_page", False),
+    ),
+    "browser_eval": lambda args: browser_eval(js=args["js"]),
+    "browser_quit": lambda args: browser_quit(),
     # Semantic search
     "index_directory": lambda args: index_directory(
         path=args["path"],

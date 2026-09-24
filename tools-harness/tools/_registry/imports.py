@@ -401,6 +401,23 @@ from tools.browser import (
     browser_load_session,
     browser_close,
 )
+from tools.headed_browser import (
+    HEADED_BROWSER_SCHEMAS,
+    browser_open,
+    browser_tree,
+    browser_click_ref,
+    browser_fill_ref,
+    browser_fill_secret,
+    browser_select_ref,
+    browser_check_ref,
+    browser_press_key,
+    browser_scroll_page,
+    browser_wait_for,
+    browser_status,
+    browser_capture,
+    browser_eval,
+    browser_quit,
+)
 from tools.automation_tools import AUTOMATION_TOOLS_SCHEMAS, AUTOMATION_EXECUTORS
 from tools.memory_tools import MEMORY_SCHEMAS, MEMORY_EXECUTORS
 from tools.verse_agent import VERSE_AGENT_SCHEMAS, VERSE_AGENT_EXECUTORS
