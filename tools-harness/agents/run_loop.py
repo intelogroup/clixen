@@ -173,6 +173,19 @@ def run_rounds(run_id: str, model_fn, *, tools: list[str], system: str = "",
             cid, name, args = call.get("id"), call.get("name"), call.get("args", {})
             if cid in answered:
                 continue  # REPLAY CACHE: answered pre-crash — never re-run
+            if name not in (tools or []):
+                # Restricted toolset (M5): a run may only call what it was
+                # offered — an empty allowlist means NO tools. A hallucinated
+                # name must never execute.
+                denied = (f"[error] tool {name!r} is not available to this run — "
+                          f"use one of: {', '.join(sorted(tools))}")
+                run_store.append_event(run_id, "tool_result",
+                                       {"id": cid, "result": denied})
+                answered.add(cid)
+                consecutive_errors += 1
+                if on_event:
+                    on_event({"kind": "tool_denied", "id": cid, "name": name})
+                continue
             if cid not in known_calls:
                 run_store.append_event(run_id, "tool_call",
                                        {"id": cid, "name": name, "args": args})
