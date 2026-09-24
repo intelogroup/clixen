@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -325,6 +326,30 @@ def _poll_workflow_store() -> None:
 
 # ── Main event loop ───────────────────────────────────────────────────────────
 
+def _supervisor_cycle() -> int:
+    """One run-supervisor tick: reap expired run-children and resume them in a
+    fresh process. Runs inside the worker's poll loop so a crashed long-horizon
+    run heals itself without a human.
+
+    Failures are swallowed on purpose — the task worker is a daemon and must
+    never die because the supervisor hiccuped. Disable with
+    CLIXEN_RUN_SUPERVISOR=0.
+    """
+    if os.environ.get("CLIXEN_RUN_SUPERVISOR", "1") == "0":
+        return 0
+    try:
+        from jobs import run_supervisor
+
+        reaped = run_supervisor.tick()
+    except Exception as exc:  # noqa: BLE001 — daemon must survive
+        _log.warning("run supervisor tick failed: %s", exc)
+        return 0
+    for rid in reaped or []:
+        _log.warning("run supervisor reaped crashed child for run %s — "
+                     "resumed in a fresh process", rid[:8])
+    return len(reaped or [])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Agent task worker")
     parser.add_argument("--poll-interval", type=int, default=10, help="Poll interval in seconds")
@@ -347,6 +372,12 @@ def main() -> None:
                 reaped = job_queue.reap_stale_running(max_age_seconds=600)
                 for jid in reaped:
                     _log.warning("reaped stale running job %s (wedged >600s)", jid[:8])
+
+                # Long-horizon runs: reap crashed run-children (expired lease)
+                # and resume them in a fresh process. Same reaper-and-continue
+                # posture as the job queue above, guarded so a supervisor bug
+                # can't take the worker down.
+                _supervisor_cycle()
 
                 # Poll job_queue — claim_next() claims one job at a time (no
                 # batch/limit param), so loop up to 5 claims per cycle to match
