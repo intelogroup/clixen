@@ -196,6 +196,99 @@ def test_real_crash_midrun_resume_replays_cache(tmp_path, monkeypatch):
     assert rs.get_run(rid)["status"] == "succeeded"
 
 
+def test_pause_control_stops_the_run_at_the_next_boundary(monkeypatch):
+    """A pause intent appended mid-run is applied when the round finishes:
+    status becomes paused (resumable) and no further model round runs."""
+    calls = {"n": 0}
+
+    def model(messages, tools):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            rs.append_control(rid, "pause")
+            return {"text": "", "tool_calls": [{"id": "c1", "name": "web_search",
+                                                "args": {"q": "x"}}]}
+        return {"text": "should not be reached", "tool_calls": []}
+
+    monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "result")
+    rid = rs.create_run("g")
+    out = run_loop.run_rounds(rid, model, tools=["web_search"])
+    run = rs.get_run(rid)
+    assert run["status"] == "paused" and run["resumable"] is True
+    assert calls["n"] == 1
+    assert out == ""
+
+
+def test_kill_control_terminates_the_run(monkeypatch):
+    calls = {"n": 0}
+
+    def model(messages, tools):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            rs.append_control(rid, "kill")
+            return {"text": "", "tool_calls": [{"id": "c1", "name": "web_search",
+                                                "args": {"q": "x"}}]}
+        return {"text": "unreached", "tool_calls": []}
+
+    monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "result")
+    rid = rs.create_run("g")
+    run_loop.run_rounds(rid, model, tools=["web_search"])
+    run = rs.get_run(rid)
+    assert run["status"] == "killed" and run["resumable"] is True
+    assert calls["n"] == 1
+
+
+def test_steer_control_becomes_a_user_message_for_the_next_round(monkeypatch):
+    seen_messages = []
+
+    def model(messages, tools):
+        seen_messages.append(list(messages))
+        if len(seen_messages) == 1:
+            rs.append_control(rid, "steer", text="focus on pricing first")
+            return {"text": "", "tool_calls": [{"id": "c1", "name": "web_search",
+                                                "args": {"q": "x"}}]}
+        return {"text": "adjusted answer", "tool_calls": []}
+
+    monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "result")
+    rid = rs.create_run("g")
+    out = run_loop.run_rounds(rid, model, tools=["web_search"])
+    assert out == "adjusted answer"
+    steer_msgs = [m for m in seen_messages[-1] if m.get("role") == "user"]
+    assert any(m.get("content") == "focus on pricing first" for m in steer_msgs)
+    # the steer was applied exactly once
+    assert sum(1 for m in seen_messages[-1]
+               if m.get("content") == "focus on pricing first") == 1
+
+
+def test_consumed_controls_are_not_reapplied_on_resume(monkeypatch):
+    """Life 1 consumes a steer and is killed; life 2 must not append it again —
+    the consumed cursor survives in the round snapshot."""
+    monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "result")
+    rid = rs.create_run("g", policy={"max_rounds": 5})
+
+    def model_life1(messages, tools):
+        rs.append_control(rid, "steer", text="old steer")
+        rs.append_control(rid, "kill")
+        return {"text": "", "tool_calls": [{"id": "c1", "name": "web_search",
+                                            "args": {"q": "x"}}]}
+
+    run_loop.run_rounds(rid, model_life1, tools=["web_search"])
+    assert rs.get_run(rid)["status"] == "killed"
+
+    seen = []
+
+    def model_life2(messages, tools):
+        seen.append(list(messages))
+        return {"text": "final", "tool_calls": []}
+
+    out = run_loop.run_rounds(rid, model_life2, tools=[])
+    assert out == "final"
+    steers = [m for m in seen[0] if m.get("content") == "old steer"]
+    assert len(steers) == 1, f"steer re-applied on resume: {seen[0]}"
+    journal_steers = [e for e in rs.get_events(rid)
+                      if e["kind"] == "user_msg" and e["payload"].get("text") == "old steer"]
+    assert len(journal_steers) == 1
+
+
 def test_dangling_side_effecting_call_fails_run(monkeypatch):
     monkeypatch.setattr(run_loop, "_execute_tool",
                         lambda n, a: (_ for _ in ()).throw(AssertionError("exec!")))

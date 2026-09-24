@@ -160,6 +160,42 @@ def test_round_snapshot_scrubs_secrets():
     assert ev["payload"]["extra"]["token"] == "[REDACTED:token]"
 
 
+# ── Control intents (M2: pause / resume / kill / steer) ──────────────────
+
+def test_append_control_records_intent_without_status_change():
+    rid = rs.create_run("g")
+    rs.set_status(rid, "running")
+    seq = rs.append_control(rid, "pause")
+    ev = rs.get_events(rid)[-1]
+    assert ev["seq"] == seq and ev["kind"] == "control"
+    assert ev["payload"] == {"action": "pause"}
+    assert rs.get_run(rid)["status"] == "running", "the loop owns transitions, not the requester"
+
+
+def test_append_control_steer_carries_text():
+    rid = rs.create_run("g")
+    rs.append_control(rid, "steer", text="focus on pricing first")
+    ev = rs.get_events(rid)[-1]
+    assert ev["payload"] == {"action": "steer", "text": "focus on pricing first"}
+
+
+def test_append_control_rejects_unknown_action():
+    rid = rs.create_run("g")
+    with pytest.raises(ValueError, match="unknown control action"):
+        rs.append_control(rid, "explode")
+
+
+def test_pending_controls_since_cursor():
+    rid = rs.create_run("g")
+    s1 = rs.append_control(rid, "pause")
+    s2 = rs.append_control(rid, "steer", text="x")
+    pending = rs.pending_controls(rid, after_seq=0)
+    assert [p["seq"] for p in pending] == [s1, s2]
+    assert [p["action"] for p in pending] == ["pause", "steer"]
+    assert rs.pending_controls(rid, after_seq=s1) == [
+        {"seq": s2, "action": "steer", "text": "x"}]
+
+
 # ── Status machine ────────────────────────────────────────────────────────
 
 def test_happy_path_transitions_and_status_events():

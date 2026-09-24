@@ -110,6 +110,13 @@ def run_rounds(run_id: str, model_fn, *, tools: list[str], system: str = "",
     consecutive_errors = int(state.get("consecutive_errors", 0))
     force_tool_consumed = bool(state.get("force_tool_consumed", False))
     model_name = state.get("model", "")
+    # Control cursor: which control intents this run has already consumed.
+    # Persisted as a heartbeat marker per consumed control, so a resume (or a
+    # stop mid-drain) never re-applies one.
+    control_cursor = max(
+        int((state.get("extra") or {}).get("last_control_seq", 0)),
+        run_store.latest_control_cursor(run_id),
+    )
 
     if run["status"] == "queued":
         run_store.set_status(run_id, "running")
@@ -118,6 +125,26 @@ def run_rounds(run_id: str, model_fn, *, tools: list[str], system: str = "",
 
     final_text = ""
     while round_idx < max_rounds:
+        # ── Control intents (M2) — drained at every round boundary, never
+        # mid-round. The requester only journals intent; transitions happen
+        # here, keeping the journal single-writer.
+        for c in run_store.pending_controls(run_id, after_seq=control_cursor):
+            control_cursor = c["seq"]
+            # Durably record consumption BEFORE acting, so a stop/crash mid-drain
+            # cannot re-apply this control on the next life.
+            run_store.append_event(run_id, "heartbeat",
+                                   {"control_cursor": control_cursor})
+            if c["action"] == "steer":
+                run_store.append_event(run_id, "user_msg",
+                                       {"text": c.get("text", ""), "via": "steer"})
+            elif c["action"] == "pause":
+                run_store.set_status(run_id, "paused")
+                return final_text
+            elif c["action"] == "kill":
+                run_store.set_status(run_id, "killed")
+                return final_text
+            # "resume" is a no-op here: a paused run is not executing, so the
+            # resume path re-enters run_rounds instead.
         if deadline_s and time.monotonic() - started > deadline_s:
             run_store.append_event(run_id, "budget",
                                    {"reason": f"deadline {deadline_s}s exceeded"})
@@ -135,7 +162,8 @@ def run_rounds(run_id: str, model_fn, *, tools: list[str], system: str = "",
             run_store.append_round_snapshot(
                 run_id, round_idx=round_idx, model=model_name,
                 escalated=escalated, consecutive_errors=consecutive_errors,
-                force_tool_consumed=force_tool_consumed)
+                force_tool_consumed=force_tool_consumed,
+                extra={"last_control_seq": control_cursor} if control_cursor else None)
             run_store.set_status(run_id, "succeeded")
             return text
 
@@ -170,7 +198,8 @@ def run_rounds(run_id: str, model_fn, *, tools: list[str], system: str = "",
         run_store.append_round_snapshot(
             run_id, round_idx=round_idx, model=model_name,
             escalated=escalated, consecutive_errors=consecutive_errors,
-            force_tool_consumed=force_tool_consumed)
+            force_tool_consumed=force_tool_consumed,
+            extra={"last_control_seq": control_cursor} if control_cursor else None)
         round_idx += 1
 
     run_store.append_event(run_id, "budget", {"reason": f"max_rounds {max_rounds} hit"})

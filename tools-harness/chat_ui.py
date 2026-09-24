@@ -852,6 +852,72 @@ def delete_history(chat_id: str, request: Request):
     return {"cleared": True}
 
 
+# ── Runs (M2): async journal-driven runs ──────────────────────────────────────
+# The chat caller gets a run_id immediately; progress, controls and the final
+# answer all travel over the journal (SSE tail), so nothing is blocked on the
+# model round-trip and a reconnect resumes with Last-Event-ID.
+
+
+@app.post("/api/runs")
+def create_run(request: Request, payload: dict):
+    _require_auth(request)
+    from agents import run_service
+
+    goal = (payload.get("goal") or "").strip()
+    if not goal:
+        raise HTTPException(status_code=400, detail="goal required")
+    rid = run_service.start_run(
+        goal,
+        tools=payload.get("tools") or [],
+        model=payload.get("model") or run_service.DEFAULT_MODEL,
+        policy=payload.get("policy") or {},
+    )
+    return run_service.run_card(rid)
+
+
+@app.get("/api/runs/{run_id}/events")
+def run_events(run_id: str, request: Request, after_seq: int = 0):
+    _require_auth(request)
+    from agents import run_service
+
+    if not run_service.run_card(run_id):
+        raise HTTPException(status_code=404, detail="no such run")
+    try:
+        cursor = int(request.headers.get("last-event-id") or after_seq or 0)
+    except ValueError:
+        cursor = 0
+
+    def generate():
+        yield f"data: {json.dumps({'type': 'card', **run_service.run_card(run_id)})}\n\n"
+        for ev in run_service.stream_events(run_id, after_seq=cursor):
+            frame = {"type": ev["kind"], "seq": ev["seq"], "payload": ev["payload"]}
+            yield f"id: {ev['seq']}\ndata: {json.dumps(frame)}\n\n"
+        yield f"data: {json.dumps({'type': 'done', **run_service.run_card(run_id)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/api/runs/{run_id}/control")
+def run_control(run_id: str, request: Request, payload: dict):
+    _require_auth(request)
+    from agents import run_service
+
+    action = (payload.get("action") or "").strip().lower()
+    if action == "pause":
+        message = run_service.pause(run_id)
+    elif action == "resume":
+        message = run_service.resume(run_id)
+    elif action == "kill":
+        message = run_service.kill(run_id)
+    elif action == "steer":
+        message = run_service.steer(run_id, payload.get("text") or "")
+    else:
+        raise HTTPException(status_code=400,
+                            detail="action must be pause|resume|kill|steer")
+    return {"ok": not message.startswith("[runs]"), "message": message}
+
+
+
 @app.get("/api/whatsapp-qr")
 def whatsapp_qr(request: Request):
     import httpx

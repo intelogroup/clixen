@@ -38,7 +38,10 @@ STATUSES = (
     "succeeded", "failed", "killed", "budget-exceeded",
 )
 TERMINAL = ("succeeded", "failed", "killed", "budget-exceeded")
-_RESUMABLE = ("failed", "killed", "budget-exceeded")
+# Everything not-terminal is resumable: a paused/steer-waiting run resumes
+# explicitly (the plan's state table shows a resume affordance for them).
+_RESUMABLE = ("paused", "steer-waiting", "retrying", "failed", "killed",
+              "budget-exceeded")
 
 _TRANSITIONS: dict[str, set[str]] = {
     "queued": {"running", "killed", "failed"},
@@ -57,8 +60,12 @@ _TRANSITIONS: dict[str, set[str]] = {
 EVENT_KINDS = frozenset({
     "run", "user_msg", "assistant_msg", "tool_call", "tool_result",
     "plan_step", "heartbeat", "budget", "steer", "approval", "denial", "status",
-    "round",
+    "round", "control",
 })
+
+# Control intents the loop understands (M2). The requester only journals
+# intent; the executing loop owns the status transition.
+CONTROL_ACTIONS = ("pause", "resume", "kill", "steer")
 
 # ── Write-boundary redaction ──────────────────────────────────────────────
 _SECRET_KEY_RE = re.compile(
@@ -198,6 +205,50 @@ def append_event(run_id: str, kind: str, payload: dict | None = None) -> int:
         conn.execute("UPDATE runs SET last_seq = ?, updated_at = ? WHERE run_id = ?",
                      (seq, _now(), run_id))
     return seq
+
+
+def append_control(run_id: str, action: str, *, text: str = "") -> int:
+    """Journal a control intent (pause/resume/kill/steer) for the loop to apply
+    at its next round boundary. Never changes status — transitions stay
+    single-writer in the loop."""
+    if action not in CONTROL_ACTIONS:
+        raise ValueError(f"unknown control action: {action!r}")
+    payload = {"action": action}
+    if text:
+        payload["text"] = text
+    return append_event(run_id, "control", payload)
+
+
+def pending_controls(run_id: str, after_seq: int = 0) -> list[dict]:
+    """Control intents appended after the caller's consumed cursor, in order."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT seq, payload FROM run_events WHERE run_id = ? AND kind = 'control'"
+            " AND seq > ? ORDER BY seq", (run_id, after_seq)
+        ).fetchall()
+    out = []
+    for seq, raw in rows:
+        p = json.loads(raw)
+        out.append({"seq": int(seq), "action": p.get("action", ""),
+                    **({"text": p["text"]} if p.get("text") else {})})
+    return out
+
+
+def latest_control_cursor(run_id: str) -> int:
+    """Highest control seq already consumed (from heartbeat markers). Written
+    per consumed control so a crash/stop mid-drain never re-applies one."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT payload FROM run_events WHERE run_id = ? AND kind = 'heartbeat'"
+            " ORDER BY seq DESC", (run_id,)
+        ).fetchall()
+    cursor = 0
+    for (raw,) in rows:
+        try:
+            cursor = max(cursor, int(json.loads(raw).get("control_cursor", 0)))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+    return cursor
 
 
 def append_round_snapshot(run_id: str, *, round_idx: int, model: str = "",
