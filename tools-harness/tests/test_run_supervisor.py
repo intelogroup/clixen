@@ -96,6 +96,11 @@ def test_supervisor_reaps_dead_child_and_resumes(tmp_path):
     proc.wait(timeout=30)
     assert proc.returncode != 0, "life 1 should have crashed"
 
+    # wait for the crashed child's lease to actually expire before reaping
+    deadline = time.time() + 10
+    while time.time() < deadline and rs.get_run(rid)["lease_expires_at"] > time.time():
+        time.sleep(0.2)
+
     resumed = sup.reap_orphans(spawn=False)
     assert rid in resumed, resumed
     # reaping releases ownership WITHOUT adopting: the attempt only bumps when
