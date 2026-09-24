@@ -87,6 +87,10 @@ RECENT_CHATS_SCHEMA = {
                     "description": "Number of recent chats (1–25). Default 10.",
                     "default": 10,
                 },
+                "contact": {
+                    "type": "string",
+                    "description": "Optional: filter to one contact by JID, phone number, or name substring.",
+                },
             },
             "required": [],
         },
@@ -161,8 +165,14 @@ def search(query: str, limit: int = 10, contact: str = "", days: int = 0) -> str
 
         if contact:
             cf = f"%{contact}%"
-            sql += " AND (jid LIKE ? OR push_name LIKE ?)"
-            params.extend([cf, cf])
+            contact_col = "m.jid" if use_fts else "jid"
+            sql += (
+                f" AND ({contact_col} LIKE ? OR push_name LIKE ? OR {contact_col} IN ("
+                "SELECT jid FROM contacts WHERE name LIKE ? OR notify LIKE ? OR verified_name LIKE ? "
+                "UNION SELECT lid FROM contacts WHERE name LIKE ? OR notify LIKE ? OR verified_name LIKE ?"
+                "))"
+            )
+            params.extend([cf, cf, cf, cf, cf, cf, cf, cf])
         if days and days > 0:
             cutoff = int(datetime.now(tz=timezone.utc).timestamp()) - (days * 86400)
             sql += " AND ts >= ?"
@@ -182,7 +192,13 @@ def search(query: str, limit: int = 10, contact: str = "", days: int = 0) -> str
                 """
                 like_params: list = [f"%{clean}%"]
                 if contact:
-                    like_params.extend([cf, cf])
+                    like_sql += (
+                        " AND (jid LIKE ? OR push_name LIKE ? OR jid IN ("
+                        "SELECT jid FROM contacts WHERE name LIKE ? OR notify LIKE ? OR verified_name LIKE ? "
+                        "UNION SELECT lid FROM contacts WHERE name LIKE ? OR notify LIKE ? OR verified_name LIKE ?"
+                        "))"
+                    )
+                    like_params.extend([cf, cf, cf, cf, cf, cf, cf, cf])
                 if days and days > 0:
                     like_params.append(cutoff)
                 like_sql += " ORDER BY ts DESC LIMIT ?"
@@ -212,6 +228,85 @@ def search(query: str, limit: int = 10, contact: str = "", days: int = 0) -> str
         conn.close()
 
 
+def _write_conn() -> sqlite3.Connection | None:
+    if not DB_PATH.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=5.0)
+        return conn
+    except sqlite3.OperationalError:
+        return None
+
+
+def index_pending_media(limit: int = 5) -> int:
+    """Transcribe/OCR/extract-text any downloaded WhatsApp media the bridge
+    hasn't indexed yet (media_path set, media_indexed=0), then rewrite that
+    row's `text` column with the extracted content so it's FTS-searchable
+    like any other message. Called from jobs/worker.py's poll loop — small
+    batch per call so a slow whisper/OCR run never blocks other jobs.
+
+    ponytail: video messages are tagged but never transcribed (no audio-track
+    extraction wired) — add an ffmpeg extract-audio + transcribe_audio step
+    here if voice content inside videos needs to be searchable too.
+    Returns the number of rows processed (attempted, not necessarily
+    successful — a failed extraction still marks media_indexed=1 to avoid
+    retrying forever on a broken file).
+    """
+    conn = _write_conn()
+    if conn is None:
+        return 0
+    try:
+        if not _has_table(conn, "messages"):
+            return 0
+        rows = conn.execute(
+            "SELECT id, media_path, media_type, text FROM messages "
+            "WHERE media_path IS NOT NULL AND media_indexed = 0 "
+            "ORDER BY id LIMIT ?",
+            (max(1, limit),),
+        ).fetchall()
+        for row in rows:
+            row_id, media_path, media_type, tag_text = row[0], row[1], row[2], row[3]
+            new_text = tag_text
+            try:
+                if media_type == "audio":
+                    # generic Whisper (base, then large-v3) both struggled on
+                    # this archive's mostly-Haitian-Creole audio — base
+                    # hallucinated fluent French nonsense, large-v3 leaned
+                    # French with 0.26-0.59 language confidence (confirmed
+                    # live 2026-09-22). Swapped to a Creole-specific Whisper
+                    # fine-tune, cross-validated against large-v3's output on
+                    # the same clips (same underlying content, cleaner Kreyòl
+                    # orthography). Revisit if this archive's contacts ever
+                    # skew non-Creole.
+                    from tools.audio_tools import transcribe_haitian_creole
+                    result = transcribe_haitian_creole(media_path)
+                    transcript = (result.get("text") or "").strip()
+                    if transcript:
+                        new_text = f"[voice note] {transcript}"
+                elif media_type in ("photo", "sticker"):
+                    from tools.ocr import execute as ocr_execute
+                    ocr_text = (ocr_execute(media_path) or "").strip()
+                    if ocr_text:
+                        new_text = f"[photo] {ocr_text}"
+                elif media_type == "document" and str(media_path).lower().endswith(".pdf"):
+                    from tools.structured import read_pdf
+                    content = read_pdf(media_path, pages="1-10")
+                    if content and not content.startswith("PDF read error"):
+                        new_text = f"[document] {content[:4000]}"
+                # video / unrecognized document types: leave the tag as-is,
+                # just mark indexed so this row isn't retried every cycle.
+            except Exception as e:
+                new_text = f"{tag_text} [index error: {e}]"
+            conn.execute(
+                "UPDATE messages SET text = ?, media_indexed = 1 WHERE id = ?",
+                (new_text, row_id),
+            )
+            conn.commit()
+        return len(rows)
+    finally:
+        conn.close()
+
+
 def status() -> str:
     conn = _open()
     if conn is None:
@@ -234,8 +329,12 @@ def status() -> str:
         conn.close()
 
 
-def recent_chats(limit: int = 10) -> str:
-    """Return one latest archived message per WhatsApp conversation."""
+def recent_chats(limit: int = 10, contact: str = "") -> str:
+    """Return one latest archived message per WhatsApp conversation.
+
+    With `contact`, filters to conversations whose jid, lid, push_name, or
+    saved contact name/notify/verified_name matches the substring.
+    """
     conn = _open()
     if conn is None:
         return _NO_DATA_HINT
@@ -243,38 +342,62 @@ def recent_chats(limit: int = 10) -> str:
         if not _has_table(conn, "messages") or _is_empty(conn):
             return _NO_DATA_HINT
         cap = max(1, min(int(limit or 10), 25))
-        rows = conn.execute(
+        contact_filter = ""
+        params: list = [cap]
+        if contact:
+            cf = f"%{contact}%"
+            contact_filter = """
+                WHERE latest.contact_key IN (
+                    SELECT jid FROM contacts WHERE jid LIKE ? OR lid LIKE ?
+                        OR name LIKE ? OR notify LIKE ? OR verified_name LIKE ?
+                    UNION SELECT lid FROM contacts WHERE jid LIKE ? OR lid LIKE ?
+                        OR name LIKE ? OR notify LIKE ? OR verified_name LIKE ?
+                )
+                OR latest.contact_key LIKE ? OR latest.push_name LIKE ?
             """
-            WITH latest AS (
-                SELECT m.*
+            params = [cf] * 12 + [cap]
+        rows = conn.execute(
+            f"""
+            WITH canon AS (
+                -- A contact can appear under two jids (phone-number jid and a
+                -- privacy @lid jid); collapse to one identity per contact so
+                -- its messages aren't split across two "latest" slots.
+                SELECT m.*,
+                       COALESCE((SELECT c.jid FROM contacts c WHERE c.lid = m.jid), m.jid) AS contact_key
                 FROM messages m
+            ),
+            latest AS (
+                SELECT canon.*
+                FROM canon
                 JOIN (
-                    SELECT jid, MAX(id) AS max_id
-                    FROM messages
-                    GROUP BY jid
-                ) x ON x.max_id = m.id
+                    SELECT contact_key, MAX(ts * 1000000 + id) AS max_key
+                    FROM canon
+                    GROUP BY contact_key
+                ) x ON x.max_key = canon.ts * 1000000 + canon.id
                 WHERE NOT EXISTS (
                     SELECT 1 FROM owner_jids o WHERE
                         CASE WHEN instr(o.jid, ':') > 0
                              THEN substr(o.jid, 1, instr(o.jid, ':') - 1) || substr(o.jid, instr(o.jid, '@'))
                              ELSE o.jid END
-                        = CASE WHEN instr(m.jid, ':') > 0
-                               THEN substr(m.jid, 1, instr(m.jid, ':') - 1) || substr(m.jid, instr(m.jid, '@'))
-                               ELSE m.jid END
+                        = CASE WHEN instr(canon.contact_key, ':') > 0
+                               THEN substr(canon.contact_key, 1, instr(canon.contact_key, ':') - 1) || substr(canon.contact_key, instr(canon.contact_key, '@'))
+                               ELSE canon.contact_key END
                 )
             )
-            SELECT latest.jid, latest.push_name, latest.from_me, latest.text, latest.ts,
+            SELECT latest.contact_key AS jid, latest.push_name, latest.from_me, latest.text, latest.ts,
                    c.name AS contact_name, c.notify AS contact_notify
             FROM latest
             LEFT JOIN contacts c
-              ON c.jid = latest.jid OR c.lid = latest.jid
+              ON c.jid = latest.contact_key OR c.lid = latest.contact_key
+            {contact_filter}
             ORDER BY latest.ts DESC, latest.id DESC
             LIMIT ?
             """,
-            (cap,),
+            params,
         ).fetchall()
         if not rows:
-            return "No archived WhatsApp conversations yet."
+            scope = f" matching '{contact}'" if contact else ""
+            return f"No archived WhatsApp conversations{scope}."
 
         out = [f"{len(rows)} recent WhatsApp chat{'s' if len(rows) != 1 else ''}:"]
         for row in rows:

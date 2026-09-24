@@ -264,6 +264,24 @@ async def send_message(request: Request, to: str, message: str):
             return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.post("/sendDocument")
+async def send_document(request: Request):
+    if not _auth_ok(request):
+        raise HTTPException(401, "unauthorized")
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{BRIDGE_URL}/sendDocument",
+                json=body,
+                timeout=60.0,
+            )
+            return response.json()
+        except Exception as e:
+            log.error("send_document to=%s failed: %s", body.get("to"), e)
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=PORT)

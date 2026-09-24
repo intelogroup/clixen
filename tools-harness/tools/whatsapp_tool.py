@@ -58,6 +58,40 @@ LIST_CONTACTS_SCHEMA = {
     },
 }
 
+FETCH_HISTORY_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "fetch_whatsapp_history",
+        "description": (
+            "Live on-demand fetch: asks the user's own linked phone for a contact's recent "
+            "WhatsApp messages and waits for them to land, then returns the freshest message "
+            "for that thread. Use this when the local archive (whatsapp_search / "
+            "whatsapp_recent_chats) looks stale or missing for a specific contact — those tools "
+            "only read what's already archived, this one refreshes it first. Requires the bridge "
+            "to be connected (WhatsApp Web session active)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "contact": {
+                    "type": "string",
+                    "description": "Contact name, phone number, or JID to refresh. Required unless jid is given.",
+                },
+                "jid": {
+                    "type": "string",
+                    "description": "Exact WhatsApp JID to refresh, if already known. Alternative to contact.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "How many recent messages to request from the phone (1-50). Default 20.",
+                    "default": 20,
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
 
 def execute(to: str, message: str) -> str:
     """Send a WhatsApp message via the bridge."""
@@ -96,6 +130,52 @@ def execute(to: str, message: str) -> str:
     except Exception as e:
         log.error("whatsapp send failed: %s", e, exc_info=True)
         return f"[whatsapp] send failed: {e}"
+
+
+def fetch_history(contact: str = "", jid: str = "", limit: int = 20) -> str:
+    """Ask the linked phone for fresh history on a contact, then report the latest message."""
+    if not contact and not jid:
+        return "[whatsapp] fetch_history needs a contact name or jid."
+
+    payload = json.dumps({"contact": contact, "jid": jid, "limit": limit}).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            f"{_BRIDGE_URL}/fetchHistory",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        # Bridge polls the phone's response internally (up to ~5s); give it room.
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read().decode())
+            error = body.get("error", str(e))
+        except Exception:
+            error = str(e)
+        if e.code == 503:
+            return "[whatsapp] Bridge not connected to WhatsApp — can't fetch live history"
+        if e.code == 404:
+            return f"[whatsapp] {error}"
+        log.error("whatsapp fetch_history failed: %s", error)
+        return f"[whatsapp] fetch_history failed: {error}"
+    except Exception as e:
+        log.error("whatsapp fetch_history failed: %s", e, exc_info=True)
+        return f"[whatsapp] fetch_history failed: {e}"
+
+    from tools.whatsapp_search import recent_chats
+
+    target = data.get("jid") or jid or contact
+    fresh = recent_chats(1, contact=contact or target)
+    fetched = data.get("fetched", 0)
+    if fetched == 0:
+        return (
+            f"[whatsapp] Requested history for {target} but the phone returned nothing new "
+            f"(may already be up to date, or the contact has no recent activity). "
+            f"Archive shows:\n{fresh}"
+        )
+    return f"Refreshed {fetched} message(s) for {target}.\n{fresh}"
 
 
 def list_contacts() -> str:

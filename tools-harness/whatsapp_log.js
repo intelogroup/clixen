@@ -84,6 +84,9 @@ async function initDb() {
     for (const statement of [
       "ALTER TABLE messages ADD COLUMN role TEXT NOT NULL DEFAULT 'them'",
       'ALTER TABLE messages ADD COLUMN speaker_name TEXT',
+      'ALTER TABLE messages ADD COLUMN media_path TEXT',
+      'ALTER TABLE messages ADD COLUMN media_type TEXT',
+      'ALTER TABLE messages ADD COLUMN media_indexed INTEGER NOT NULL DEFAULT 0',
     ]) {
       try { db.exec(statement); } catch (err) {
         if (!String(err?.message || err).includes('duplicate column name')) throw err;
@@ -91,11 +94,13 @@ async function initDb() {
     }
     db.exec("UPDATE messages SET role = CASE WHEN from_me = 1 THEN 'me' ELSE 'them' END, speaker_name = CASE WHEN from_me = 1 THEN 'me' ELSE COALESCE(NULLIF(push_name, ''), 'them') END");
     insertStmt = db.prepare(
-      'INSERT INTO messages(msg_id, jid, push_name, from_me, role, speaker_name, text, ts) ' +
-      'VALUES (@msg_id, @jid, @push_name, @from_me, @role, @speaker_name, @text, @ts) ' +
+      'INSERT INTO messages(msg_id, jid, push_name, from_me, role, speaker_name, text, ts, media_path, media_type) ' +
+      'VALUES (@msg_id, @jid, @push_name, @from_me, @role, @speaker_name, @text, @ts, @media_path, @media_type) ' +
       'ON CONFLICT(msg_id) DO UPDATE SET ' +
       'jid=excluded.jid, push_name=excluded.push_name, from_me=excluded.from_me, ' +
-      'role=excluded.role, speaker_name=excluded.speaker_name, text=excluded.text, ts=excluded.ts'
+      'role=excluded.role, speaker_name=excluded.speaker_name, text=excluded.text, ts=excluded.ts, ' +
+      'media_path=COALESCE(excluded.media_path, messages.media_path), ' +
+      'media_type=COALESCE(excluded.media_type, messages.media_type)'
     );
     upsertContactStmt = db.prepare(
       'INSERT INTO contacts(jid, lid, name, notify, verified_name, last_seen_at) ' +
@@ -179,7 +184,7 @@ export async function logContact(contact) {
  * Log an incoming message (parsed from messages.upsert).
  * msg = baileys WAMessage. Pass through whatever is convenient.
  */
-export async function logIncoming(msg, text) {
+export async function logIncoming(msg, text, media = null) {
   if (initFailed) return;
   if (!db) await initDb();
   if (!db || !insertStmt) return;
@@ -196,6 +201,8 @@ export async function logIncoming(msg, text) {
       speaker_name: fromMe ? 'me' : (msg?.pushName || 'them'),
       text,
       ts: rawTimestamp > 0 ? rawTimestamp : Math.floor(Date.now() / 1000),
+      media_path: media?.path || null,
+      media_type: media?.type || null,
     });
   } catch (err) {
     console.error('[whatsapp_log] insert failed:', err.message);
@@ -254,6 +261,39 @@ export async function findContactJid(query) {
     return fromMessages?.jid ?? null;
   } catch (err) {
     console.error('[WA-PRIVATE] contact resolve failed:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Resolve a contact name/number to both its jids (phone-number jid + privacy
+ * @lid jid, when it has one) — a contact's messages can land under either.
+ * Used for on-demand history fetch, which needs to request both.
+ */
+export async function findContactRow(query) {
+  if (initFailed) return null;
+  if (!db) await initDb();
+  if (!db || !query) return null;
+  try {
+    const value = String(query).trim();
+    const exact = db.prepare(
+      `SELECT jid, lid FROM contacts
+       WHERE lower(COALESCE(name, '')) = lower(@value)
+          OR lower(COALESCE(notify, '')) = lower(@value)
+          OR jid = @value OR lid = @value
+       ORDER BY last_seen_at DESC LIMIT 1`
+    ).get({ value });
+    if (exact) return exact;
+
+    const partial = db.prepare(
+      `SELECT jid, lid FROM contacts
+       WHERE lower(COALESCE(name, '')) LIKE lower(@pattern)
+          OR lower(COALESCE(notify, '')) LIKE lower(@pattern)
+       ORDER BY last_seen_at DESC LIMIT 1`
+    ).get({ pattern: `%${value}%` });
+    return partial ?? null;
+  } catch (err) {
+    console.error('[WA-PRIVATE] contact row resolve failed:', err.message);
     return null;
   }
 }

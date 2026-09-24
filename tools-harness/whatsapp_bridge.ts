@@ -8,18 +8,20 @@ import {
   WASocket,
   proto,
   BaileysEventMap,
+  downloadMediaMessage,
 } from 'baileys';
 import { fetchLatestWaWebVersion } from 'baileys/lib/Utils/generics.js';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
 import { createServer, Server } from 'http';
 import { exec } from 'child_process';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { loadContacts, logContact, logIncoming, logOutgoing, logOwnerJids, fetchRecentHistory, findContactJid, archiveAvailable } from './whatsapp_log.js';
+import { loadContacts, logContact, logIncoming, logOutgoing, logOwnerJids, fetchRecentHistory, findContactJid, findContactRow, archiveAvailable } from './whatsapp_log.js';
 import {
   initialState as _reconnectInitialState,
   reconnectDelay as _reconnectDelay,
@@ -122,7 +124,7 @@ if (!existsSync(SESSION_DIR)) mkdirSync(SESSION_DIR, { recursive: true });
 // ─── State ───────────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 
 let sock: WASocket | null = null;
 let qrCode: string | null = null;
@@ -444,7 +446,19 @@ async function handleMessagesUpsert(
     ) continue;
 
     // Persist to local archive (~/.clixen/whatsapp.db) for offline search.
+    // Media bytes download async and re-save (ON CONFLICT UPDATE on msg_id) once
+    // ready — the text-tag row lands immediately either way, download never
+    // blocks message processing. History-sync backfill (handleHistorySet above)
+    // does NOT download media: old messages' direct-download links are often
+    // already expired by the time a resync happens, and bulk-downloading a full
+    // history replay would be slow/wasteful — it only gets the tag, live
+    // messages get the file too.
     logIncoming(msg, messageText).catch(() => {});
+    if (MEDIA_KINDS.some((k) => Boolean((msg.message as Record<string, unknown>)?.[k.key]))) {
+      downloadMediaToDisk(msg).then((media) => {
+        if (media) logIncoming(msg, messageText, media).catch(() => {});
+      }).catch(() => {});
+    }
 
     if (!messageText) continue;
 
@@ -495,12 +509,72 @@ async function handleMessagesUpsert(
   }
 }
 
+const MEDIA_DIR = join(homedir(), '.clixen', 'whatsapp_media');
+
+// [image, video, audio, document, sticker] -> {baileys message key, saved extension}.
+// Order matters: checked top to bottom, first match wins.
+const MEDIA_KINDS: Array<{ key: keyof proto.IMessage; type: string; ext: (m: proto.IMessage) => string }> = [
+  { key: 'imageMessage', type: 'photo', ext: () => 'jpg' },
+  { key: 'videoMessage', type: 'video', ext: () => 'mp4' },
+  { key: 'audioMessage', type: 'audio', ext: (m) => (m.audioMessage?.ptt ? 'ogg' : 'ogg') },
+  { key: 'documentMessage', type: 'document', ext: (m) => {
+    const name = m.documentMessage?.fileName || '';
+    const dot = name.lastIndexOf('.');
+    return dot > -1 ? name.slice(dot + 1).toLowerCase() : 'bin';
+  } },
+  { key: 'stickerMessage', type: 'sticker', ext: () => 'webp' },
+];
+
+/** Download a media message's bytes to disk. Returns null on anything but a
+ * clean save — the caller already has the `[photo]`/`[voice note]` text tag
+ * from extractMessageText, so a download failure just means that tag has no
+ * backing file yet, not a lost message. */
+async function downloadMediaToDisk(msg: proto.IWebMessageInfo): Promise<{ path: string; type: string } | null> {
+  const message = msg.message;
+  if (!message) return null;
+  const kind = MEDIA_KINDS.find((k) => Boolean((message as Record<string, unknown>)[k.key]));
+  if (!kind) return null;
+  try {
+    if (!existsSync(MEDIA_DIR)) mkdirSync(MEDIA_DIR, { recursive: true });
+    const buffer = await downloadMediaMessage(
+      msg as unknown as Parameters<typeof downloadMediaMessage>[0],
+      'buffer',
+      {},
+      { logger, reuploadRequest: sock!.updateMediaMessage },
+    );
+    const ext = kind.ext(message);
+    const safeId = (msg.key?.id || `${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const path = join(MEDIA_DIR, `${safeId}.${ext}`);
+    writeFileSync(path, buffer as Buffer);
+    return { path, type: kind.type };
+  } catch (err) {
+    logger.warn({ error: (err as Error).message, msgId: msg.key?.id }, 'media download failed');
+    return null;
+  }
+}
+
 function extractMessageText(message: proto.IMessage | null | undefined): string {
-  return message?.conversation ??
+  const text = message?.conversation ??
     message?.extendedTextMessage?.text ??
     message?.buttonsResponseMessage?.selectedButtonId ??
     message?.listResponseMessage?.title ??
     '';
+  if (text) return text;
+  // Media messages have no text body — extractMessageText used to return ''
+  // here, and logIncoming() skips empty text, so photos/voice notes/docs were
+  // never archived at all (whatsapp_search then correctly says "no media
+  // found" because none was ever logged, not because none was sent). Log a
+  // placeholder tag instead so the archive at least records that media was
+  // exchanged and when. ponytail: no caption/transcription of the media
+  // content itself — add real audio transcription (whisper) or vision
+  // captioning if the user needs to search *inside* photos/voice notes, not
+  // just know they exist.
+  if (message?.imageMessage) return `[photo]${message.imageMessage.caption ? ' ' + message.imageMessage.caption : ''}`;
+  if (message?.videoMessage) return `[video]${message.videoMessage.caption ? ' ' + message.videoMessage.caption : ''}`;
+  if (message?.audioMessage) return message.audioMessage.ptt ? '[voice note]' : '[audio]';
+  if (message?.documentMessage) return `[document]${message.documentMessage.fileName ? ' ' + message.documentMessage.fileName : ''}`;
+  if (message?.stickerMessage) return '[sticker]';
+  return '';
 }
 
 function quotedMessageText(msg: proto.IWebMessageInfo): string {
@@ -986,6 +1060,34 @@ app.get('/contacts', (_req: Request, res: Response) => {
   res.json({ status: connected ? 'connected' : 'disconnected', contacts: result });
 });
 
+app.post('/fetchHistory', async (req: Request, res: Response) => {
+  if (!connected || !sock) {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+  const { jid: rawJid, contact, limit } = req.body as { jid?: string; contact?: string; limit?: number };
+  let jid = rawJid;
+  let lid: string | undefined;
+  if (!jid && contact) {
+    const row = await findContactRow(contactLookupQuery(contact));
+    if (!row?.jid) return res.status(404).json({ error: `No contact matching "${contact}"` });
+    jid = row.jid;
+    lid = row.lid ?? undefined;
+  }
+  if (!jid) return res.status(400).json({ error: 'Missing jid or contact' });
+  const cap = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  try {
+    // A contact can have messages under both its phone-number jid and its
+    // privacy @lid jid — ask the phone for both so a stale-looking thread
+    // (missing the freshest message under the "other" jid) actually refreshes.
+    const targets = [jid, lid].filter((v): v is string => Boolean(v));
+    const counts = await Promise.all(targets.map(id => fetchOnDemandHistory(id, cap)));
+    res.json({ status: 'ok', jid, lid: lid ?? null, fetched: counts.reduce((a, b) => a + b, 0) });
+  } catch (error) {
+    logger.error({ error }, 'On-demand history fetch failed');
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 app.post('/send', async (req: Request, res: Response) => {
   if (!connected || !sock) {
     return res.status(503).json({ error: 'Not connected to WhatsApp' });
@@ -1005,6 +1107,60 @@ app.post('/send', async (req: Request, res: Response) => {
     res.json({ status: 'sent', to: recipientJid, message });
   } catch (error) {
     logger.error({ error }, 'Failed to send message');
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post('/sendAudio', async (req: Request, res: Response) => {
+  if (!connected || !sock) {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+  const { to, audioBase64, mimetype, ptt, caption } = req.body as { to?: string; audioBase64?: string; mimetype?: string; ptt?: boolean; caption?: string };
+  if (!to || !audioBase64) return res.status(400).json({ error: 'Missing to or audioBase64' });
+  try {
+    const recipientJid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    if (isRateLimited(recipientJid)) return res.status(429).json({ error: 'Rate limit exceeded' });
+    upsertContact({ jid: recipientJid, lastSeenAt: Date.now() });
+    await jitter(400, 1200);
+    const audioBuffer = Buffer.from(audioBase64, 'base64');
+    const sent = await sock.sendMessage(recipientJid, {
+      audio: audioBuffer,
+      mimetype: mimetype || 'audio/ogg; codecs=opus',
+      ptt: ptt ?? true,
+      ...(caption ? { caption } : {}),
+    } as any);
+    if (sent?.key?.id) sentIds.add(sent.key.id);
+    logOutgoing(recipientJid, caption || '[audio]', sent?.key?.id).catch(() => {});
+    res.json({ status: 'sent', to: recipientJid });
+  } catch (error) {
+    logger.error({ error }, 'Failed to send audio');
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post('/sendDocument', async (req: Request, res: Response) => {
+  if (!connected || !sock) {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+  const { to, documentBase64, mimetype, fileName, caption } = req.body as { to?: string; documentBase64?: string; mimetype?: string; fileName?: string; caption?: string };
+  if (!to || !documentBase64 || !fileName) return res.status(400).json({ error: 'Missing to, documentBase64 or fileName' });
+  try {
+    const recipientJid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    if (isRateLimited(recipientJid)) return res.status(429).json({ error: 'Rate limit exceeded' });
+    upsertContact({ jid: recipientJid, lastSeenAt: Date.now() });
+    await jitter(400, 1200);
+    const documentBuffer = Buffer.from(documentBase64, 'base64');
+    const sent = await sock.sendMessage(recipientJid, {
+      document: documentBuffer,
+      mimetype: mimetype || 'application/pdf',
+      fileName,
+      ...(caption ? { caption } : {}),
+    } as any);
+    if (sent?.key?.id) sentIds.add(sent.key.id);
+    logOutgoing(recipientJid, caption || `[document: ${fileName}]`, sent?.key?.id).catch(() => {});
+    res.json({ status: 'sent', to: recipientJid });
+  } catch (error) {
+    logger.error({ error }, 'Failed to send document');
     res.status(500).json({ error: (error as Error).message });
   }
 });

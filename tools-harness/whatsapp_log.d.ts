@@ -1,4 +1,4 @@
-export function logIncoming(msg: unknown, text: string): Promise<void>;
+export function logIncoming(msg: unknown, text: string, media?: { path: string; type: string } | null): Promise<void>;
 export function fetchRecentHistory(jid: string, limit?: number): Promise<Array<{
   push_name: string | null;
   from_me: number;
@@ -8,6 +8,7 @@ export function fetchRecentHistory(jid: string, limit?: number): Promise<Array<{
   ts: number;
 }>>;
 export function findContactJid(query: string): Promise<string | null>;
+export function findContactRow(query: string): Promise<{ jid: string; lid: string | null } | null>;
 export function archiveAvailable(): Promise<boolean>;
 export function logOutgoing(jid: string, text: string, msgId?: string | null): Promise<void>;
 export function loadContacts(): Promise<Array<{
