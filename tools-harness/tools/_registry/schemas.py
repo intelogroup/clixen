@@ -158,6 +158,7 @@ ALL_TOOLS = [
     LIST_VARS_SCHEMA,
     # Time
     GET_CURRENT_TIME_SCHEMA,
+    GET_PREVIEW_PAGE_SCHEMA,
     BUS_ETA_SCHEMA,
     # Reminders
     SET_REMINDER_SCHEMA,
@@ -208,6 +209,8 @@ ALL_TOOLS = [
     DOWNLOAD_URL_SCHEMA,
     # Browser automation
     *ALL_BROWSER_SCHEMAS,
+    # Headed (visible) browser — refs + vault-safe typing (tools/headed_browser.py)
+    *HEADED_BROWSER_SCHEMAS,
     # Automation management
     *AUTOMATION_TOOLS_SCHEMAS,
     # Skills hub
@@ -232,6 +235,7 @@ ALL_TOOLS = [
     # WhatsApp
     WHATSAPP_SCHEMA,
     WHATSAPP_CONTACTS_SCHEMA,
+    WHATSAPP_FETCH_HISTORY_SCHEMA,
     # Google Docs
     *GDOCS_SCHEMAS,
     # Google Sheets

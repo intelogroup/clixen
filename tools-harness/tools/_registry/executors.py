@@ -220,6 +220,7 @@ EXECUTORS = {
     "whatsapp_status": lambda args: whatsapp_status_execute(),
     "whatsapp_recent_chats": lambda args: whatsapp_recent_chats_execute(
         limit=args.get("limit", 10),
+        contact=args.get("contact", ""),
     ),
     "spotlight_search": lambda args: spotlight_execute(
         query=args["query"],
@@ -463,6 +464,7 @@ EXECUTORS = {
     "get_current_time": lambda args: get_current_time(
         timezone_name=args.get("timezone", ""),
     ),
+    "get_preview_current_page": lambda args: get_preview_current_page(),
     "bus_eta": lambda args: bus_eta(
         origin=args["origin"],
         destination=args.get("destination", ""),
@@ -656,6 +658,54 @@ EXECUTORS = {
     "browser_load_session": lambda args: browser_load_session(
         name=args.get("name", "default"),
     ),
+    # Headed (visible) browser — tools/headed_browser.py
+    "browser_open": lambda args: browser_open(
+        url=args.get("url", ""),
+        headless=args.get("headless"),
+    ),
+    "browser_tree": lambda args: browser_tree(
+        max_chars=args.get("max_chars", 6000),
+        interactive_only=args.get("interactive_only", True),
+    ),
+    "browser_click_ref": lambda args: browser_click_ref(
+        ref=args["ref"],
+        force=args.get("force", False),
+    ),
+    "browser_fill_ref": lambda args: browser_fill_ref(
+        ref=args["ref"],
+        text=args["text"],
+        press_enter=args.get("press_enter", False),
+    ),
+    "browser_fill_secret": lambda args: browser_fill_secret(
+        ref=args["ref"],
+        service=args["service"],
+        field=args.get("field", "password"),
+    ),
+    "browser_select_ref": lambda args: browser_select_ref(
+        ref=args["ref"],
+        value=args["value"],
+    ),
+    "browser_check_ref": lambda args: browser_check_ref(
+        ref=args["ref"],
+        checked=args.get("checked", True),
+    ),
+    "browser_press_key": lambda args: browser_press_key(key=args["key"]),
+    "browser_scroll_page": lambda args: browser_scroll_page(
+        direction=args.get("direction", "down"),
+        amount=args.get("amount", 800),
+    ),
+    "browser_wait_for": lambda args: browser_wait_for(
+        text=args.get("text", ""),
+        selector=args.get("selector", ""),
+        timeout_s=args.get("timeout_s", 10),
+    ),
+    "browser_status": lambda args: browser_status(),
+    "browser_capture": lambda args: browser_capture(
+        path=args.get("path", ""),
+        full_page=args.get("full_page", False),
+    ),
+    "browser_eval": lambda args: browser_eval(js=args["js"]),
+    "browser_quit": lambda args: browser_quit(),
     # Semantic search
     "index_directory": lambda args: index_directory(
         path=args["path"],
@@ -782,6 +832,11 @@ EXECUTORS = {
         message=args["message"],
     ),
     "list_whatsapp_contacts": lambda args: whatsapp_contacts_execute(),
+    "fetch_whatsapp_history": lambda args: whatsapp_fetch_history_execute(
+        contact=args.get("contact", ""),
+        jid=args.get("jid", ""),
+        limit=args.get("limit", 20),
+    ),
     # Google Docs
     "list_google_docs": lambda args: _gdocs_list(args),
     "read_google_doc": lambda args: _gdocs_read(args),

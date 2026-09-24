@@ -76,6 +76,20 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "browser_snapshot": frozenset({"browser", "spec_scraper"}),
     "browser_type": frozenset({"browser", "spec_scraper"}),
     "browser_wait": frozenset({"browser", "spec_scraper"}),
+    "browser_open": frozenset({"browser"}),
+    "browser_tree": frozenset({"browser"}),
+    "browser_click_ref": frozenset({"browser"}),
+    "browser_fill_ref": frozenset({"browser"}),
+    "browser_fill_secret": frozenset({"browser"}),
+    "browser_select_ref": frozenset({"browser"}),
+    "browser_check_ref": frozenset({"browser"}),
+    "browser_press_key": frozenset({"browser"}),
+    "browser_scroll_page": frozenset({"browser"}),
+    "browser_wait_for": frozenset({"browser"}),
+    "browser_status": frozenset({"browser"}),
+    "browser_capture": frozenset({"browser"}),
+    "browser_eval": frozenset({"browser"}),
+    "browser_quit": frozenset({"browser"}),
     "bus_eta": frozenset({"spec_transport", "transit"}),
     "make_phone_call": frozenset({"spec_phone_call", "utility"}),
     "convert_audio": frozenset({"spec_audio"}),
@@ -158,6 +172,9 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "redact_pii": frozenset({"core", "fs", "spec_read"}),
     "redact_document": frozenset({"core", "fs", "spec_read", "form"}),
     "remember": frozenset({"core"}),
+    "ask_verse_agent": frozenset({"core"}),
+    "check_verse_replies": frozenset({"core"}),
+    "observe_verse": frozenset({"core"}),
     "rename_file": frozenset({"code", "fs", "spec_write"}),
     "reset_kernel": frozenset({"repl"}),
     "ripgrep": frozenset({"spec_path"}),
@@ -211,6 +228,7 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "list_whatsapp_contacts": frozenset({"core"}),
     "whatsapp_search": frozenset({"core"}),
     "whatsapp_status": frozenset({"core"}),
+    "fetch_whatsapp_history": frozenset({"core"}),
 }
 
 
@@ -422,6 +440,16 @@ def execute_tool(name: str, arguments: dict) -> str:
         result = f"[blocked] {name} rejected: {violation}"
         tool_failure_log.record_failure(name, result)
         return _with_failure_hint(name, result)
+    # DashClaw second gate — prompt-injection-aware policy check (fail-open if not running)
+    try:
+        from tools.dashclaw_guard import check as _dashclaw_check
+        dc = _dashclaw_check(name, arguments or {})
+        if dc:
+            tool_failure_log.record_failure(name, dc)
+            return _with_failure_hint(name, dc)
+    except Exception as _e:
+        # never block on guard wiring failure
+        pass
     schema = _PARAM_SCHEMAS.get(name)
     if schema is not None:
         try:

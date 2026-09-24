@@ -332,6 +332,7 @@ from tools.repl import (
 from tools.reminder import SET_REMINDER_SCHEMA, set_reminder
 from tools.telegram_send import SEND_TELEGRAM_SCHEMA, send_telegram
 from tools.time_tool import GET_CURRENT_TIME_SCHEMA, get_current_time
+from tools.preview_watch import GET_PREVIEW_PAGE_SCHEMA, get_preview_current_page
 from tools.bus_eta import BUS_ETA_SCHEMA, bus_eta
 from tools.gmail import (
     LIST_EMAILS_SCHEMA,
@@ -401,6 +402,23 @@ from tools.browser import (
     browser_load_session,
     browser_close,
 )
+from tools.headed_browser import (
+    HEADED_BROWSER_SCHEMAS,
+    browser_open,
+    browser_tree,
+    browser_click_ref,
+    browser_fill_ref,
+    browser_fill_secret,
+    browser_select_ref,
+    browser_check_ref,
+    browser_press_key,
+    browser_scroll_page,
+    browser_wait_for,
+    browser_status,
+    browser_capture,
+    browser_eval,
+    browser_quit,
+)
 from tools.automation_tools import AUTOMATION_TOOLS_SCHEMAS, AUTOMATION_EXECUTORS
 from tools.memory_tools import MEMORY_SCHEMAS, MEMORY_EXECUTORS
 from tools.verse_agent import VERSE_AGENT_SCHEMAS, VERSE_AGENT_EXECUTORS
@@ -412,8 +430,10 @@ from tools.pubmed_tool import SCHEMA as PUBMED_SCHEMA, execute as pubmed_execute
 from tools.whatsapp_tool import (
     SCHEMA as WHATSAPP_SCHEMA,
     LIST_CONTACTS_SCHEMA as WHATSAPP_CONTACTS_SCHEMA,
+    FETCH_HISTORY_SCHEMA as WHATSAPP_FETCH_HISTORY_SCHEMA,
     execute as whatsapp_execute,
     list_contacts as whatsapp_contacts_execute,
+    fetch_history as whatsapp_fetch_history_execute,
 )
 from tools.youtube_tool import SEARCH_SCHEMA as YT_SEARCH_SCHEMA, TRANSCRIPT_SCHEMA as YT_TRANSCRIPT_SCHEMA
 from tools.youtube_tool import search_youtube as yt_search_execute, get_youtube_transcript as yt_transcript_execute
