@@ -29,7 +29,7 @@ def _client() -> TestClient:
 def _authed(client) -> TestClient:
     client.post("/api/auth/register", json={"display_name": "Op",
                                             "email": "op@example.com",
-                                            "password": "pw-for-tests-1"})
+                                            "password": "test-account-password-placeholder"})
     return client
 
 
