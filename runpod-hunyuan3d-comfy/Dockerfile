@@ -22,18 +22,20 @@ FROM runpod/worker-comfyui:5.10.0-base-cuda12.8.1
 # be there too.
 #
 # cudart-dev alone is not enough either: the extensions include torch's
-# ATen/cuda/CUDAContextLight.h, which includes cusparse.h, cublas_v2.h and
-# cusolverDn.h, so those three -dev packages have to be present or the very
-# first .cpp fails with "cusparse.h: No such file or directory".
+# ATen/cuda/CUDAContextLight.h, which pulls in cusparse.h, cublas_v2.h and
+# cusolverDn.h, so the first .cpp fails with "cusparse.h: No such file or
+# directory" without them.
+#
+# Naming those libraries individually does not work: the base image already has
+# libcublas-12-8 12.8.4.1, while the CUDA repo only offers libcublas-dev-12-8
+# 12.8.5.5, which depends on the matching runtime -- apt refuses with "held
+# broken packages". cuda-toolkit-12-8 lets apt resolve one internally coherent
+# set instead of us hand-matching versions against whatever the base pinned.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         python3-dev \
         ninja-build \
-        cuda-nvcc-12-8 \
-        cuda-cudart-dev-12-8 \
-        libcusparse-dev-12-8 \
-        libcublas-dev-12-8 \
-        libcusolver-dev-12-8 \
+        cuda-toolkit-12-8 \
         libgl1 \
         libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
