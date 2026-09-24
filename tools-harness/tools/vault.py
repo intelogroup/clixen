@@ -95,10 +95,8 @@ def vault_save(service: str, data: str | dict) -> str:
     err = _kc_save(service, data)
     if err:
         return f"[vault] Error saving '{service}': {err}"
-    fields = ", ".join(
-        f"{k}={v}" if len(str(v)) < 30 else f"{k}=<{len(str(v))} chars>"
-        for k, v in data.items()
-    )
+    # Never echo field values — the return lands in model context / traces.
+    fields = ", ".join(f"{k}=<{len(str(v))} chars>" for k, v in data.items())
     return f"Saved credentials for '{service}' in Keychain: {fields}"
 
 
