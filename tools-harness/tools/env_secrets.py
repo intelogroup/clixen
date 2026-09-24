@@ -29,10 +29,11 @@ SENSITIVE_KEYS = (
     "DEEPSEEK_API_KEY", "GROQ_API_KEY", "TAVILY_API_KEY", "EXA_API_KEY",
     "FIRECRAWL_API_KEY", "SERPAPI_API_KEY", "BRAVE_API_KEY", "BRAVE_SEARCH_API_KEY",
     "RAPIDAPI_KEY", "GOOGLE_MAPS_API_KEY", "OLLAMA_API_KEY", "NCBI_API_KEY",
+    "APIFY_API_TOKEN", "FAL_KEY",
 )
 
 
-def load_secrets(keys: tuple[str, ...] = SENSITIVE_KEYS) -> None:
+def load_secrets(keys: tuple[str, ...] = SENSITIVE_KEYS, prefer_env: bool = False) -> None:
     if not _KEYCHAIN_AVAILABLE:
         log.warning("Keychain unavailable (non-macOS or no `security` CLI) — secrets stay in .env")
         return
@@ -40,7 +41,21 @@ def load_secrets(keys: tuple[str, ...] = SENSITIVE_KEYS) -> None:
         service = _SERVICE_PREFIX + key
         stored = _kc_get(service)
         if stored is not None:
-            os.environ[key] = stored.get("value", "")
+            kc_val = stored.get("value", "")
+            env_val = os.environ.get(key) or ""
+            if prefer_env and env_val and env_val != kc_val:
+                # Forced reload after detected drift. A Keychain mirror that disagrees with
+                # the edited .env is exactly what kept a rotated OpenAI key stuck in a running
+                # process on 2026-09-24 (Keychain copy wins at boot by design). .env is the
+                # human-edited source of truth here, so it wins and the mirror is refreshed —
+                # the two converge instead of oscillating on every reload.
+                err = _kc_save(service, {"value": env_val})
+                log.warning(
+                    "env_secrets: %s differs between .env and Keychain — .env wins%s",
+                    key, "" if not err else f" (Keychain refresh failed: {err})",
+                )
+                continue
+            os.environ[key] = kc_val
             continue
         env_val = os.environ.get(key)
         if env_val:

@@ -16,13 +16,15 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import threading
 import time
-from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+from tools.env_boot import load_env, start_env_watchdog
 
-from tools.env_secrets import load_secrets
+# Single boot path (env_boot) + drift watchdog: a key rotated on disk after this process
+# started used to stay stale in-process forever — see tools/env_boot.py for the
+# 2026-09-24 fallout (60 x 401, recall dead, KB ingest dead).
+load_env()
 
-load_secrets()
+start_env_watchdog()
 
 _LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
 
@@ -54,6 +56,12 @@ def _run_voiceprint_daemon():
     from voiceprint_daemon import main as _voiceprint_main
 
     _voiceprint_main()
+
+
+def _run_preview_watch():
+    from tools.preview_watch import run_preview_watch_daemon
+
+    run_preview_watch_daemon()
 
 
 def _surya_python() -> str | None:
@@ -113,22 +121,14 @@ def _run_surya_daemon():
         time.sleep(30)
 
 
-def _run_chatterbox_daemon():
-    """Spawn the Chatterbox voice-cloning TTS daemon as its OWN process (torch +
-    the multilingual model shouldn't live in core.py's process). Same
-    health-probe/gate pattern as the other optional local daemons. CHATTERBOX_REFERENCE_WAV
-    defaults to the cloned ringback voice sample so French calls use that voice
-    without extra setup; override or unset to fall back to the stock model voice."""
+def _run_pocket_tts_daemon():
+    """Spawn the Kyutai Pocket TTS daemon as its OWN process (torch-based, same
+    isolation rationale as the other local daemons). Health-probe/gate pattern
+    identical to the other optional local daemons."""
     import urllib.request
 
-    daemon = Path(__file__).resolve().parent / "chatterbox_daemon.py"
-    url = os.environ.get("CHATTERBOX_TTS_URL_BASE", "http://127.0.0.1:9241").rstrip("/")
-    env = os.environ.copy()
-    env.setdefault(
-        "CHATTERBOX_REFERENCE_WAV",
-        str(Path(__file__).resolve().parent
-            / "ringback" / "voices" / "-bkiqjkrNRU" / "clip-30s.voice.wav"),
-    )
+    daemon = Path(__file__).resolve().parent / "pocket_tts_daemon.py"
+    url = os.environ.get("POCKET_TTS_URL_BASE", "http://127.0.0.1:9242").rstrip("/")
 
     def _alive() -> bool:
         try:
@@ -141,7 +141,6 @@ def _run_chatterbox_daemon():
         if not _alive():
             proc = subprocess.Popen(
                 [sys.executable, str(daemon)],
-                env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -159,7 +158,8 @@ _TARGETS = {
     "chat_ui": _run_chat_ui,
     "kokoro_daemon": _run_kokoro_daemon,
     "voiceprint_daemon": _run_voiceprint_daemon,
-    "chatterbox_daemon": _run_chatterbox_daemon,
+    "pocket_tts_daemon": _run_pocket_tts_daemon,
+    "preview_watch": _run_preview_watch,
 }
 if (
     _surya_python() is not None

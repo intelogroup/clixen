@@ -30,9 +30,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from concurrent.futures import ThreadPoolExecutor
 
-from dotenv import load_dotenv
+from tools.env_boot import load_env, start_env_watchdog
 
-load_dotenv(Path(__file__).parent / ".env")
+load_env()
 
 # faster-whisper model — loaded once from local cache, lives for the process lifetime
 # Path is pinned so it never attempts a HuggingFace network call
@@ -142,6 +142,12 @@ from internet_monitor import InternetMonitor
 from log_config import setup_logging
 
 log = setup_logging(__name__, log_file="telegram_bot.log", default_level=logging.DEBUG)
+
+# Started here, not at import: this process holds the OpenAI key for ~24h at a stretch
+# (router classifier + memory embeddings + KB ingest), so the drift watchdog is what keeps a
+# rotated key from silently 401ing every call until someone restarts it (tools/env_boot.py).
+# Deliberately AFTER setup_logging so the watchdog's own lines actually reach the log.
+start_env_watchdog()
 
 # Silence noisy HTTP/telegram debug lines from stderr — keep only WARNING+
 for _noisy in ("httpx", "httpcore", "telegram", "hpack"):
