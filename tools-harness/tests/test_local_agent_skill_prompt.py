@@ -48,9 +48,21 @@ def test_local_agent_state_skill_prompt_defaults_to_none():
 
 
 def test_skill_tools_narrows_tool_list():
+    # Stale pre-existing assertion (confirmed broken on main before any of
+    # today's changes, via `git stash` — see tests/test_telegram_20260917_incidents.py
+    # bug 4) expected an exact 3-tool set with zero core-tag union. But
+    # _tools_for_state()'s own docstring/comment says a matched skill's list
+    # is unioned with tag "core" precisely so always-available generic tools
+    # (bash_exec, gog_exec, etc.) are never silently hidden — narrowing is
+    # for prompt size, not for hard-blocking tools the skill didn't list.
+    # "write_file" isn't itself core-tagged, so it must still show up only
+    # because skill_tools included it explicitly.
+    from tools.registry import tools_with_tags
     state = LocalAgentState(messages=[], task="full", skill_tools=["find_files", "read_file", "write_file"])
     names = {t["function"]["name"] for t in _tools_for_state(state)}
-    assert names == {"find_files", "read_file", "write_file"}
+    assert {"find_files", "read_file", "write_file"} <= names
+    assert tools_with_tags("core") <= names
+    assert "write_file" in names  # explicit skill tool, not core-tagged itself
 
 
 def test_no_skill_tools_keeps_full_task_set():

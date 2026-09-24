@@ -76,13 +76,17 @@ def test_tool_node_prevents_repeating_identical_read_across_rounds(tmp_path):
 
 def test_skill_tools_block_execution_of_unlisted_tool(tmp_path):
     """A skill that names only find_files/read_file must not let the model
-    execute bash_exec even if it hallucinates the call — the allow-list applies
-    to what actually runs, not just what's shown as available."""
+    execute an unlisted NON-CORE tool even if it hallucinates the call — the
+    allow-list applies to what actually runs, not just what's shown as
+    available. (Core-tagged tools like bash_exec are deliberately NOT blocked:
+    skill_tools narrows the prompt, not execution — see the 2026-09-17 live
+    incident in agents/local_agent_nodes.py:_effective_allowed_tool_names and
+    the companion test below.)"""
     f = tmp_path / "secret.txt"
     f.write_text("data")
 
     ai = AIMessage(content="", tool_calls=[
-        _tool_call("bash_exec", {"command": f"cat {f}"}, "c1"),
+        _tool_call("rename_file", {"src": str(f), "dst": str(tmp_path / "moved.txt")}, "c1"),
     ])
     state = LocalAgentState(
         messages=[ai], task="full",
@@ -94,6 +98,22 @@ def test_skill_tools_block_execution_of_unlisted_tool(tmp_path):
     assert len(result["messages"]) == 1
     assert "[blocked]" in result["messages"][0].content
     assert "not allowed in this agent's scoped manifest" in result["messages"][0].content
+    assert f.read_text() == "data"  # blocked before execution — file untouched
+
+
+def test_skill_tools_core_union_allows_core_tool(tmp_path):
+    """Pins the 2026-09-17 semantics: a core-tagged tool (bash_exec) that a
+    skill didn't list must still EXECUTE — skill_tools narrows the prompt for
+    size, it is not a hard block on always-available core tools."""
+    f = tmp_path / "note.txt"
+    f.write_text("hi")
+    ai = AIMessage(content="", tool_calls=[_tool_call("bash_exec", {"command": f"cat {f}"}, "c1")])
+    state = LocalAgentState(messages=[ai], task="full", skill_tools=["find_files", "read_file"])
+
+    result = asyncio.run(tool_node(state))
+
+    assert "[blocked]" not in result["messages"][0].content
+    assert "hi" in result["messages"][0].content
 
 
 def test_skill_tools_allow_listed_tool_through(tmp_path):

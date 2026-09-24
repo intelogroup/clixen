@@ -22,25 +22,39 @@ from agents.local_agent_state import LocalAgentState
 from agents.local_agent_tools import get_local_agent_tools, get_local_agent_executors
 
 
-def _tools_for_state(state) -> list:
-    """Tool schemas narrowed by the matched skill and specialist handoff state."""
-    tools = get_local_agent_tools(state.task)
+def _effective_allowed_tool_names(state) -> set[str]:
+    """Single source of truth for "what can this agent actually call right now" —
+    shared by the schema builder (_tools_for_state, what the model is shown) and
+    tool_node's execution-time enforcement. These used to be two separate inline
+    computations that drifted: the schema builder unioned a matched skill's tools
+    with tag "core" (so e.g. bash_exec always stays visible), but tool_node's
+    enforcement didn't apply that same union — a skill-matched run would see
+    bash_exec in its own tool list, call it, and get hard-blocked as "not allowed
+    in this agent's scoped manifest" (confirmed live 2026-09-17, telegram trace).
+    """
+    from agents.local_agent_tools import _tool_names_for
+    from tools.registry import tools_with_tags
+    names = set(state.skill_tools) if state.skill_tools else _tool_names_for(state.task)
     if state.skill_tools:
-        from tools.registry import tools_with_tags
         # Union with "core" so a matched skill's narrow list (e.g. create_task's
         # 3 tools) can't silently hide always-available generic tools like
         # gog_exec — narrowing is for prompt size, not for hard-blocking tools
         # the skill just didn't happen to list.
-        keep = set(state.skill_tools) | tools_with_tags("core")
-        tools = [t for t in tools if t["function"]["name"] in keep]
-    if state.excluded_tools:
-        excluded = set(state.excluded_tools)
-        tools = [t for t in tools if t["function"]["name"] not in excluded]
+        names |= tools_with_tags("core")
+    names -= set(state.excluded_tools)
+    return names
+
+
+def _tools_for_state(state) -> list:
+    """Tool schemas narrowed by the matched skill and specialist handoff state."""
+    tools = get_local_agent_tools(state.task)
+    keep = _effective_allowed_tool_names(state)
+    tools = [t for t in tools if t["function"]["name"] in keep]
     return tools
 from tools.registry import execute_tool as _registry_execute_tool, is_error_result
 from tools.filesystem import find_files
 from tools.injection_guard import wrap_external_output
-from clients.cloud_client import is_cloud_model
+from clients.cloud_client import is_cloud_model, DEFAULT_CLOUD_MODEL
 from clients.ollama_client import DEFAULT_MODEL as _LOCAL_DEFAULT_MODEL, _trace_resp, _run_local
 from clients.cancellation import is_run_aborted
 from log_config import CURRENT_RUN_ID
@@ -193,8 +207,17 @@ def _chat(model: str, messages: list[dict], tools: list[dict], temperature: floa
                         del _cloud_deadline[k]
             response, _ = _run_local(_LOCAL_DEFAULT_MODEL, messages, tools, temperature=temperature)
             return response
-    response, _ = _run_local(model, messages, tools, temperature=temperature)
-    return response
+    try:
+        response, _ = _run_local(model, messages, tools, temperature=temperature)
+        return response
+    except Exception as e:
+        # Ollama down/model missing (confirmed live 2026-09-17: gemma4:12b/llama3.1:8b
+        # "not found" x16 in one day, no fallback existed here — is_cloud_model branch
+        # above already had this, this plain-local branch didn't) — use cloud instead
+        # of hard-aborting the whole agent run.
+        _log.warning("[local-agent] local %s unreachable (%s), falling back to cloud %s", model, e, DEFAULT_CLOUD_MODEL)
+        from clients.cloud_client import raw_completion
+        return raw_completion(DEFAULT_CLOUD_MODEL, messages, tools, temperature=temperature)
 
 
 async def call_model(state: LocalAgentState) -> dict:
@@ -879,10 +902,10 @@ async def tool_node(state: LocalAgentState) -> dict:
     run_id = state.run_id or ""
 
     # Resolve permitted tools based on the active task (narrowed to the matched
-    # skill's tool subset, if any, so execution can't exceed what was advertised)
-    from agents.local_agent_tools import _tool_names_for
-    allowed_tool_names = set(state.skill_tools) if state.skill_tools else _tool_names_for(state.task)
-    allowed_tool_names -= set(state.excluded_tools)
+    # skill's tool subset, if any, so execution can't exceed what was advertised) —
+    # shared with _tools_for_state() so the schema shown to the model and the
+    # execution-time allowlist can never drift apart again.
+    allowed_tool_names = _effective_allowed_tool_names(state)
     prior_read_signatures = _previous_read_signatures(messages[:-1])
 
     for tool_call in last_message.tool_calls:

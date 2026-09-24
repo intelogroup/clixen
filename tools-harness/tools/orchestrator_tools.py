@@ -727,6 +727,48 @@ def _record_entity_query(parent_run_id: str, query: str) -> None:
         _ENTITY_CACHE.popitem(last=False)
 
 
+def _dereferenced_query(query: str) -> str:
+    """Make a subagent query self-contained when it is a pronoun-only follow-up.
+
+    Subagents run stateless (see harness._execute_intent_pipeline), so "search for it live"
+    sent right after "Send a message to Solini." has no referent: the ambiguity guard
+    rejected it and returned a clarifying question the user never even saw — the request
+    just vanished into a 204ms no-op (reproduced live 2026-09-24, ask_web_search). Prefixing
+    the last user turn gives the subagent the referent without injecting the whole
+    conversation window into every subagent prompt.
+
+    Returns the query byte-identical when it is already self-contained.
+    """
+    try:
+        from tools.query_guard import check_all as _gq
+
+        if not _gq(query):
+            return query
+        chat_id = _get_chat_id()
+        if chat_id is None:
+            return query
+        from store.conversation import get as _conv_get
+
+        last_user = ""
+        for turn in reversed(_conv_get(str(chat_id)) or []):
+            if turn.get("role") == "user" and (turn.get("content") or "").strip():
+                last_user = turn["content"].strip()
+                break
+        if not last_user:
+            return query
+        _log.info(
+            "[subagent-deref] pronoun-only subagent query %r resolved against previous user turn %r",
+            query[:60], last_user[:60],
+        )
+        return (
+            "[conversation context — the user's previous message was: "
+            f'"{last_user[:300]}"]\n{query}'
+        )
+    except Exception as e:  # never let context repair break dispatch
+        _log.debug("[subagent-deref] skipped (%s)", e)
+        return query
+
+
 def _run_subagent(intent: str, query: str, timeout: int = 120) -> str:
     """Run an intent-pipeline subagent and append a machine-readable footer.
 
@@ -737,6 +779,11 @@ def _run_subagent(intent: str, query: str, timeout: int = 120) -> str:
     system prompt requires status=ok coverage before absence claims.
     """
     import uuid
+
+    # Subagents run stateless, so a pronoun-only follow-up the orchestrator forwarded
+    # verbatim has no referent here — resolve it against the parent chat's last user turn
+    # before dispatch. No-op for already self-contained queries.
+    query = _dereferenced_query(query)
 
     import harness
     from log_config import CURRENT_RUN_ID
@@ -761,7 +808,15 @@ def _run_subagent(intent: str, query: str, timeout: int = 120) -> str:
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTO
     _pool = ThreadPoolExecutor(max_workers=1)
     try:
-        fut = _pool.submit(harness._execute_intent_pipeline, intent=intent, query=query, run_id=rid)
+        fut = _pool.submit(
+            harness._execute_intent_pipeline,
+            intent=intent,
+            query=query,
+            run_id=rid,
+            # Read in THIS thread (the subagent thread can't see our ContextVars) so the
+            # ambiguity guard knows a conversation exists — see tools/query_guard.py.
+            chat_id=_get_chat_id(),
+        )
         res = fut.result(timeout=timeout)
     except _FutureTO:
         res = f"[subagent timeout] {intent} subagent did not return within {timeout}s"

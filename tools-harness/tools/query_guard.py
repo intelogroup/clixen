@@ -4,12 +4,27 @@ Query completeness guard — catches underspecified or ambiguous queries before 
 Returns a clarifying question string if the query is missing context that would
 make the response ambiguous or irrelevant (team name, year, delivery service, etc.).
 
-Single entrypoint: check_all(query, has_history=False) -> str | None
+Single entrypoint: check_all(query, has_history=None) -> str | None
 
 No model call. Zero latency. Fires before classify() / LLM dispatch.
 """
 
+import contextvars
 import re
+
+# Set by harness._execute_intent_pipeline while a SUBAGENT runs, read by check_all when the
+# caller doesn't pass has_history explicitly. Subagents execute in their own worker thread
+# with chat_id=None (kept stateless so every subagent prompt doesn't carry the whole
+# conversation window — see _execute_intent_pipeline), so has_history computed from chat_id
+# is always False there and the deictic check below rejected follow-ups the ORCHESTRATOR had
+# forwarded verbatim. Live repro 2026-09-24: "Send a message to Solini." then "Search for it
+# live" → ask_web_search returned "What are you referring to?" in 204ms and the turn quietly
+# degraded (the user never even saw that question).
+# The flag says "a conversation exists", NOT "here is the conversation" — the referent
+# itself is supplied by orchestrator_tools._dereferenced_query().
+CONTEXT_PRESENT: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "guard_context_present", default=False
+)
 
 # ── Named entity presence heuristics ──────────────────────────────────────────
 # A word that is TitleCase and not the first word of the query (or an all-caps ticker)
@@ -515,10 +530,15 @@ def _data_inner(query: str) -> str | None:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def check_all(query: str, has_history: bool = False) -> str | None:
+def check_all(query: str, has_history: bool | None = None) -> str | None:
     """
     Run ALL guard checks in priority order. Returns the first clarifying
     question that applies, or None if the query seems specific enough.
+
+    has_history: True when the caller has prior turns a deictic reference
+    ("search for it") could resolve against. None (the default) means "ask
+    CONTEXT_PRESENT" — True inside a subagent spawned from a live conversation.
+    An explicit True/False always wins (harness passes it; tests rely on it).
 
     Checks (in order):
       1. Deictic reference       — "explain this" / "tell me about it" (needs history)
@@ -529,6 +549,9 @@ def check_all(query: str, has_history: bool = False) -> str | None:
       6. Food/restaurant         — "I'm hungry" / "bowl of rice" (no service/location)
       7. Data analysis           — "run stats" / "compare groups" (no file)
     """
+    if has_history is None:
+        has_history = CONTEXT_PRESENT.get()
+
     q = query.strip()
     if not q:
         return "Please enter a valid search query."
