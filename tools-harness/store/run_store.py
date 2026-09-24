@@ -1,0 +1,315 @@
+"""
+Durable run journal — the state core of long-horizon agent runs (M1).
+
+A run is an append-only sequence of events keyed by (run_id, seq). The tool
+loop treats the journal as the source of truth:
+
+    load events → one model round → append → repeat      (stateless loop)
+
+Contract (docs/plans/2026-09-24-long-horizon-agent-upgrade.md):
+  * Single writer per DB: the child process that owns the run performs all
+    appends for it; supervisor/SSE readers only read (WAL + busy_timeout are
+    set by dbclose.connect).
+  * Write-boundary redaction: every payload is scrubbed of secrets BEFORE it
+    touches disk — keyname regex + exact vault values. The journal never
+    stores a replayable secret; redacted side-effecting tools are re-executed
+    on resume rather than replayed.
+  * Status transitions are validated; every failure state preserves the
+    journal (a failed run is never a dead end).
+  * seq assignment is atomic (INSERT...SELECT) — no MAX+1 read-modify-write
+    PK races between threads.
+"""
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+import time
+import uuid
+from pathlib import Path
+
+from store import dbclose
+
+_DB_PATH = Path(__file__).parent.parent / "data" / "run_store.sqlite"
+
+# Lifecycle states from the plan's Interaction State Table.
+STATUSES = (
+    "queued", "running", "paused", "steer-waiting", "retrying",
+    "succeeded", "failed", "killed", "budget-exceeded",
+)
+TERMINAL = ("succeeded", "failed", "killed", "budget-exceeded")
+_RESUMABLE = ("failed", "killed", "budget-exceeded")
+
+_TRANSITIONS: dict[str, set[str]] = {
+    "queued": {"running", "killed", "failed"},
+    "running": {"paused", "steer-waiting", "retrying",
+                "succeeded", "failed", "killed", "budget-exceeded"},
+    "retrying": {"running", "failed", "killed"},
+    "paused": {"running", "killed", "failed"},
+    "steer-waiting": {"running", "paused", "killed", "failed"},
+    # Resume: journal replay starts a fresh executing state.
+    "failed": {"running"}, "killed": {"running"}, "budget-exceeded": {"running"},
+    "succeeded": set(),  # terminal — rerun means a new run_id
+}
+
+# Journal event kinds. Appending an unknown kind is allowed but logged as a
+# forward-compatible "custom:" event kind is NOT — keep the vocabulary closed.
+EVENT_KINDS = frozenset({
+    "run", "user_msg", "assistant_msg", "tool_call", "tool_result",
+    "plan_step", "heartbeat", "budget", "steer", "approval", "denial", "status",
+    "round",
+})
+
+# ── Write-boundary redaction ──────────────────────────────────────────────
+_SECRET_KEY_RE = re.compile(
+    r"password|passwd|secret|token|authorization|api[_-]?key|credential|otp|pin\b",
+    re.IGNORECASE,
+)
+_vault_cache: dict = {"values": frozenset(), "ts": 0.0}
+_VAULT_TTL_S = 300.0
+
+
+def _vault_secret_values() -> frozenset[str]:
+    """Exact values of every string stored in the Keychain vault, cached 5 min.
+    Lazy import + broad except: journal appends must never fail because the
+    Keychain is unavailable (scrubbing degrades to keyname-only)."""
+    now = time.monotonic()
+    if now - _vault_cache["ts"] < _VAULT_TTL_S:
+        return _vault_cache["values"]
+    values: set[str] = set()
+    try:
+        from tools.vault import _kc_get, _kc_list
+        for service in _kc_list():
+            data = _kc_get(service) or {}
+            for v in data.values():
+                s = str(v)
+                if len(s) >= 6:  # never match short/generic strings
+                    values.add(s)
+    except Exception:
+        pass  # degrade to last-known cache + keyname regex
+    _vault_cache["values"] = frozenset(values)
+    _vault_cache["ts"] = now
+    return _vault_cache["values"]
+
+
+def scrub(obj, secrets: frozenset[str] | None = None):
+    """Recursively redact secrets. Returns (scrubbed, redacted_keys).
+
+    Two layers, matching the plan:
+      1. keyname regex  → dict values under password/token/... keys become
+         [REDACTED:<key>] (type preserved for booleans/ints: replaced anyway —
+         the journal must not store them).
+      2. exact vault values → any string containing a known secret has the
+         secret replaced with [REDACTED:vault].
+    """
+    redacted: list[str] = []
+    if secrets is None:
+        secrets = _vault_secret_values()
+
+    def _walk(node, path: str):
+        if isinstance(node, dict):
+            out = {}
+            for k, v in node.items():
+                if isinstance(k, str) and _SECRET_KEY_RE.search(k):
+                    out[k] = f"[REDACTED:{k}]"
+                    redacted.append(f"{path}.{k}" if path else str(k))
+                else:
+                    out[k] = _walk(v, f"{path}.{k}" if path else str(k))
+            return out
+        if isinstance(node, list):
+            return [_walk(v, path) for v in node]
+        if isinstance(node, str):
+            for s in secrets:
+                if s and s in node:
+                    redacted.append(f"{path}(vault)")
+                    node = node.replace(s, "[REDACTED:vault]")
+            return node
+        return node
+
+    return _walk(obj, ""), sorted(set(redacted))
+
+
+# ── Persistence ───────────────────────────────────────────────────────────
+
+def _conn() -> sqlite3.Connection:
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = dbclose.connect(_DB_PATH)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS runs ("
+        "run_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,"
+        "trigger TEXT NOT NULL, goal TEXT NOT NULL, policy TEXT NOT NULL,"
+        "status TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, last_seq INTEGER NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS run_events ("
+        "run_id TEXT NOT NULL, seq INTEGER NOT NULL, ts TEXT NOT NULL,"
+        "kind TEXT NOT NULL, payload TEXT NOT NULL,"
+        "PRIMARY KEY (run_id, seq))"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_run_events_kind ON run_events (run_id, kind, seq)"
+    )
+    return conn
+
+
+def _now() -> str:
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def create_run(goal: str, policy: dict | None = None,
+               trigger: str = "chat-send") -> str:
+    """Create a queued run + its anchor `run` event. Returns run_id."""
+    if trigger not in ("chat-send", "automation-enqueue", "agent-mail"):
+        raise ValueError(f"unknown trigger: {trigger!r}")
+    run_id = uuid.uuid4().hex[:12]
+    with _conn() as conn:
+        conn.execute(
+            "INSERT INTO runs (run_id, created_at, updated_at, trigger, goal, policy, status)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'queued')",
+            (run_id, _now(), _now(), trigger, str(scrub(goal)[0]),
+             json.dumps(policy or {})),
+        )
+    append_event(run_id, "run", {"goal": goal, "policy": policy or {}, "trigger": trigger})
+    return run_id
+
+
+def append_event(run_id: str, kind: str, payload: dict | None = None) -> int:
+    """Append one event (scrubbed at the write boundary). Returns the seq.
+
+    Raises KeyError for unknown run_id, ValueError for unknown kind.
+    """
+    if kind not in EVENT_KINDS:
+        raise ValueError(f"unknown event kind: {kind!r}")
+    scrubbed, redacted = scrub(dict(payload or {}))
+    if redacted:
+        scrubbed["_redacted"] = redacted
+    with _conn() as conn:
+        if not conn.execute("SELECT 1 FROM runs WHERE run_id = ?", (run_id,)).fetchone():
+            raise KeyError(f"no run {run_id!r}")
+        # Atomic seq assignment (same INSERT...SELECT pattern as trace_store).
+        conn.execute(
+            "INSERT INTO run_events (run_id, seq, ts, kind, payload)"
+            " SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ? FROM run_events WHERE run_id = ?",
+            (run_id, _now(), kind, json.dumps(scrubbed), run_id),
+        )
+        seq = int(conn.execute(
+            "SELECT MAX(seq) FROM run_events WHERE run_id = ?", (run_id,)).fetchone()[0])
+        conn.execute("UPDATE runs SET last_seq = ?, updated_at = ? WHERE run_id = ?",
+                     (seq, _now(), run_id))
+    return seq
+
+
+def append_round_snapshot(run_id: str, *, round_idx: int, model: str = "",
+                          escalated: bool = False, consecutive_errors: int = 0,
+                          force_tool_consumed: bool = False,
+                          extra: dict | None = None) -> int:
+    """Journal the loop state at a round boundary (plan WS1 issue 1).
+
+    A resume restores escalated/consecutive_errors/model/force_tool_consumed
+    from `latest_round` so the fallback cascade continues where it left off
+    instead of silently resetting. Secrets in `extra` are scrubbed by
+    `append_event` on the way in.
+    """
+    payload = {
+        "round_idx": int(round_idx), "model": model,
+        "escalated": bool(escalated),
+        "consecutive_errors": int(consecutive_errors),
+        "force_tool_consumed": bool(force_tool_consumed),
+    }
+    if extra:
+        payload["extra"] = extra
+    return append_event(run_id, "round", payload)
+
+
+def latest_round(run_id: str) -> dict | None:
+    """Most recent round-boundary snapshot, or None if the run has no rounds."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT seq, payload FROM run_events WHERE run_id = ? AND kind = 'round'"
+            " ORDER BY seq DESC LIMIT 1", (run_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    snap = json.loads(row[1])
+    snap["seq"] = int(row[0])
+    return snap
+
+
+def get_events(run_id: str, after_seq: int = 0) -> list[dict]:
+    """Events after after_seq in seq order — the loop's replay source."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT seq, ts, kind, payload FROM run_events"
+            " WHERE run_id = ? AND seq > ? ORDER BY seq",
+            (run_id, after_seq),
+        ).fetchall()
+    return [
+        {"seq": r[0], "ts": r[1], "kind": r[2], "payload": json.loads(r[3])}
+        for r in rows
+    ]
+
+
+def get_run(run_id: str) -> dict | None:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT run_id, created_at, updated_at, trigger, goal, policy,"
+            " status, attempt, last_seq FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "run_id": row[0], "created_at": row[1], "updated_at": row[2],
+        "trigger": row[3], "goal": row[4], "policy": json.loads(row[5]),
+        "status": row[6], "attempt": row[7], "last_seq": row[8],
+        "resumable": row[6] in _RESUMABLE,
+    }
+
+
+def set_status(run_id: str, status: str) -> str:
+    """Transition status with validation; appends a `status` event."""
+    if status not in STATUSES:
+        raise ValueError(f"unknown status: {status!r}")
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT status FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+        if not row:
+            raise KeyError(f"no run {run_id!r}")
+        current = row[0]
+        if status not in _TRANSITIONS.get(current, set()):
+            raise ValueError(f"invalid transition {current!r} -> {status!r}")
+        conn.execute("UPDATE runs SET status = ?, updated_at = ? WHERE run_id = ?",
+                     (status, _now(), run_id))
+    append_event(run_id, "status", {"status": status, "from": current})
+    return status
+
+
+def record_attempt(run_id: str) -> int:
+    """Child crashed / retry tick — increments attempt, moves `running` runs
+    to `retrying`. Returns the new attempt count."""
+    with _conn() as conn:
+        conn.execute("UPDATE runs SET attempt = attempt + 1, updated_at = ? WHERE run_id = ?",
+                     (_now(), run_id))
+        row = conn.execute("SELECT attempt, status FROM runs WHERE run_id = ?",
+                           (run_id,)).fetchone()
+    attempt, status = row if row else (0, "queued")
+    if status == "running":
+        try:
+            set_status(run_id, "retrying")
+        except ValueError:
+            pass
+    append_event(run_id, "heartbeat", {"attempt": attempt, "reason": "retry"})
+    return attempt
+
+
+def list_runs(status: str | None = None, limit: int = 50) -> list[dict]:
+    q = "SELECT run_id FROM runs"
+    params: tuple = ()
+    if status:
+        q += " WHERE status = ?"
+        params = (status,)
+    q += " ORDER BY updated_at DESC LIMIT ?"
+    with _conn() as conn:
+        ids = [r[0] for r in conn.execute(q, (*params, limit)).fetchall()]
+    return [run for rid in ids if (run := get_run(rid)) is not None]
