@@ -852,6 +852,117 @@ def delete_history(chat_id: str, request: Request):
     return {"cleared": True}
 
 
+# ── Runs (M2): async journal-driven runs ──────────────────────────────────────
+# The chat caller gets a run_id immediately; progress, controls and the final
+# answer all travel over the journal (SSE tail), so nothing is blocked on the
+# model round-trip and a reconnect resumes with Last-Event-ID.
+
+
+@app.post("/api/runs")
+def create_run(request: Request, payload: dict):
+    _require_auth(request)
+    from agents import run_service
+
+    goal = (payload.get("goal") or "").strip()
+    if not goal:
+        raise HTTPException(status_code=400, detail="goal required")
+    rid = run_service.start_run(
+        goal,
+        tools=payload.get("tools") or [],
+        model=payload.get("model") or run_service.DEFAULT_MODEL,
+        policy=payload.get("policy") or {},
+        mode=payload.get("mode"),
+    )
+    return run_service.run_card(rid)
+
+
+@app.get("/api/runs/{run_id}/events")
+def run_events(run_id: str, request: Request, after_seq: int = 0):
+    _require_auth(request)
+    from agents import run_service
+
+    if not run_service.run_card(run_id):
+        raise HTTPException(status_code=404, detail="no such run")
+    try:
+        cursor = int(request.headers.get("last-event-id") or after_seq or 0)
+    except ValueError:
+        cursor = 0
+
+    def generate():
+        yield f"data: {json.dumps({'type': 'card', **run_service.run_card(run_id)})}\n\n"
+        for ev in run_service.stream_events(run_id, after_seq=cursor):
+            frame = {"type": ev["kind"], "seq": ev["seq"], "payload": ev["payload"]}
+            yield f"id: {ev['seq']}\ndata: {json.dumps(frame)}\n\n"
+        yield f"data: {json.dumps({'type': 'done', **run_service.run_card(run_id)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.get("/api/runs/{run_id}/budget")
+def run_budget(run_id: str, request: Request):
+    """Journal-derived usage for a run. Deliberately reports only what the
+    journal knows (rounds, tool calls, elapsed, policy caps) — never invented
+    token or dollar figures."""
+    _require_auth(request)
+    from agents import run_service
+
+    card = run_service.run_card(run_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="no such run")
+    from store import run_store as _rs
+
+    run = _rs.get_run(run_id)
+    events = _rs.get_events(run_id)
+    kinds = [e["kind"] for e in events]
+    snap = _rs.latest_round(run_id) or {}
+    policy = run.get("policy") or {}
+    rounds_used = (snap.get("round_idx", -1) + 1) if snap else 0
+    try:
+        elapsed = max(0.0, _rs._epoch(run["updated_at"]) - _rs._epoch(run["created_at"]))
+    except Exception:  # noqa: BLE001
+        elapsed = 0.0
+    return {
+        "run_id": run_id,
+        "rounds_used": rounds_used,
+        "max_rounds": policy.get("max_rounds"),
+        "deadline_s": policy.get("deadline_s"),
+        "tool_calls": kinds.count("tool_call"),
+        "tool_errors": sum(
+            1 for e in events
+            if e["kind"] == "tool_result" and str(e["payload"].get("result", "")).startswith("[error]")),
+        "events": len(events),
+        "elapsed_s": round(elapsed, 1),
+        "attempt": run.get("attempt", 0),
+    }
+
+
+@app.get("/runs", response_class=HTMLResponse)
+def runs_page(request: Request):
+    _require_auth(request)
+    return HTMLResponse((Path(__file__).parent / "static" / "runs.html").read_text())
+
+
+@app.post("/api/runs/{run_id}/control")
+def run_control(run_id: str, request: Request, payload: dict):
+    _require_auth(request)
+    from agents import run_service
+
+    action = (payload.get("action") or "").strip().lower()
+    if action == "pause":
+        message = run_service.pause(run_id)
+    elif action == "resume":
+        message = run_service.resume(run_id)
+    elif action == "kill":
+        message = run_service.kill(run_id)
+    elif action == "steer":
+        message = run_service.steer(run_id, payload.get("text") or "")
+    else:
+        raise HTTPException(status_code=400,
+                            detail="action must be pause|resume|kill|steer")
+    return {"ok": not message.startswith("[runs]"), "message": message}
+
+
+
 @app.get("/api/whatsapp-qr")
 def whatsapp_qr(request: Request):
     import httpx

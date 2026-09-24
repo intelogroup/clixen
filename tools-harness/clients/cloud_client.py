@@ -13,11 +13,12 @@ a plain string without a separate provider field:
     can't reach DeepSeek through OpenRouter at all — see below)
 
 Image/vision support: chat()'s `images` param (raw base64, ollama's convention)
-works when routed to a vision-capable model — verified 2026-07-05 against
-CLOUD_VISION_MODEL (google/gemini-2.5-flash-lite via OpenRouter). DEFAULT_CLOUD_MODEL
-(deepseek/deepseek-v4-flash) and CLOUD_FALLBACK_MODEL are text-only tool-calling
-models; only harness.py's vision-intent routing should pass images, pointed at
-CLOUD_VISION_MODEL specifically.
+works when routed to a vision-capable model. CLOUD_VISION_MODEL is
+openai/gpt-4.1-mini (OpenAI direct, vision-capable — verified live 2026-09-24
+with a real image read; the old gemini-via-OpenRouter vision models all 404
+on this account's ZDR setting, see below). DEFAULT_CLOUD_MODEL /
+CLOUD_FALLBACK_MODEL are also OpenAI direct; only harness.py's vision-intent
+routing should pass images, pointed at CLOUD_VISION_MODEL specifically.
 """
 
 import base64
@@ -30,6 +31,7 @@ import re
 import threading
 import time
 import concurrent.futures
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as _FutureTimeoutError
 from pathlib import Path
@@ -132,6 +134,50 @@ def _create_with_retry(client, **kwargs):
                 "[cloud_client] low-balance 402 (%s), retrying on same provider with max_tokens=%d",
                 e, kwargs["max_tokens"],
             )
+
+
+def _create_checked(client, retry: bool, **kwargs):
+    """create() + validate resp.choices is non-empty before returning it.
+
+    OpenRouter's free-tier models can return HTTP 200 with choices: null
+    (moderation flag or an empty upstream body) — confirmed live 2026-09-22
+    on openrouter/nvidia/nemotron-3-super-120b-a12b:free. Every caller here
+    used to do resp.choices[0] unguarded right after create(), crashing with
+    an opaque "'NoneType' object is not subscriptable" instead of the clear,
+    retryable error the surrounding except blocks already know how to handle
+    (raw_completion's three-tier model fallback exists for exactly this kind
+    of failure — it just never got a chance to see this one). Raising here
+    routes it through that same existing fallback path.
+
+    Only fixes raw_completion's non-streaming call sites — _stream_completion
+    (the chat() loop's streaming path) has its own separate resp.choices[0]
+    accesses with the same underlying risk, not covered by this helper; that
+    path's retry architecture is different enough to need its own pass.
+    """
+    # 2026-09-23: with OpenRouter credits, the OpenAI key, and the DeepSeek
+    # balance all dead simultaneously (confirmed live), the free rate-limited
+    # tier is the only lever left — its "temporarily overloaded" 200-with-
+    # empty-choices response is usually transient, so retry a couple times
+    # here before giving up and cascading to raw_completion's fallback tiers
+    # (which right now just loop back to this same free model anyway, since
+    # FREE_FALLBACK_MODEL == DEFAULT_CLOUD_MODEL — no other tier to fall to).
+    last_err = None
+    for attempt in range(3):
+        resp = client.chat.completions.create(**kwargs) if not retry else _create_with_retry(client, **kwargs)
+        if resp.choices:
+            return resp
+        last_err = getattr(resp, "error", resp)
+        if attempt < 2:
+            delay = 1.5 * (attempt + 1)
+            _log.warning(
+                "[cloud_client] empty choices (model=%s, attempt %d/3): %s — retrying in %.1fs",
+                kwargs.get("model"), attempt + 1, last_err, delay,
+            )
+            time.sleep(delay)
+    raise RuntimeError(
+        f"empty choices in response after 3 attempts (model={kwargs.get('model')!r}, "
+        f"possibly moderated/empty upstream): {last_err}"
+    )
 
 
 def _create_stream_with_retry(client, **kwargs):
@@ -375,19 +421,21 @@ _PROVIDERS: dict[str, tuple[str, str]] = {
 # gpt-5-family) and gets temperature back (not gpt-5-family) via the
 # startswith("gpt-5") branches elsewhere in this file — no other change
 # needed. Re-verify against golden_queries.py before trusting this tier.
-# 2026-09-13: OPENAI_API_KEY still out of credit — every real call was
-# wasting 2 guaranteed-dead round trips (openai 429, again via the fallback
-# cascade) before ever reaching a tier that actually works. Pointed straight
-# at FREE_FALLBACK_MODEL (see its definition below — same string, duplicated
-# here since it isn't defined yet at this point in the file) now that it's
-# been pinned to a vetted model + verified live via golden_queries.py and
-# real-task testing (5/5 correct, no misroutes). CLOUD_FALLBACK_MODEL stays
-# on openai/gpt-4o-mini — cheap to still try it once per call in case the
-# account gets topped up, before falling through to OPENAI_FALLBACK_MODEL/
-# FREE_FALLBACK_MODEL. Revert DEFAULT_CLOUD_MODEL to openai/gpt-4o-mini once
-# credit is restored — free tier is last-resort by design, not a permanent
-# primary (latency is variable run-to-run, see golden_queries history above).
-DEFAULT_CLOUD_MODEL = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+# 2026-09-23: OPENAI_API_KEY credit restored (verified live: raw_completion
+# to openai/gpt-4o-mini returned 200, not 429). Reverted DEFAULT_CLOUD_MODEL
+# off the nemotron free tier per the note below — free tier is last-resort
+# by design, not a permanent primary.
+# 2026-09-24 (L4 provider-ladder fix): default gpt-4o-mini -> gpt-4.1-mini —
+# same cost class, newer knowledge cutoff, live-probed side by side today
+# (4.1-mini 200 in ~1.5s, 4o-mini 200 in ~0.9s). 4o-mini STAYS on the two
+# fallback rungs so a default-tier failure gets a different model as its
+# second try (chat()'s retry chain dedupes identical models, so distinct
+# strings here are real rungs); the OpenRouter free tier below remains the
+# cross-provider last resort. Also verified live today: EVERY gemini model
+# now 404s through this OpenRouter key — the account ZDR setting excludes
+# all google-ai-studio endpoints, not just 2.5-flash-lite — and Haiku 402s
+# (OpenRouter out of credits), so OpenAI direct is the only live paid tier.
+DEFAULT_CLOUD_MODEL = "openai/gpt-4.1-mini"
 CLOUD_FALLBACK_MODEL = "openai/gpt-4o-mini"
 # Last-resort tier: reached only when both above fail (dead provider / 402 /
 # 5xx / network). OpenAI direct via OPENAI_API_KEY (see openai/ tier above).
@@ -428,20 +476,19 @@ FREE_FALLBACK_CANDIDATES = [
     # misroute (see 2026-09-13 note above) is a last-resort risk, not the default.
     "openrouter/free",
 ]
-# Cheapest vision-capable model actually reachable on this provider-restricted
-# OpenRouter key (see the {anthropic, cloudflare, google-ai-studio} note above) —
-# every other cheap vision option tested (Qwen-VL, Nemotron, Nova, DeepInfra-hosted
-# Gemma) 404s with "no allowed providers". $0.10/$0.40 per M vs claude-haiku-4.5's
-# $1/$5, verified live 2026-07-05 with a real OCR read against a synthetic test image.
-# NOTE 2026-08-03: gemini-2.5-flash-lite (used by CLOUD_FALLBACK_MODEL, conversation
-# fold, memory-verify) was believed retired after a 2026-07-09 404, but a live
-# completion + catalog check re-confirmed it's available again — it stays valid for
-# the fallback/fold/verify tiers. 3.1-flash-lite remains the primary vision model
-# (CLOUD_VISION_MODEL): re-verified live with a real OCR read 2026-07-09. Note:
-# 3.1-flash-lite scored 2/5 on the agentic tool-calling benchmark above
-# (repetitive-loop drift) — that's the multi-round tool-loop case, irrelevant here
-# since vision calls are single-shot OCR reads, not agentic chains.
-CLOUD_VISION_MODEL = "openrouter/google/gemini-3.1-flash-lite"
+# 2026-09-24: every gemini model (2.5-flash-lite AND 3.1-flash-lite) now 404s
+# through this OpenRouter key — the account ZDR setting excludes ALL
+# google-ai-studio endpoints (verified live: "0 endpoints out of 1 requested
+# are available... ZDR violation (account settings)"). With Haiku also 402'd
+# (OpenRouter out of credits), the vision tier moves to OpenAI direct:
+# gpt-4.1-mini is vision-capable, non-reasoning (no gpt-5-family temperature/
+# max_completion_tokens special-casing needed), and live-probed today with a
+# real base64 image read. Side benefit: the old vision model scored 2/5 on
+# the agentic tool-calling benchmark (repetitive-loop drift) and the vision
+# intent runs a MULTI-round tool loop (screenshot -> read) — gpt-4.1-mini has
+# no documented looping behavior, so that known drift risk is gone too.
+# Re-verify before repointing at OpenRouter even if its settings change.
+CLOUD_VISION_MODEL = "openai/gpt-4.1-mini"
 MAX_ROUNDS = 25
 
 # Hard cap on a single tool-execution round inside the cloud tool loop (same
@@ -451,6 +498,8 @@ MAX_ROUNDS = 25
 _CLOUD_TOOL_TIMEOUT_S = float(os.environ.get("CLOUD_TOOL_TIMEOUT", "120"))
 
 _clients: dict[str, OpenAI] = {}
+# tools/env_boot.GENERATION at the time _clients was last (re)built — see _resolve().
+_ENV_GENERATION_SEEN: int | None = None
 # Dead-provider circuit breaker. A provider marked dead (payment/auth 402) is
 # skipped for a SHORT stepped window, then re-probed on the next real request.
 # 2026-08-03 regression: the window was a flat 24h, so DeepSeek + OpenRouter
@@ -573,7 +622,33 @@ def _is_payment_error(e: Exception) -> bool:
 
 
 def _resolve(model: str) -> tuple[OpenAI, str]:
-    """Model string -> (client for its provider, real model id the provider expects)."""
+    """Model string -> (client for its provider, real model id the provider expects).
+
+    Clients are cached per provider, which means they capture their API key at construction
+    time — a later `os.environ` refresh does NOT change them. So watch GENERATION (bumped by
+    tools/env_boot when keys are re-read after drift, e.g. a rotated key) and rebuild when it
+    moves. Without this, the env-drift self-heal would reload the variable and still call the
+    API with the dead key.
+    """
+    global _ENV_GENERATION_SEEN
+
+    try:
+        from tools.env_boot import GENERATION as _gen
+
+        if _ENV_GENERATION_SEEN is None:
+            _ENV_GENERATION_SEEN = _gen
+        elif _ENV_GENERATION_SEEN != _gen:
+            for _prefix, _cached in list(_clients.items()):
+                try:
+                    _cached.close()
+                except Exception:
+                    pass
+            _clients.clear()
+            _ENV_GENERATION_SEEN = _gen
+            _log.warning("[env] keys reloaded (generation %s) — rebuilt cached cloud clients", _gen)
+    except Exception as e:  # never block a call on the env bookkeeping
+        _log.debug("[env] generation check skipped: %s", e)
+
     for prefix, (base_url, env_key) in _PROVIDERS.items():
         if model.startswith(prefix):
             real_model = model[len(prefix):]
@@ -807,6 +882,219 @@ def _with_deadline(call: Callable, on_token: Optional[Callable[[str], None]], ti
         ex.shutdown(wait=False)
 
 
+@dataclass
+class _LoopState:
+    """Mutable state threaded through _run_tool_loop's rounds (plan M1).
+
+    Extracted so a single round is a callable unit — the journal-driven loop
+    (agents/run_loop.py) and future resume paths can run/restore one round
+    without reaching into the flat loop body. Behavior is unchanged: this is a
+    structural extraction, not a rewrite (guarded by
+    tests/test_cloud_loop_parity.py).
+    """
+
+    messages: list
+    client: object
+    real_model: str
+    model: str
+    reasoning: dict
+    tools: Optional[list] = None
+    on_token: Optional[Callable] = None
+    run_id: Optional[str] = None
+    round_timeout: Optional[float] = None
+    allowed_tool_names: frozenset = frozenset()
+    force_tool_choice: Optional[str] = None
+    fallback_model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    consecutive_errors: int = 0
+    escalated: bool = False
+    last_content: str = ""
+    last_had_tool_calls: bool = False
+
+
+@dataclass
+class _RoundOutcome:
+    """kind: 'continue' | 'final' | 'checkpoint'; content is terminal text."""
+
+    kind: str
+    content: str = ""
+
+
+def _one_round(state: "_LoopState", round_idx: int) -> "_RoundOutcome":
+    """Run exactly one model round plus its tool calls. The body is the former
+    inline loop body, verbatim; locals unpack from state so the extraction is
+    behavior-preserving."""
+    messages = state.messages
+    client = state.client
+    real_model = state.real_model
+    model = state.model
+    on_token = state.on_token
+    tools = state.tools
+    run_id = state.run_id
+    round_timeout = state.round_timeout
+    _reasoning = state.reasoning
+    _allowed_tool_names = state.allowed_tool_names
+    force_tool_choice = state.force_tool_choice
+    consecutive_errors = state.consecutive_errors
+    _round = round_idx
+    start = time.time()
+    # ponytail: forcing tool_choice only on round 0 — the model must ground its
+    # first move (e.g. web search) on live/temporal queries instead of being free
+    # to answer straight from parametric knowledge, but stays free-choice after
+    # that so it can still synthesize/reply normally once grounded.
+    _extra = {}
+    if force_tool_choice and _round == 0:
+        _extra["tool_choice"] = {"type": "function", "function": {"name": force_tool_choice}}
+    # gpt-5-family renamed max_tokens -> max_completion_tokens; the old
+    # name 400s ("Unsupported parameter: 'max_tokens'...").
+    _tok_kwarg = "max_completion_tokens" if real_model.startswith("gpt-5") else "max_tokens"
+    _call = lambda _on_token: _stream_completion(
+        client, _on_token,
+        model=real_model,
+        messages=messages,
+        tools=tools or None,
+        **{_tok_kwarg: 8192},
+        **_extra, **_reasoning,
+    )
+    resp = _with_deadline(_call, on_token, round_timeout, model=real_model)
+    usage = getattr(resp, "usage", None)
+    _clear_dead(model)
+    _track_usage(real_model, usage)
+    LAST_SERVED_MODEL.set(model)
+    # 2026-07-11: diagnostic-only addition — finish_reason was never logged
+    # or checked anywhere in this file, so a response silently cut short by
+    # the API's own (unset here) max_tokens ceiling looked identical to a
+    # genuinely complete answer. No max_tokens is passed to _stream_completion
+    # anywhere in this module. Logging finish_reason to confirm/rule this out
+    # as the cause of truncated voice replies before changing any behavior.
+    _finish_reason = getattr(resp.choices[0], "finish_reason", None) if resp.choices else None
+    _log.info(
+        "[cloud_client] model=%s round=%d elapsed=%.2fs prompt_tokens=%s completion_tokens=%s finish_reason=%s",
+        real_model, _round, time.time() - start,
+        getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None), _finish_reason,
+    )
+
+    msg = resp.choices[0].message
+    content = msg.content or ""
+    tool_calls = msg.tool_calls
+
+    if not tool_calls:
+        state.last_content = content
+        state.last_had_tool_calls = False
+        return _RoundOutcome(
+            "final",
+            _recover_from_garbage(client, real_model, on_token, messages, content),
+        )
+
+    # A round can have valid tool_calls AND a leaked token in the same
+    # message's content — strip before it enters history, or it silently
+    # corrupts the rolling conversation summary later (see
+    # store.conversation's "Fold ... looked corrupted" retry guard).
+    content = _strip_leak_artifacts(content)
+
+    messages.append({
+        "role": "assistant",
+        "content": content,
+        "tool_calls": [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+            }
+            for tc in tool_calls
+        ],
+    })
+
+    check_aborted()
+    # Emit a progress label for each tool call before blocking execution begins,
+    # so the UI / Telegram shows immediate feedback instead of a frozen bubble.
+    if on_token:
+        for tc in tool_calls:
+            label = _TOOL_PROGRESS_LABELS.get(
+                tc.function.name, f"⚙️ Running {tc.function.name}…"
+            )
+            on_token(f"\n\n{label}")
+    # copy_context() snapshots CURRENT_RUN_ID (and any other contextvars) from this
+    # thread; ThreadPoolExecutor workers otherwise start with a fresh default context,
+    # which was silently dropping the run_id tag from every tool call's logs (including
+    # third-party loggers like googleapiclient) — see log_config.py's RunIdFilter.
+    # Each submitted call needs its OWN copy — a Context object isn't reentrant, so
+    # sharing one across concurrently-running workers throws "already entered".
+    executor = ThreadPoolExecutor(max_workers=min(len(tool_calls), 4))
+    try:
+        futures = {}
+        for tc in tool_calls:
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            # list_emails already tells the model (via its schema description) to
+            # scan with an empty query on schedule/due-date questions and re-read
+            # snippets instead of retrying with a search operator — but that's a
+            # soft prompt-level ask, models don't reliably hold to it once the first
+            # scan doesn't yield an obvious match (live regression 2026-08-14:
+            # deepseek-v4-flash retried with query='assignment' after one empty scan).
+            # Hard-enforce it here: once this run has done one empty-query scan,
+            # force every later list_emails call in the same run back to empty
+            # instead of trusting the model to keep re-reading snippets.
+            if tc.function.name == "list_emails" and args.get("query") and run_id:
+                _prior = _get_trace(run_id) or []
+                if any(
+                    t.get("tool") == "list_emails" and not (t.get("args") or {}).get("query")
+                    for t in _prior
+                ):
+                    args["query"] = ""
+            print(f"[tool] {tc.function.name}({str(args)[:200]})", flush=True)
+            _ctx = contextvars.copy_context()
+            if tc.function.name not in _allowed_tool_names:
+                _err = f"[error] tool '{tc.function.name}' was not offered this round — use one of the available tools instead"
+                futures[executor.submit(lambda e=_err: e)] = (tc, args)
+            else:
+                futures[executor.submit(_ctx.run, execute_tool, tc.function.name, args)] = (tc, args)
+
+        # 2026-08-03: plain future.result() had NO timeout — a hung tool
+        # (stuck subprocess, dead socket) froze the whole agent round forever.
+        # Bound each wait; a timeout becomes a per-tool error. Explicit
+        # shutdown(wait=False) so a straggler can't block the round (the
+        # old `with` block's __exit__ did shutdown(wait=True)).
+        tool_timeout = round_timeout or _CLOUD_TOOL_TIMEOUT_S
+        for future, (tc, args) in futures.items():
+            _t0 = time.time()
+            try:
+                result = future.result(timeout=tool_timeout)
+            except concurrent.futures.TimeoutError:
+                result = f"[error] tool execution timed out after {tool_timeout}s: {tc.function.name}"
+            except Exception as exc:
+                result = f"[error] tool execution failed: {exc}"
+            is_error = is_error_result(result)
+            consecutive_errors = consecutive_errors + 1 if is_error else 0
+            if run_id:
+                # Use the (possibly corrected) args actually executed, not a fresh
+                # re-parse of the model's original tool_call — otherwise the trace
+                # would show the query the model asked for, not what really ran.
+                _record_trace(run_id, {
+                    "run_id": run_id, "tool": tc.function.name,
+                    "args": {k: str(v)[:80] for k, v in args.items()},
+                    "result_summary": result[:120],
+                    "elapsed_ms": round((time.time() - _t0) * 1000),
+                    "error": is_error,
+                })
+            if is_checkpoint_result(tc.function.name, result):
+                state.last_content = content
+                state.last_had_tool_calls = True
+                return _RoundOutcome("checkpoint", result)
+            result = spill(result, tc.function.name)
+            result = wrap_external_output(tc.function.name, result)
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+            _inject_screenshot_image(messages, tc.function.name, result, model)
+    finally:
+        executor.shutdown(wait=False)
+    state.consecutive_errors = consecutive_errors
+    state.last_content = content
+    state.last_had_tool_calls = True
+    return _RoundOutcome("continue")
+
+
 def _run_tool_loop(
     model: str, messages: list, tools: list, on_token: Optional[Callable[[str], None]], max_rounds: int,
     fallback_model: str = None, run_id: str = None, force_tool_choice: str = None,
@@ -893,6 +1181,16 @@ def _run_tool_loop(
         messages.append({"role": "tool", "tool_call_id": _tc_id, "content": result})
         force_tool_choice = None  # loop is now pure synthesis (model already has the result)
 
+    state = _LoopState(
+        messages=messages, client=client, real_model=real_model, model=model,
+        reasoning=_reasoning, tools=tools, on_token=on_token, run_id=run_id,
+        round_timeout=round_timeout,
+        allowed_tool_names=frozenset(_allowed_tool_names),
+        force_tool_choice=force_tool_choice, fallback_model=fallback_model,
+        reasoning_effort=reasoning_effort,
+        consecutive_errors=consecutive_errors, escalated=escalated,
+    )
+
     _plan_checkpoint_done = False
     for _round in range(max_rounds):
         check_budget()
@@ -917,161 +1215,21 @@ def _run_tool_loop(
                         "or call update_task_plan to correct the plan if it's no longer accurate."
                     ),
                 })
-        start = time.time()
-        # ponytail: forcing tool_choice only on round 0 — the model must ground its
-        # first move (e.g. web search) on live/temporal queries instead of being free
-        # to answer straight from parametric knowledge, but stays free-choice after
-        # that so it can still synthesize/reply normally once grounded.
-        _extra = {}
-        if force_tool_choice and _round == 0:
-            _extra["tool_choice"] = {"type": "function", "function": {"name": force_tool_choice}}
-        # gpt-5-family renamed max_tokens -> max_completion_tokens; the old
-        # name 400s ("Unsupported parameter: 'max_tokens'...").
-        _tok_kwarg = "max_completion_tokens" if real_model.startswith("gpt-5") else "max_tokens"
-        _call = lambda _on_token: _stream_completion(
-            client, _on_token,
-            model=real_model,
-            messages=messages,
-            tools=tools or None,
-            **{_tok_kwarg: 8192},
-            **_extra, **_reasoning,
-        )
-        resp = _with_deadline(_call, on_token, round_timeout, model=real_model)
-        usage = getattr(resp, "usage", None)
-        _clear_dead(model)
-        _track_usage(real_model, usage)
-        LAST_SERVED_MODEL.set(model)
-        # 2026-07-11: diagnostic-only addition — finish_reason was never logged
-        # or checked anywhere in this file, so a response silently cut short by
-        # the API's own (unset here) max_tokens ceiling looked identical to a
-        # genuinely complete answer. No max_tokens is passed to _stream_completion
-        # anywhere in this module. Logging finish_reason to confirm/rule this out
-        # as the cause of truncated voice replies before changing any behavior.
-        _finish_reason = getattr(resp.choices[0], "finish_reason", None) if resp.choices else None
-        _log.info(
-            "[cloud_client] model=%s round=%d elapsed=%.2fs prompt_tokens=%s completion_tokens=%s finish_reason=%s",
-            real_model, _round, time.time() - start,
-            getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None), _finish_reason,
-        )
+        outcome = _one_round(state, _round)
+        if outcome.kind in ("final", "checkpoint"):
+            return outcome.content
+        consecutive_errors = state.consecutive_errors
 
-        msg = resp.choices[0].message
-        content = msg.content or ""
-        tool_calls = msg.tool_calls
-
-        if not tool_calls:
-            return _recover_from_garbage(client, real_model, on_token, messages, content)
-
-        # A round can have valid tool_calls AND a leaked token in the same
-        # message's content — strip before it enters history, or it silently
-        # corrupts the rolling conversation summary later (see
-        # store.conversation's "Fold ... looked corrupted" retry guard).
-        content = _strip_leak_artifacts(content)
-
-        messages.append({
-            "role": "assistant",
-            "content": content,
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                }
-                for tc in tool_calls
-            ],
-        })
-
-        check_aborted()
-        # Emit a progress label for each tool call before blocking execution begins,
-        # so the UI / Telegram shows immediate feedback instead of a frozen bubble.
-        if on_token:
-            for tc in tool_calls:
-                label = _TOOL_PROGRESS_LABELS.get(
-                    tc.function.name, f"⚙️ Running {tc.function.name}…"
-                )
-                on_token(f"\n\n{label}")
-        # copy_context() snapshots CURRENT_RUN_ID (and any other contextvars) from this
-        # thread; ThreadPoolExecutor workers otherwise start with a fresh default context,
-        # which was silently dropping the run_id tag from every tool call's logs (including
-        # third-party loggers like googleapiclient) — see log_config.py's RunIdFilter.
-        # Each submitted call needs its OWN copy — a Context object isn't reentrant, so
-        # sharing one across concurrently-running workers throws "already entered".
-        executor = ThreadPoolExecutor(max_workers=min(len(tool_calls), 4))
-        try:
-            futures = {}
-            for tc in tool_calls:
-                try:
-                    args = json.loads(tc.function.arguments or "{}")
-                except json.JSONDecodeError:
-                    args = {}
-                # list_emails already tells the model (via its schema description) to
-                # scan with an empty query on schedule/due-date questions and re-read
-                # snippets instead of retrying with a search operator — but that's a
-                # soft prompt-level ask, models don't reliably hold to it once the first
-                # scan doesn't yield an obvious match (live regression 2026-08-14:
-                # deepseek-v4-flash retried with query='assignment' after one empty scan).
-                # Hard-enforce it here: once this run has done one empty-query scan,
-                # force every later list_emails call in the same run back to empty
-                # instead of trusting the model to keep re-reading snippets.
-                if tc.function.name == "list_emails" and args.get("query") and run_id:
-                    _prior = _get_trace(run_id) or []
-                    if any(
-                        t.get("tool") == "list_emails" and not (t.get("args") or {}).get("query")
-                        for t in _prior
-                    ):
-                        args["query"] = ""
-                print(f"[tool] {tc.function.name}({str(args)[:200]})", flush=True)
-                _ctx = contextvars.copy_context()
-                if tc.function.name not in _allowed_tool_names:
-                    _err = f"[error] tool '{tc.function.name}' was not offered this round — use one of the available tools instead"
-                    futures[executor.submit(lambda e=_err: e)] = (tc, args)
-                else:
-                    futures[executor.submit(_ctx.run, execute_tool, tc.function.name, args)] = (tc, args)
-
-            # 2026-08-03: plain future.result() had NO timeout — a hung tool
-            # (stuck subprocess, dead socket) froze the whole agent round forever.
-            # Bound each wait; a timeout becomes a per-tool error. Explicit
-            # shutdown(wait=False) so a straggler can't block the round (the
-            # old `with` block's __exit__ did shutdown(wait=True)).
-            tool_timeout = round_timeout or _CLOUD_TOOL_TIMEOUT_S
-            for future, (tc, args) in futures.items():
-                _t0 = time.time()
-                try:
-                    result = future.result(timeout=tool_timeout)
-                except concurrent.futures.TimeoutError:
-                    result = f"[error] tool execution timed out after {tool_timeout}s: {tc.function.name}"
-                except Exception as exc:
-                    result = f"[error] tool execution failed: {exc}"
-                is_error = is_error_result(result)
-                consecutive_errors = consecutive_errors + 1 if is_error else 0
-                if run_id:
-                    # Use the (possibly corrected) args actually executed, not a fresh
-                    # re-parse of the model's original tool_call — otherwise the trace
-                    # would show the query the model asked for, not what really ran.
-                    _record_trace(run_id, {
-                        "run_id": run_id, "tool": tc.function.name,
-                        "args": {k: str(v)[:80] for k, v in args.items()},
-                        "result_summary": result[:120],
-                        "elapsed_ms": round((time.time() - _t0) * 1000),
-                        "error": is_error,
-                    })
-                if is_checkpoint_result(tc.function.name, result):
-                    return result
-                result = spill(result, tc.function.name)
-                result = wrap_external_output(tc.function.name, result)
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-                _inject_screenshot_image(messages, tc.function.name, result, model)
-        finally:
-            executor.shutdown(wait=False)
-
-        if consecutive_errors >= 3 and not escalated and fallback_model and fallback_model != model:
+        if (state.consecutive_errors >= 3 and not state.escalated
+                and fallback_model and fallback_model != state.model):
             _log.warning(
                 "[cloud_client] %d consecutive tool errors on %s, escalating to %s",
-                consecutive_errors, model, fallback_model,
+                state.consecutive_errors, state.model, fallback_model,
             )
-            client, real_model = _resolve(fallback_model)
-            _reasoning = _reasoning_extra_body(fallback_model, reasoning_effort)
-            consecutive_errors = 0
-            escalated = True
+            state.client, state.real_model = _resolve(fallback_model)
+            state.reasoning = _reasoning_extra_body(fallback_model, reasoning_effort)
+            state.consecutive_errors = 0
+            state.escalated = True
             if run_id:
                 # Machine-detectable escalation marker — the golden-query regression
                 # suite asserts forbid_escalation against this trace entry.
@@ -1081,20 +1239,21 @@ def _run_tool_loop(
                     "result_summary": "escalated after consecutive tool errors",
                     "elapsed_ms": 0, "error": False, "escalated": True,
                 })
-    if tool_calls:
+    if state.last_had_tool_calls:
         check_aborted()
         _call = lambda _on_token: _stream_completion(
-            client, _on_token,
-            model=real_model,
-            messages=messages,
+            state.client, _on_token,
+            model=state.real_model,
+            messages=state.messages,
             tools=None,
-            **_reasoning,
+            **state.reasoning,
         )
-        resp = _with_deadline(_call, on_token, round_timeout, model=real_model)
+        resp = _with_deadline(_call, on_token, round_timeout, model=state.real_model)
         content = resp.choices[0].message.content or ""
-        return _recover_from_garbage(client, real_model, on_token, messages, content)
+        return _recover_from_garbage(state.client, state.real_model, on_token,
+                                     state.messages, content)
 
-    return _strip_leak_artifacts(content)
+    return _strip_leak_artifacts(state.last_content)
 
 
 def raw_completion(
@@ -1186,7 +1345,7 @@ def raw_completion(
     served_model = model
     try:
         request = _req(real_model)
-        resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
+        resp = _create_checked(client, retry, **request)
     except Exception as e:
         if model == OPENAI_FALLBACK_MODEL or model == FREE_FALLBACK_MODEL or not fallback:
             raise
@@ -1205,7 +1364,7 @@ def raw_completion(
                     options["timeout"] = timeout
                 client = client.with_options(**options)
             request = _req(real_model)
-            resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
+            resp = _create_checked(client, retry, **request)
         except Exception as e2:
             _log.warning("[cloud_client] raw_completion OpenAI fallback %s also failed (%s), last resort %s",
                          OPENAI_FALLBACK_MODEL, e2, FREE_FALLBACK_MODEL)
@@ -1219,7 +1378,7 @@ def raw_completion(
                     options["timeout"] = timeout
                 client = client.with_options(**options)
             request = _req(real_model)
-            resp = client.chat.completions.create(**request) if not retry else _create_with_retry(client, **request)
+            resp = _create_checked(client, retry, **request)
     _clear_dead(model)
     _track_usage(real_model, getattr(resp, "usage", None))
     LAST_SERVED_MODEL.set(served_model)

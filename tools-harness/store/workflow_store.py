@@ -897,6 +897,86 @@ def validate_cron(cron: str, timezone_name: str | None = None) -> str | None:
     return None
 
 
+def missed_fire_times(instance: dict, *, now: datetime | None = None,
+                       cap: int = 5) -> list[str]:
+    """Fire times this instance should have run between `next_run_at` and
+    `now` — the window a restart/laptop-sleep skipped (M4 catch-up).
+
+    Returns ISO timestamps oldest-first, capped at `cap` (the most recent
+    ones: stale repeats are worthless). Empty when the schedule is already
+    in the future.
+    """
+    now = now or _utcnow()
+    next_at = _parse_iso(instance.get("next_run_at") or "")
+    if next_at is None or next_at >= now:
+        return []
+    schedule = instance.get("schedule") or {}
+    interval = int(schedule.get("interval_seconds", 0) or 0)
+    missed: list[str] = []
+    if interval > 0:
+        step = timedelta(seconds=interval)
+        t = next_at
+        while t < now and len(missed) < cap * 4:  # oversample, then trim
+            missed.append(t.isoformat())
+            t += step
+    else:
+        cron = (schedule.get("cron") or "").strip()
+        if not cron:
+            return []
+        try:
+            trigger = CronTrigger.from_crontab(
+                cron, timezone=schedule.get("timezone") or _user_timezone())
+        except Exception as exc:  # noqa: BLE001 — a bad cron must not crash boot
+            _log.warning("catch-up cron invalid for %s: %s", cron, exc)
+            return []
+        t = next_at
+        while len(missed) < cap * 4:
+            nxt = trigger.get_next_fire_time(t, now)
+            if nxt is None or nxt >= now:
+                break
+            missed.append(nxt.astimezone(timezone.utc).isoformat())
+            t = nxt
+    return missed[-cap:] if cap else missed
+
+
+def catch_up_missed(instance_id: str, *, now: datetime | None = None,
+                    cap: int = 3) -> list[dict]:
+    """Enqueue catch-up jobs for a workflow that missed fire times while the
+    system was down, then advance its schedule past now. Idempotent: after
+    catch-up, next_run_at is in the future so a second call is a no-op."""
+    from jobs import job_queue
+
+    instance = get_workflow_instance(instance_id)
+    if not instance:
+        return []
+    now = now or _utcnow()
+    missed = missed_fire_times(instance, now=now, cap=cap)
+    if not missed:
+        return []
+    enqueued: list[dict] = []
+    for fire in missed:
+        params = {
+            "workflow_instance_id": instance_id,
+            "automation_id": instance.get("automation_id"),
+            "task_name": instance.get("task_name"),
+            "scheduled_for": fire,
+            "catch_up": True,
+        }
+        try:
+            job_id = job_queue.enqueue("workflow_instance", params)
+        except ValueError as exc:  # duplicate active job — skip quietly
+            _log.info("catch-up skipped for %s: %s", instance_id, exc)
+            continue
+        row = job_queue.get_job(job_id) if hasattr(job_queue, "get_job") else None
+        enqueued.append(row or {"id": job_id, "status": "queued",
+                                "scheduled_for": fire})
+    # advance the schedule so the missed slots are not re-detected
+    nxt = _compute_next_run(instance.get("schedule") or {}, now=now)
+    if nxt:
+        update_workflow_instance(instance_id, next_run_at=nxt)
+    return enqueued
+
+
 def _decode_workflow(row: dict) -> dict:
     row["schedule"] = _json_load(row.pop("schedule_json", "{}"), {})
     row["config"] = _json_load(row.pop("config_json", "{}"), {})
