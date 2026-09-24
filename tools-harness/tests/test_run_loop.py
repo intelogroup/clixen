@@ -41,6 +41,7 @@ def test_happy_path_tool_round_then_answer(monkeypatch):
 
     monkeypatch.setattr(run_loop, "_execute_tool", fake_exec)
     rid = rs.create_run("g")
+    rs.append_event(rid, "user_msg", {"text": "go"})
     model = _scripted(
         {"text": "", "tool_calls": [{"id": "t1", "name": "get_current_time",
                                      "args": {"tz": "UTC"}}]},
@@ -56,8 +57,8 @@ def test_happy_path_tool_round_then_answer(monkeypatch):
     # assistant turn into the provider message list. Each completed round is
     # closed by a `round` boundary snapshot.
     kinds = [e["kind"] for e in rs.get_events(rid)]
-    assert kinds == ["run", "status", "tool_call", "tool_result", "round",
-                     "assistant_msg", "round", "status"]
+    assert kinds == ["run", "user_msg", "status", "tool_call", "tool_result",
+                     "round", "assistant_msg", "round", "status"]
 
 
 def test_replay_cache_never_reexecutes_answered_call(monkeypatch):
@@ -95,6 +96,7 @@ def test_resume_continues_round_budget_from_journal(monkeypatch):
 
     monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "unused")
     rid = rs.create_run("g", policy={"max_rounds": 20})
+    rs.append_event(rid, "user_msg", {"text": "go"})
     rs.set_status(rid, "running")
     rs.append_round_snapshot(rid, round_idx=18, model="deepseek/deepseek-v4-flash",
                              escalated=True, consecutive_errors=1)
@@ -108,6 +110,7 @@ def test_resume_continues_round_budget_from_journal(monkeypatch):
 def test_round_budget_exhaustion_counts_prior_rounds(monkeypatch):
     monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "unused")
     rid = rs.create_run("g", policy={"max_rounds": 3})
+    rs.append_event(rid, "user_msg", {"text": "go"})
     rs.set_status(rid, "running")
     rs.append_round_snapshot(rid, round_idx=2, escalated=False, consecutive_errors=0)
 
@@ -162,6 +165,7 @@ def test_real_crash_midrun_resume_replays_cache(tmp_path, monkeypatch):
     rs._DB_PATH = db
     rid = rs.create_run("crashy")
     rs.set_status(rid, "running")
+    rs.append_event(rid, "user_msg", {"text": "go"})
     env = {**os.environ, "PYTHONPATH": harness, "PYTHONDONTWRITEBYTECODE": "1"}
     proc = subprocess.Popen([sys.executable, str(driver), rid], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -211,6 +215,7 @@ def test_pause_control_stops_the_run_at_the_next_boundary(monkeypatch):
 
     monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "result")
     rid = rs.create_run("g")
+    rs.append_event(rid, "user_msg", {"text": "go"})
     out = run_loop.run_rounds(rid, model, tools=["web_search"])
     run = rs.get_run(rid)
     assert run["status"] == "paused" and run["resumable"] is True
@@ -231,6 +236,7 @@ def test_kill_control_terminates_the_run(monkeypatch):
 
     monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "result")
     rid = rs.create_run("g")
+    rs.append_event(rid, "user_msg", {"text": "go"})
     run_loop.run_rounds(rid, model, tools=["web_search"])
     run = rs.get_run(rid)
     assert run["status"] == "killed" and run["resumable"] is True
@@ -250,6 +256,7 @@ def test_steer_control_becomes_a_user_message_for_the_next_round(monkeypatch):
 
     monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "result")
     rid = rs.create_run("g")
+    rs.append_event(rid, "user_msg", {"text": "go"})
     out = run_loop.run_rounds(rid, model, tools=["web_search"])
     assert out == "adjusted answer"
     steer_msgs = [m for m in seen_messages[-1] if m.get("role") == "user"]
@@ -264,6 +271,7 @@ def test_consumed_controls_are_not_reapplied_on_resume(monkeypatch):
     the consumed cursor survives in the round snapshot."""
     monkeypatch.setattr(run_loop, "_execute_tool", lambda n, a: "result")
     rid = rs.create_run("g", policy={"max_rounds": 5})
+    rs.append_event(rid, "user_msg", {"text": "go"})
 
     def model_life1(messages, tools):
         rs.append_control(rid, "steer", text="old steer")

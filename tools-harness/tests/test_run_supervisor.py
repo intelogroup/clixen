@@ -132,6 +132,33 @@ def test_reap_never_adopts_live_child(tmp_path):
     assert proc.returncode == 0
 
 
+def test_child_marks_the_run_failed_on_crash(tmp_path):
+    """A child that dies mid-run must NOT leave a zombie: the run goes
+    `failed` (journal preserved, resumable) instead of `running` with no
+    lease, which nothing would ever heal."""
+    rid = rs.create_run("doomed by provider error")
+    # round 1 issues a tool call (denied: empty allowlist), round 2 reaches the
+    # crash hook — an unhandled os._exit, i.e. a child that dies mid-run
+    script = _write_script(tmp_path, [
+        {"text": "", "tool_calls": [{"id": "t1", "name": "noop", "args": {}}]},
+        {"text": "never", "tool_calls": []}])
+    env = {"CLIXEN_FAKE_RAISE_AFTER_ROUND": "1", "PYTHONPATH": HARNESS}
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "jobs.run_child", "--run-id", rid,
+         "--fake-model", str(script), "--lease-ttl", "30"],
+        env={**os.environ, **env}, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL)
+    proc.wait(timeout=60)
+    assert proc.returncode != 0
+    run = rs.get_run(rid)
+    assert run["status"] == "failed", run
+    assert run["resumable"] is True and run["pid"] is None
+    reasons = [e["payload"].get("reason") for e in rs.get_events(rid)
+               if e["kind"] == "status"]
+    assert any("crash" in (r or "").lower() or "error" in (r or "").lower()
+               for r in reasons), reasons
+
+
 def test_dead_letter_after_repeated_crashes(tmp_path):
     rid = rs.create_run("doomed")
     for _ in range(3):

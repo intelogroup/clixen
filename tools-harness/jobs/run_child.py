@@ -37,6 +37,11 @@ def _fake_model_fn(script_path: str):
         calls["n"] += 1
         if os.environ.get("CLIXEN_FAKE_CRASH_AFTER_ROUND") == "1" and calls["n"] > 1:
             os._exit(70)  # hard crash mid-run, like a SIGKILLed child
+        if os.environ.get("CLIXEN_FAKE_RAISE_AFTER_ROUND") == "1" and calls["n"] > 1:
+            # Python-level failure: propagates out of run_rounds so run_child's
+            # handler must mark the run failed (vs the hard-crash path, which
+            # the supervisor heals after the lease expires)
+            raise RuntimeError("synthetic provider failure")
         return rounds[i]
 
     return model_fn
@@ -83,6 +88,14 @@ def main(argv: list[str] | None = None) -> int:
     stop = threading.Event()
     interval = max(2.0, args.lease_ttl / 3.0)
 
+    # Seed the run's goal as the first user turn when the journal has none
+    # (runs created by hand, or a journal truncated before its first turn).
+    # Without this the model would be called with an empty message list.
+    if not any(e["kind"] == "user_msg" for e in rs.get_events(args.run_id)):
+        _goal = (rs.get_run(args.run_id) or {}).get("goal") or ""
+        if _goal:
+            rs.append_event(args.run_id, "user_msg", {"text": _goal, "via": "goal"})
+
     def heartbeat():
         while not stop.wait(interval):
             try:
@@ -97,10 +110,18 @@ def main(argv: list[str] | None = None) -> int:
 
         run_loop.run_rounds(args.run_id, _build_model(args.model, tools, args.fake_model),
                             tools=tools, system=args.system)
-    except Exception as exc:  # noqa: BLE001 — surface, then let the lease expire
+    except Exception as exc:  # noqa: BLE001 — surface, then fail the run cleanly
         print(f"[run_child] run failed: {exc}", file=sys.stderr)
+        # A crashed child must NOT leave a zombie: releasing the lease while
+        # the run stays `running` means nothing would ever heal it (the
+        # supervisor only reaps runs with an EXPIRED lease). Mark it failed
+        # with the journal preserved — resumable, per the state table.
         try:
             rs.append_event(args.run_id, "heartbeat", {"reason": f"crash: {exc}"})
+            if rs.get_run(args.run_id)["status"] == "running":
+                rs.append_event(args.run_id, "status", {
+                    "status": "failed", "reason": f"child crashed: {exc}"[:400]})
+                rs.set_status(args.run_id, "failed")
         except Exception:  # noqa: BLE001
             pass
         return 1
