@@ -19,13 +19,17 @@ _log = logging.getLogger(__name__)
 
 from store import conversation as conv  # noqa: E402
 
-# DeepSeek v4-flash is the account's primary agent model (ties Claude Haiku on the
-# reliability bench), but this account's DeepSeek direct key has been observed
-# returning 402 Insufficient Balance — so Haiku (OpenRouter, funded, 4/5 on the
-# tool-calling bench) is primary here, with the default OpenRouter flash-lite as a
-# same-provider fallback. Revisit if the DeepSeek balance is restored.
-_VERIFY_MODEL = "openrouter/anthropic/claude-haiku-4.5"
-_VERIFY_FALLBACK_MODEL = "openrouter/google/gemini-2.5-flash-lite"
+# 2026-09-24: was _VERIFY_MODEL = openrouter/anthropic/claude-haiku-4.5 (402
+# Insufficient credits — OpenRouter account unfunded, verified live) and
+# _VERIFY_FALLBACK_MODEL = openrouter/google/gemini-2.5-flash-lite (404 — the
+# account ZDR setting excludes all google-ai-studio endpoints, verified live).
+# Both collapsed onto the one live paid tier, OpenAI direct, so verify stops
+# eating a guaranteed-failed round trip per chunk. Also restores the
+# test_model_constants invariant (_VERIFY_FALLBACK_MODEL ==
+# cloud_client.CLOUD_FALLBACK_MODEL). Restore Haiku when OpenRouter is
+# re-funded — it's the better verifier (4/5 tool-calling bench).
+_VERIFY_MODEL = "openai/gpt-4o-mini"
+_VERIFY_FALLBACK_MODEL = "openai/gpt-4o-mini"
 
 _VERIFY_PROMPT = (
     "You maintain a running memory summary of a conversation. The summary may "

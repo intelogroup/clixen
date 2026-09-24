@@ -359,7 +359,14 @@ _summary_persist_queue: queue.Queue[tuple[str, str]] = queue.Queue()
 _summary_persist_started = False
 
 
-_FOLD_MODEL = "openrouter/google/gemini-2.5-flash-lite"
+# 2026-09-24: was openrouter/google/gemini-2.5-flash-lite — every gemini model
+# now 404s through this OpenRouter key (account ZDR setting excludes all
+# google-ai-studio endpoints, verified live), so every fold ate a guaranteed
+# 404 before raw_completion's internal fallback rescued it. Moved to the live
+# OpenAI-direct tier; also restores the test_model_constants invariant
+# (_FOLD_MODEL == cloud_client.CLOUD_FALLBACK_MODEL). 128k context, so the
+# 32k OpenRouter cap noted below no longer applies.
+_FOLD_MODEL = "openai/gpt-4o-mini"
 
 
 def _call_cloud_chat_raw(system: str, user_content: str) -> str:
