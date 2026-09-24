@@ -4,6 +4,7 @@
 .env.stale-root-backup
 .env.mcp
 models/
+tools-harness/models_local/
 tools-harness/uploads/
 tools-harness/data/
 node_modules/
@@ -66,7 +67,6 @@ tools-harness/world_cup_scores.*
 .claude/
 
 # Local virtualenvs, spill/build artifacts, spike scratch
-.venv-chatterbox/
 tools-harness/.spill/
 tools-harness/build/
 tauri-spikes/ui-mock/
@@ -74,3 +74,21 @@ tsconfig.tsbuildinfo
 
 # Rust build artifacts
 **/target/
+
+SecretKey.csv
+
+# ── Generated / scratch artifacts and personal files (added 2026-09-24) ──
+# Multi-GB scraped/generated trees, one-off render output, and documents
+# that must never enter git (PII).
+scifi_world/
+sci-fex/
+videos/
+.scratch_cavalry_script/
+tools-harness/blender_docs_text/
+tools-harness/gaia_live_results.jsonl
+tools-harness/total.txt
+tools-harness/multiplication_table.txt
+frontier-reading-anchors-*.md
+*.pdf
+*.zip
+*.webp
