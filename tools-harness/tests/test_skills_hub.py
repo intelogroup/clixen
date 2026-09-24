@@ -109,9 +109,21 @@ def test_gstack_skill_info_is_registered():
 
 
 def test_has_sub_skills_positive():
-    """Verify _has_sub_skills detects a router dir."""
-    result = _has_sub_skills(os.path.expanduser("~/.claude/skills/gstack"))
-    assert result, "gstack dir has sub-skills — should return True"
+    """Verify _has_sub_skills detects a router dir.
+
+    gstack moved ~/.claude/skills → ~/.agents/skills; locate it across every
+    configured external-skill root instead of hardcoding one path."""
+    from skills_hub import _EXTERNAL_SKILL_ROOTS
+    gstack = next(
+        (os.path.join(root, "gstack") for root in _EXTERNAL_SKILL_ROOTS
+         if os.path.isdir(os.path.join(root, "gstack"))),
+        None,
+    )
+    if gstack is None:
+        return  # soft-skip: gstack not installed on this machine
+    assert _has_sub_skills(gstack), (
+        f"gstack dir has sub-skills — should return True ({gstack})"
+    )
 
 
 def test_has_sub_skills_negative():

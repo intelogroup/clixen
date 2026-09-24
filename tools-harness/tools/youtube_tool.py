@@ -41,19 +41,25 @@ SEARCH_SCHEMA = {
         "description": (
             "Search YouTube for videos by keyword, topic, or channel name. "
             "Returns video title, channel, duration, views, and URL. "
-            "Use this to find videos on a topic, then optionally get their transcripts."
+            "Use this to find videos on a topic, then optionally get their transcripts. "
+            "For Blender tutorials prefer recent (2024+) videos — old UI (pre-4.0) is outdated."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query — topic, keyword, or channel name",
+                    "description": "Search query — topic, keyword, or channel name. For Blender, include 'Blender 4' or 'Blender 5' to bias recent.",
                 },
                 "max_results": {
                     "type": "integer",
                     "description": "Max number of results (1-10, default 5)",
                     "default": 5,
+                },
+                "recent_only": {
+                    "type": "boolean",
+                    "description": "If true, filter to videos uploaded after 2024-01-01 (Blender 4.x/5.x UI only). Uses yt-dlp --dateafter.",
+                    "default": False,
                 },
             },
             "required": ["query"],
@@ -91,31 +97,54 @@ TRANSCRIPT_SCHEMA = {
 SCHEMAS = [SEARCH_SCHEMA, TRANSCRIPT_SCHEMA]
 
 
-def search_youtube(query: str, max_results: int = 5) -> str:
+def search_youtube(query: str, max_results: int = 5, recent_only: bool = False) -> str:
     """Search YouTube via yt-dlp and return formatted results."""
     import subprocess, json
 
     limit = min(max_results, 10)
+    # Recent bias: yt-dlp --dateafter filters upload_date; for flat-search we
+    # also append a year hint and sort by upload date when recent_only=True
+    if recent_only and "2024" not in query and "2025" not in query and "2026" not in query:
+        query = f"{query} Blender 5"
     cmd = ["yt-dlp", "--flat-playlist", "--dump-json", f"ytsearch{limit}:{query}"]
+    if recent_only:
+        cmd.extend(["--dateafter", "20240101"])
 
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
         if r.returncode != 0:
             return f"[youtube] yt-dlp search failed: {r.stderr[:200]}"
 
-        lines = [f"YouTube results for '{query}':"]
-        for i, line in enumerate(r.stdout.strip().splitlines(), 1):
-            data = json.loads(line)
+        # Parse and annotate with upload_date when available
+        raw_items = []
+        for line in r.stdout.strip().splitlines():
+            try:
+                raw_items.append(json.loads(line))
+            except Exception:
+                continue
+        # When recent_only, warn if results look stale (upload_date before 2024)
+        stale_warn = ""
+        if recent_only:
+            stale = [d for d in raw_items if (d.get("upload_date") or "") < "20240101"]
+            if stale and len(stale) == len(raw_items):
+                stale_warn = "\n[note] All results pre-date 2024 — try a more specific 'Blender 5.2' query or disable recent_only."
+
+        lines = [f"YouTube results for '{query}'{' (recent 2024+)' if recent_only else ''}:"]
+        for i, data in enumerate(raw_items, 1):
             title = data.get("title", "Untitled")
             channel = data.get("channel", "Unknown")
             duration = data.get("duration", "?")
             views = data.get("view_count", "?")
             url = data.get("webpage_url", data.get("url", ""))
+            upload_date = data.get("upload_date", "")
+            date_str = f" | Uploaded: {upload_date}" if upload_date else ""
             lines.append(
                 f"  {i}. {title}\n"
-                f"     Channel: {channel} | Duration: {duration}s | Views: {views}\n"
+                f"     Channel: {channel} | Duration: {duration}s | Views: {views}{date_str}\n"
                 f"     URL: {url}"
             )
+        if stale_warn:
+            lines.append(stale_warn)
         return "\n".join(lines) if len(lines) > 1 else f"[youtube] no results for: {query}"
 
     except subprocess.TimeoutExpired:

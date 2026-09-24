@@ -19,7 +19,14 @@ from workflows.pipeline import (
 from store import usmle_store
 
 OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-USMLE_MODEL = os.environ.get("USMLE_SUMMARY_MODEL", "openai/gpt-4o-mini")
+# Model follows the shared cloud ladder. 2026-09-24: OPENAI_API_KEY is live
+# again (credit restored 2026-09-23; the 2026-09-22 note that both OpenAI
+# keys were dead 401 is stale) and DEFAULT_CLOUD_MODEL is openai/gpt-4.1-mini.
+# Note _call_cloud() here is a direct raw_completion() call — it bypasses
+# harness.py's orchestrator-path ladder, so if the OpenAI tier dies again a
+# dead default here has only raw_completion's own OPENAI_FALLBACK/FREE rungs.
+from clients.cloud_client import DEFAULT_CLOUD_MODEL
+USMLE_MODEL = os.environ.get("USMLE_SUMMARY_MODEL", DEFAULT_CLOUD_MODEL)
 MAX_QUESTIONS = int(os.environ.get("USMLE_MAX_QUESTIONS", "2"))
 
 MEDICAL_TOPICS = [

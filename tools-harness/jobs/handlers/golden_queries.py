@@ -168,10 +168,19 @@ def _judge(spec: dict, answer: str) -> str | None:
     a judge outage must not fail the whole suite)."""
     from clients.cloud_client import chat
 
+    # 2026-09-11: original prompt ("without hedging") flagged two different
+    # legitimate answers as FAIL across consecutive live runs — a definitive
+    # "no" that named what was checked (absence_honesty's own intended shape),
+    # and an answer that correctly referenced older still-relevant context.
+    # Neither is a refusal or a dodge; tightened to fail only on those.
     prompt = (
         f"Query: {spec['query']}\nAnswer: {answer}\n\n"
-        "Does the answer plainly address the query, without hedging, refusal "
-        "language, or dodging the question? Reply exactly PASS, or FAIL: <one-line reason>."
+        "Does the answer give a direct, concrete answer to the query (including a "
+        "definitive 'no'/'nothing found' that states what was actually checked)? "
+        "FAIL only for a refusal, a non-answer, or the answer just repeating/restating "
+        "the query back without any actual information. A caveat, a noted limitation, "
+        "or a reference to earlier/related context alongside a real answer is NOT a "
+        "reason to fail. Reply exactly PASS, or FAIL: <one-line reason>."
     )
     try:
         verdict = chat(prompt, tools=[], max_rounds=1).strip()

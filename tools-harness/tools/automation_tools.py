@@ -685,8 +685,17 @@ def trigger_automation_now(args: dict) -> str:
     # have a stale module cache — forcing sync dispatch here avoids that.
     from datetime import datetime, timezone
     from jobs import handler_registry
-    from jobs.handlers import user_automation as _ua
-    handler_registry.register("user.automation", _ua.handle)
+    # Used to register only "user.automation" here — every OTHER built-in
+    # automation_id (study.usmle_daily, health_check, science_scout, golden.
+    # queries, ...) has its handler registered exclusively inside jobs/worker.
+    # py's own process via _setup_handler_registry(), so triggering any of
+    # those from here raised "No handler registered" (confirmed live
+    # 2026-09-23 on study.usmle_daily). register() is idempotent (plain dict
+    # overwrite), so reusing the worker's own setup function is safe to call
+    # every time rather than re-listing handlers a second place that can rot
+    # out of sync with the first.
+    from jobs.worker import _setup_handler_registry
+    _setup_handler_registry()
     result = handler_registry.dispatch(instance)
     now_iso = datetime.now(timezone.utc).isoformat()
     updates = {"last_run_at": now_iso, "last_result": result}

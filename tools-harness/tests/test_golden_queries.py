@@ -45,7 +45,14 @@ def test_latency_budget():
 
 @pytest.fixture
 def stubbed_run(monkeypatch):
-    """harness.run returns a canned answer; trace pre-seeded per run_id."""
+    """harness.run returns a canned answer; trace pre-seeded per run_id.
+
+    2026-09-24: also stub the live LLM judge — this module is documented as
+    hermetic but the judge makes a real cloud call per query, and its verdict
+    on the canned "answer for {query}" stubs depends on which model currently
+    sits in DEFAULT_CLOUD_MODEL (gpt-4o-mini PASSed them, gpt-4.1-mini
+    correctly FAILs them as non-answers). Judge behavior itself is exercised
+    by the live suite, not here."""
     import harness
     from store import trace_store
 
@@ -64,6 +71,7 @@ def stubbed_run(monkeypatch):
     monkeypatch.setattr(harness, "run", fake_run)
     monkeypatch.setattr(harness, "_execute_intent_pipeline", fake_pipeline)
     monkeypatch.setattr(trace_store, "get_trace", lambda rid: traces.get(rid, []))
+    monkeypatch.setattr(gq, "_judge", lambda spec, answer: None)
     return traces
 
 

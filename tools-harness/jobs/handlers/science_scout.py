@@ -553,21 +553,17 @@ def _run_scan(instance: dict) -> dict:
                 except Exception:
                     extract_targets[idx]["extracted_claim"] = ""
 
-    # Read-only embedding/vector searches can run in parallel. Keep merge
-    # decisions and KB writes sequential because the LanceDB writer is not
-    # thread-safe. This removes one embedding/search round-trip per paper from
-    # the critical path without changing claim ordering.
-    if fresh:
-        with ThreadPoolExecutor(max_workers=min(4, len(fresh))) as ex:
-            clustered_papers = list(
-                ex.map(lambda paper: cluster_one(paper, kb, near_dup_max_distance), fresh)
-            )
-    else:
-        clustered_papers = []
-
-    # Sequential: merge decision + apply (KB writes are not thread-safe)
+    # Cluster + merge-decide + apply sequentially, one paper at a time. Must
+    # NOT parallelize cluster_one across the batch: a niche query often
+    # returns several near-identical papers (same finding, different URL) and
+    # clustering them all against the KB before any batch claim is stored
+    # means paper #2/#3 never see paper #1's just-created claim, so each gets
+    # its own CREATE + notification — the "duplicate brief 3x" bug. Doing
+    # cluster->decide->apply per paper, in order, lets later papers in the
+    # same batch match the claim the earlier one just created.
     processed = 0
-    for clustered in clustered_papers:
+    for paper in fresh:
+        clustered = cluster_one(paper, kb, near_dup_max_distance)
         decision = llm_merge_decision(clustered)
         apply_decision(clustered, decision, kb)
         processed += 1

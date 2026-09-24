@@ -11,6 +11,17 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+# Load .env at import time, not just in the __main__ (--auth) block below.
+# Confirmed live 2026-09-17: any caller that imports get_service() without
+# going through harness.py's import chain first (which loads .env itself)
+# gets GOOGLE_TOKEN_PATH unset, silently falls back to _DEFAULT_TOKEN below —
+# a stale token file (dead since 2026-08-15) at a similarly-named but wrong
+# path (google-mcp vs the real gmail-mcp) — and fails with the exact same
+# confusing invalid_grant error as a genuinely expired token. load_dotenv()
+# never overrides an already-set env var, so this is a no-op under harness.py.
+from dotenv import load_dotenv as _load_dotenv
+_load_dotenv(Path(__file__).parent.parent / ".env")
+
 # get_service() caches one googleapiclient service per api:version, backed by
 # httplib2.Http — which googleapiclient documents as not thread-safe. Multiple
 # tool calls (e.g. several read_email calls in one LLM round) dispatch concurrently
