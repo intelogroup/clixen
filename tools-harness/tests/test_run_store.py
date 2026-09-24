@@ -82,8 +82,8 @@ def test_seq_unique_under_concurrent_appends():
 
 def test_scrub_keyname_layer():
     out, redacted = rs.scrub(
-        {"username": "jim", "password": "hunter2", "api_key": "sk-123",
-         "nested": {"Authorization": "Bearer xyz", "ok": 1}},
+        {"username": "jim", "password": "PLACEHOLDER_PW", "api_key": "PLACEHOLDER_KEY",
+         "nested": {"Authorization": "Bearer PLACEHOLDER", "ok": 1}},
         secrets=frozenset(),
     )
     assert out["password"] == "[REDACTED:password]"
@@ -94,7 +94,7 @@ def test_scrub_keyname_layer():
 
 
 def test_scrub_vault_value_layer():
-    secret = "S3cret-Pa55!"
+    secret = "VAULT-FIXTURE-VALUE-NOT-A-SECRET"
     out, redacted = rs.scrub(
         {"text": f"login with {secret} now", "plain": "unrelated"},
         secrets=frozenset({secret}),
@@ -106,7 +106,7 @@ def test_scrub_vault_value_layer():
 
 
 def test_append_event_scrubs_and_marks():
-    monkey_secrets = frozenset({"vault-pw-123"})
+    monkey_secrets = frozenset({"VAULT-FIXTURE-VALUE-NOT-A-SECRET"})
 
     def fake_vault():
         return monkey_secrets
@@ -118,10 +118,10 @@ def test_append_event_scrubs_and_marks():
     try:
         rid = rs.create_run("g")
         rs.append_event(rid, "tool_result",
-                        {"password": "inline-pw", "out": "used vault-pw-123 ok"})
+                        {"password": "PLACEHOLDER_INLINE", "out": "used VAULT-FIXTURE-VALUE-NOT-A-SECRET ok"})
         ev = rs.get_events(rid, after_seq=1)[0]
         blob = str(ev["payload"])
-        assert "inline-pw" not in blob and "vault-pw-123" not in blob
+        assert "PLACEHOLDER_INLINE" not in blob and "VAULT-FIXTURE-VALUE" not in blob
         assert "[REDACTED:password]" in blob and "[REDACTED:vault]" in blob
         assert "_redacted" in ev["payload"]
     finally:
