@@ -241,7 +241,12 @@ def _search(query: str, time_range: str = "") -> SearchResult:
             r = brave_execute(query, max_results=8, freshness=time_range)
             if r and r.ok and r.items:
                 return r
-        return SearchResult(content="", ok=False, error="Brave Search failed or no key", source="brave", query=query)
+            # 2026-09-24 (L6): propagate the real error ("Brave Search API returned
+            # HTTP 422: The provided API key is invalid" — key in .env probed dead)
+            # instead of the generic string, so the caller's _failed ledger and the
+            # final error name the actual cause.
+            return SearchResult(content="", ok=False, error=(r.error if r else None) or "Brave Search returned no result", source="brave", query=query)
+        return SearchResult(content="", ok=False, error="BRAVE_SEARCH_API_KEY not set", source="brave", query=query)
 
     def _run_browserbase():
         # Added 2026-09-14 as one more fallback tier: Exa (402, out of credit),
@@ -376,7 +381,7 @@ def _search(query: str, time_range: str = "") -> SearchResult:
                 return SearchResult(content="", ok=False, error=str(e), source="exa", query=query)
         return SearchResult(content="", ok=False, error="Exa key not set", source="exa", query=query)
 
-    def _gather(named_tasks):
+    def _gather(named_tasks, failed=None):
         """Run a list of (name, fn) backends in parallel, keep the ones with items.
 
         as_completed() previously had no timeout — a single hung backend (a
@@ -385,26 +390,41 @@ def _search(query: str, time_range: str = "") -> SearchResult:
         caps the total wait; whichever backends already finished still count,
         the rest are abandoned (daemon threads, no explicit cancellation needed
         for this fallback tier — matches the executor's own no-wait shutdown).
+
+        2026-09-24 (L6): `failed` is an optional out-list collecting
+        "name: reason" per losing backend (empty result, exception, or timeout)
+        so the top-level error can say WHICH backends failed instead of the
+        un-diagnosable "all backends failed" (telegram run 6d622b58).
         """
         out: list[SearchResult] = []
         if not named_tasks:
             return out
         with ThreadPoolExecutor(max_workers=len(named_tasks)) as ex:
             futures = {ex.submit(fn): name for name, fn in named_tasks}
+            done_names: set[str] = set()
             try:
                 done_iter = as_completed(futures, timeout=_GATHER_TIMEOUT_S)
                 for f in done_iter:
                     name = futures[f]
+                    done_names.add(name)
                     try:
                         r = f.result()
                         if r and r.ok and r.items:
                             out.append(r)
                             _log.debug("search: got %d items from %s", len(r.items), name)
+                        elif failed is not None:
+                            failed.append(f"{name}: {(r.error if r else None) or 'no items'}")
                     except Exception as e:
                         _log.debug("search: %s failed — %s", name, e)
+                        if failed is not None:
+                            failed.append(f"{name}: {e}")
             except TimeoutError:
                 _log.warning("search: fallback tier hit %.0fs timeout, using %d completed backend(s)",
                              _GATHER_TIMEOUT_S, len(out))
+                if failed is not None:
+                    for f, name in futures.items():
+                        if name not in done_names:
+                            failed.append(f"{name}: timed out (>{_GATHER_TIMEOUT_S:.0f}s)")
         return out
 
     # Academic sources augment whichever web backend wins. Kick them off up front so they
@@ -420,6 +440,10 @@ def _search(query: str, time_range: str = "") -> SearchResult:
         }
 
     results: list[SearchResult] = []
+    # 2026-09-24 (L6): per-backend "name: reason" ledger — surfaced in the final
+    # error only when every tier failed, so a silent total failure names its cause
+    # (missing key, 4xx, timeout) instead of "all backends failed".
+    _failed: list[str] = []
 
     # PRIMARY: Exa — active key, no rate-limit issues. Used alone when it succeeds.
     if os.environ.get("EXA_API_KEY"):
@@ -430,6 +454,9 @@ def _search(query: str, time_range: str = "") -> SearchResult:
         else:
             _log.debug("search: exa primary failed (%s) -> trying tavily",
                        exa.error if exa else "none")
+            _failed.append(f"exa: {(exa.error if exa else None) or 'no items'}")
+    else:
+        _failed.append("exa: EXA_API_KEY not set")
 
     # SECONDARY: Tavily — rate-limited key, tried only when Exa didn't deliver,
     # before falling through to the much slower SearXNG/DDG/Brave scraping tier.
@@ -441,15 +468,20 @@ def _search(query: str, time_range: str = "") -> SearchResult:
         else:
             _log.debug("search: tavily fallback failed (%s) -> falling back to searxng/ddg/brave",
                        tav.error if tav else "none")
+            _failed.append(f"tavily: {(tav.error if tav else None) or 'no items'}")
+    elif not results:
+        _failed.append("tavily: TAVILY_API_KEY not set")
 
     # FALLBACK: SearXNG + DDG + Brave + Browserbase (parallel) only when Tavily/Exa did not deliver.
     if not results:
         fallback_tasks = [("searxng", _run_searxng), ("ddg", _run_ddg)]
         if os.environ.get("BRAVE_SEARCH_API_KEY"):
             fallback_tasks.append(("brave", _run_brave))
+        else:
+            _failed.append("brave: BRAVE_SEARCH_API_KEY not set")
         if os.environ.get("BROWSERBASE_API_KEY"):
             fallback_tasks.append(("browserbase", _run_browserbase))
-        results.extend(_gather(fallback_tasks))
+        results.extend(_gather(fallback_tasks, failed=_failed))
 
     # Collect the academic backends that were running in parallel with the web search.
     if academic_futures:
@@ -461,14 +493,18 @@ def _search(query: str, time_range: str = "") -> SearchResult:
                     if r and r.ok and r.items:
                         results.append(r)
                         _log.debug("search: got %d items from %s", len(r.items), name)
+                    else:
+                        _failed.append(f"{name}: {(r.error if r else None) or 'no items'}")
                 except Exception as e:
                     _log.debug("search: %s failed — %s", name, e)
+                    _failed.append(f"{name}: {e}")
         except TimeoutError:
             _log.warning("search: academic futures timed out after %ss", _GATHER_TIMEOUT_S)
         academic_ex.shutdown(wait=False)
 
     if not results:
-        return SearchResult(content="", ok=False, error="all backends failed", source="parallel", query=query)
+        _detail = "; ".join(s[:120] for s in _failed) or "no backends ran"
+        return SearchResult(content="", ok=False, error=f"all backends failed ({_detail})", source="parallel", query=query)
 
     # Merge items, deduplicate by URL
     merged_items: list[SearchSnippet] = []

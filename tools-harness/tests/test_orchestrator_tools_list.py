@@ -55,6 +55,28 @@ def test_memory_tools_reach_orchestrator(monkeypatch):
     assert {"remember", "forget", "search_sessions"} <= offered
 
 
+def test_memory_read_tools_reach_subagent_pipeline(monkeypatch):
+    """L3 (2026-09-24): intent-pipeline/subagent runs (_execute_intent_pipeline →
+    run(orchestrated=False)) could WRITE memory via remember/forget but had no tool
+    to actively READ it — recall_about/search_sessions were only on the orchestrator's
+    list. Passive recall_block() is similarity-gated on the dereferenced query; when
+    it misses, the specialist was stuck."""
+    captured = {}
+
+    def fake_local_chat(**kwargs):
+        captured["tools"] = kwargs.get("tools") or []
+        return "ok"
+
+    monkeypatch.setattr(harness, "local_chat", fake_local_chat)
+    monkeypatch.setattr(harness, "_guard_check", lambda *a, **k: None)
+    monkeypatch.setattr(harness, "trim_to_budget", lambda h, m, q, chat_id=None: h)
+
+    harness.run(query="check my email", chat_id=None, intent="email", orchestrated=False)
+
+    offered = {t["function"]["name"] for t in captured["tools"]}
+    assert {"remember", "forget", "recall_about", "search_sessions"} <= offered
+
+
 def test_update_task_plan_reaches_orchestrator(monkeypatch):
     captured = {}
 

@@ -85,11 +85,20 @@ def execute(query: str, max_results: int = 5, freshness: str | None = None) -> S
             timeout=8,
         )
         if r.status_code != 200:
-            log.debug("brave_search: HTTP status %d", r.status_code)
+            log.debug("brave_search: HTTP status %d — %s", r.status_code, r.text[:200])
+            # 2026-09-24 (L6): include the API's own error detail (e.g. the 422
+            # body's "The provided API key is invalid" / SUBSCRIPTION_TOKEN_INVALID,
+            # probed live) — status alone can't distinguish a dead key from a
+            # rate limit, and the websearch failure ledger surfaces this verbatim.
+            detail = ""
+            try:
+                detail = (r.json().get("error", {}) or {}).get("detail", "")
+            except Exception:
+                detail = r.text[:120]
             return SearchResult(
                 content="",
                 ok=False,
-                error=f"Brave Search API returned HTTP {r.status_code}",
+                error=f"Brave Search API returned HTTP {r.status_code}" + (f": {detail}" if detail else ""),
                 source="brave",
                 query=query,
             )

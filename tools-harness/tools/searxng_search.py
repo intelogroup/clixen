@@ -2,12 +2,24 @@
 SearXNG web search adapter — zero-cost, 70+ engines aggregated, fully local when available.
 
 Precedence:
-  1. Local SearXNG instance (SEARXNG_URL env var, default http://localhost:8888)
+  1. Local SearXNG instance (SEARXNG_URL env var, default http://localhost:8888 —
+     this host overrides to :8889 via tools-harness/.env because 8888 is occupied
+     by an unrelated process; verified JSON API live 2026-09-24)
   2. DuckDuckGo free search fallback (no API key needed)
 
 To run SearXNG locally:
-    docker run -d --name searxng -p 8888:8888 -v searxng-settings:/etc/searxng searxng/searxng
-    docker exec searxng sed -i 's/formats: [html]/formats: [html, json]/' /etc/searxng/settings.yml
+    docker run -d --name searxng -p 8888:8080 -v searxng-settings:/etc/searxng searxng/searxng
+    # image listens on container port 8080, not 8888 — mapping -p 8888:8888 leaves
+    # nothing behind the host port (connection reset, not refused; easy to misdiagnose).
+    # current settings.yml template also has no "formats:" line for sed to match —
+    # append the block instead:
+    docker exec searxng sh -c 'cat >> /etc/searxng/settings.yml << "EOF"
+
+search:
+  formats:
+    - html
+    - json
+EOF'
     docker restart searxng
 """
 
@@ -17,7 +29,13 @@ from tools.search_result import SearchResult
 
 log = logging.getLogger(__name__)
 
-SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://localhost:8888")
+# 2026-09-24 (L6): read at call time, not import time — websearch.py imports this
+# module at its own top (line ~27) but only runs load_dotenv() lazily inside
+# _search(), so an import-time read here permanently latched the 8888 default in
+# any process that didn't load .env before import (pytest, and any future caller
+# that imports early). Lazy read picks up SEARXNG_URL whenever it appears.
+def _searxng_url() -> str:
+    return os.environ.get("SEARXNG_URL", "http://localhost:8888")
 
 SCHEMA = {
     "type": "function",
@@ -61,7 +79,7 @@ def _search_searxng(query: str, categories: str = "general", time_range: str = "
             params["time_range"] = time_range
 
         with httpx.Client(timeout=8) as client:
-            resp = client.get(f"{SEARXNG_URL}/search", params=params)
+            resp = client.get(f"{_searxng_url()}/search", params=params)
 
         if resp.status_code != 200:
             return None

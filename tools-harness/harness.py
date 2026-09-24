@@ -27,11 +27,11 @@ _log = logging.getLogger(__name__)
 # ponytail: bare semaphore, no queue/broker — one process, in-memory is enough.
 _MESSAGING_GATE = threading.Semaphore(2)  # matches OLLAMA_MAX_LOADED_MODELS=2
 
-load_dotenv(Path(__file__).parent / ".env")
+# Single boot path shared with core.py / telegram_bot.py / jobs/worker.py — see
+# tools/env_boot.py (key rotation used to stay stale in-process forever).
+from tools.env_boot import load_env as _load_env
 
-from tools.env_secrets import load_secrets
-
-load_secrets()
+_load_env()
 
 from tools.registry import ALL_TOOLS, PLAN_TOOLS, tools_with_tags, CURRENT_CHAT_ID
 from tools.forge_principles import FORGE_PRINCIPLES_BLOCK
@@ -51,10 +51,15 @@ def local_chat(**kwargs):
     the budget is advisory/logged only, not a hard cutover to local gemma4, which
     is unreliable past a few chained tool calls.
 
-    If cloud is unreachable at all (no network, missing API key, provider outage —
-    cloud_client.chat() already retried its own cross-provider fallback and still
-    failed), fall back to local ollama_client with DEFAULT_MODEL so the app keeps
-    working offline instead of raising."""
+    2026-09-23: local-Ollama-on-cloud-failure fallback disabled (put all cloud) —
+    Ollama's own daemon is unreliable (down as of this change, "ollama serve" not
+    listening despite Ollama.app running) and cloud_client.chat() already retries
+    its own cross-provider cascade (DEFAULT_CLOUD_MODEL -> CLOUD_FALLBACK_MODEL ->
+    OPENAI_FALLBACK_MODEL -> FREE_FALLBACK_MODEL) before ever raising here, so a
+    second fallback tier onto a dead local daemon was pure downside (silent hang/
+    wrong answer instead of a clear error). Explicit local-model requests (caller
+    passes a non-cloud model string, e.g. IDE/Dev mode's gemma4) still route to
+    ollama_client below, unchanged — this only removes the on-failure fallback."""
     model = kwargs.get("model", ollama_client.DEFAULT_MODEL)
     if cloud_client.is_cloud_model(model):
         try:
@@ -62,24 +67,15 @@ def local_chat(**kwargs):
         except cloud_client.BudgetExceededError as e:
             _log.warning("[local_chat] %s, continuing on cloud anyway", e)
             return cloud_client.chat(**kwargs, bypass_budget=True)
-        except Exception:
-            _log.warning("[local_chat] cloud failed, falling back to local", exc_info=True)
-            last_exc = None
-            for local_model in (ollama_client.DEFAULT_MODEL, "qwen3.5:4b", "llama3.1:8b"):
-                kwargs["model"] = local_model
-                try:
-                    result = ollama_client.chat(**kwargs)
-                    cloud_client.LAST_SERVED_MODEL.set(local_model)
-                    return result
-                except Exception as e:
-                    _log.warning("[local_chat] local model %s failed too", local_model, exc_info=True)
-                    last_exc = e
-            raise last_exc
     result = ollama_client.chat(**kwargs)
     cloud_client.LAST_SERVED_MODEL.set(model)
     return result
 from tools.websearch import search as _run_websearch
-from tools.query_guard import check_all as _guard_check, _WEATHER_REPLY
+from tools.query_guard import (
+    check_all as _guard_check,
+    _WEATHER_REPLY,
+    CONTEXT_PRESENT as _GUARD_CONTEXT_PRESENT,
+)
 from agents.specialists.dispatch import dispatch as _specialist_dispatch
 from agents.local_agent_graph import run_local_agent
 
@@ -292,6 +288,24 @@ _COMMITMENT_SOURCES = frozenset({
     "ask_email_agent", "ask_calendar_agent", "ask_tasks_agent", "ask_messaging_agent",
 })
 
+# 2026-09-17: "Check X, send it to me via email" is an ACTION request, not a
+# commitment question — confirmed live (telegram chat_id 8538224711, run_id
+# 7442720f): intent=email + the word "check" in the query satisfied
+# _is_commitment_shaped(), so the draft's "nothing found" phrasing sent it
+# down the verify-on-absence path below. That path's nudge text ("a draft
+# answer claimed nothing was found... call them now") is written for
+# checking a source to confirm/refute a fact, not for "go actually send the
+# email you were asked to send" — the model read the nudge, did more
+# filesystem searching, and never called ask_email_agent at all. Detect the
+# explicit-delivery phrasing so the retry nudge tells the model what it
+# actually needs to do.
+_EXPLICIT_DELIVERY_RE = re.compile(
+    r"\bsend\s+(it|this|that|these|them)\b.{0,20}\b(via|by|through|over)?\s*email\b|"
+    r"\bemail\s+(it|me|this|that|them)\b|"
+    r"\btext\s+me\b|\bmessage\s+me\b",
+    re.I,
+)
+
 
 def _is_commitment_shaped(text: str, intent: str) -> bool:
     return bool(
@@ -404,6 +418,9 @@ Your subagent tools:
 23. `ask_youtube_agent(query)`: Search YouTube, or get a video transcript (falls back to local whisper if no captions) — prefer over ask_web_search for these.
 24. `ask_x_agent(query)`: Search X posts, read a specific X post, or retrieve an account's recent posts using the configured twscrape account.
 25. `ask_fetch_url(url)`: Fetch a specific URL and return its readable text content. Use this to read the content behind links found in email results, search hits, or any URL the user mentions. Fast, no LLM overhead.
+26. `ask_verse_agent(query)`: Post a message/question to the other AI agents in the Verse (a separate multi-agent sim), using Clixen's own agent identity there, in Clixen's own voice. For peer opinions/crowd-sourced takes or introducing yourself, not authoritative facts — the reply is asynchronous and arrives later, surfaced via check_verse_replies, not in this turn's answer.
+27. `check_verse_replies()`: Read-only — check whether a Verse peer has replied since you last checked. Use this for "did anyone respond"/"check the Verse", never ask_verse_agent again for that (that posts a new message instead of checking).
+28. `observe_verse(limit)`: Read-only — read recent general activity in the Verse room, not just replies to Clixen's own messages. Use for "what's happening in the Verse"/"what have you seen there" — never query_subagent_findings or any other Clixen-internal-job tool for this, those are unrelated to the Verse.
 
 CRITICAL INSTRUCTIONS:
 - User's home directory: {home_dir}. Resolve relative paths (~/Documents, /documents, downloads) to absolute paths under it before passing them to subagents.
@@ -426,6 +443,7 @@ CRITICAL INSTRUCTIONS:
 - CRITICAL THINKING OVER EAGERNESS: You know this system end-to-end; the user does not. Don't treat every request as a green light to execute. Before acting on anything ambiguous, before an action that would change/delete/overwrite existing state (automations, files, schedules, sent messages), or where the request conflicts with or risks breaking something already set up, stop and ask — name the specific concern (what could break, what's ambiguous, what tradeoff exists) instead of silently picking an interpretation or silently working around it. Reserve unprompted execution for requests that are unambiguous and low-risk. This overrides "always provide the most direct answer" when directness means guessing at intent on a consequential action.
 - DELIVER FULL SCOPE: Finish the whole task, not just the easy parts. If the user asks "search X and call me with the findings", complete BOTH steps — don't report the search results without calling. If part of the task is blocked, finish every other part first, then say what you left out and why.
 - TRUST BUT VERIFY: After a subagent reports findings, verify the result before relaying to the user. Check that the subagent actually used the right tools (not just described them), that the answer matches the question asked, and that no obvious gaps exist. A subagent's summary describes what it INTENDED to do — not necessarily what it did.
+- RESEARCH-STATUS FRAMING: Every subagent result ends with a machine-readable footer `[subagent intent=... status=ok|degraded tools=... errors=N]`. If status=degraded or errors>0, the underlying tool call(s) failed or were skipped — never phrase your answer as "Based on my research"/"I found"/"According to my search" in that case. Say plainly that the search/lookup failed (name what failed) and that the answer below is from general knowledge, not fresh results — then let the user decide if they want a retry.
 - PARALLELISM: When tasks are independent, launch them concurrently in a single message. Research tasks (search, email check, calendar) can run in parallel. Write tasks (send, create, delete) should be sequential.
 - PURPOSE-DRIVEN QUERIES: When calling subagents, include a brief purpose so they calibrate depth: "Find today's newsletter — this will inform a YouTube search" vs "Deep research on cardiac aging — I need a comprehensive report with citations." Don't just pass the raw user message; craft a query that tells the subagent what you need and why.
 - SELF-VERIFY: Before declaring a task done, run one quick verification step: if you fetched a URL, check the content is relevant; if you searched YouTube, confirm results are about the right topic; if you called the user, confirm the call connected (not just "attempted"). If the verification fails, fix it before reporting completion.
@@ -476,13 +494,29 @@ def _select_orchestrator_fragments(query: str, chat_id: str) -> str:
 
 
 def _execute_intent_pipeline(intent: str, query: str, chat_id: str | None = None, run_id: str = None) -> str:
-    res, _, _ = run(
-        query=query,
-        intent=intent,
-        chat_id=None,  # stateless subagent execution
-        orchestrated=False,
-        run_id=run_id,
-    )
+    # Runs in its own worker thread (see orchestrator_tools._run_subagent's ThreadPoolExecutor),
+    # so ContextVars do NOT inherit from the calling thread — the guard flag has to be set here,
+    # in the thread the subagent actually executes in.
+    # chat_id still goes to run() as None: the subagent prompt stays stateless (injecting the
+    # full window would grow every subagent call). CONTEXT_PRESENT only tells the ambiguity
+    # guard "a conversation exists, don't reject a pronoun-only follow-up" — the referent
+    # itself is supplied by orchestrator_tools._dereferenced_query().
+    from tools.query_guard import CONTEXT_PRESENT as _GUARD_CONTEXT_PRESENT
+
+    token = None
+    if chat_id is not None and not _GUARD_CONTEXT_PRESENT.get():
+        token = _GUARD_CONTEXT_PRESENT.set(True)
+    try:
+        res, _, _ = run(
+            query=query,
+            intent=intent,
+            chat_id=None,  # stateless subagent execution
+            orchestrated=False,
+            run_id=run_id,
+        )
+    finally:
+        if token is not None:
+            _GUARD_CONTEXT_PRESENT.reset(token)
     return res
 
 
@@ -634,7 +668,10 @@ def _run_impl(
             lock = get_lock(chat_id)
             with lock:
                 _prior_turns = conv_get(chat_id)
-                has_history = bool(_prior_turns)
+                # A subagent spawned from this turn sets CONTEXT_PRESENT in its own thread
+                # (see _execute_intent_pipeline) — without it the deictic guard rejects a
+                # pronoun-only follow-up the orchestrator passed through verbatim.
+                has_history = bool(_prior_turns) or _GUARD_CONTEXT_PRESENT.get()
             query = _rewrite_weather_followup(query, _prior_turns)
 
         _guard_q = _guard_check(query, has_history=has_history)
@@ -887,6 +924,7 @@ def _run_impl(
             QUERY_RECENT_TRACES_SCHEMA,
             ASK_SEND_MESSAGE_SCHEMA,
             *[t for t in ALL_TOOLS if t["function"]["name"] in ("remember", "forget", "search_sessions", "recall_about", "link_facts", "facts_related_to")],
+            *[t for t in ALL_TOOLS if t["function"]["name"] in ("ask_verse_agent", "check_verse_replies", "observe_verse")],
             *[t for t in ALL_TOOLS if t["function"]["name"] == "update_task_plan"],
             *[t for t in ALL_TOOLS if t["function"]["name"] == "call_my_phone"],
             RENDER_DIAGRAM_SCHEMA,
@@ -896,6 +934,7 @@ def _run_impl(
             # Skill-promotion — cheap, no subagent isolation needed, same tier as
             # SKILLS_MATCH_SCHEMA above.
             *[t for t in ALL_TOOLS if t["function"]["name"] == "promote_task_to_skill"],
+            *[t for t in ALL_TOOLS if t["function"]["name"] == "get_preview_current_page"],
         ]
 
         # WhatsApp is a messaging surface, not a second full web UI. Keep the
@@ -908,6 +947,7 @@ def _run_impl(
                 "whatsapp_search",
                 "whatsapp_status",
                 "whatsapp_recent_chats",
+                "fetch_whatsapp_history",
                 "list_whatsapp_contacts",
                 "send_whatsapp",
                 "contacts_resolve",
@@ -1027,17 +1067,26 @@ def _run_impl(
         _missing = None if context_only else _absence_unchecked_sources(result, query, run_id, intent)
         if _missing:
             _log.warning("[verify-on-absence] run_id=%s missing=%s — retrying with nudge", run_id, sorted(_missing))
+            _explicit_delivery = "ask_email_agent" in _missing and _EXPLICIT_DELIVERY_RE.search(query)
+            _nudge = (
+                (
+                    "\n\nSEND REQUIRED: the user explicitly asked you to send/email them "
+                    "something. Your draft did not do that — call ask_email_agent now with "
+                    "the actual content to send, then confirm in your final answer that it "
+                    "was sent."
+                ) if _explicit_delivery else (
+                    "\n\nVERIFICATION REQUIRED: a draft answer claimed nothing was found, "
+                    f"but these sources were never checked: {', '.join(sorted(_missing))}. "
+                    "Call them now, then give your final answer based on ALL sources."
+                )
+            )
             result = local_chat(
                 user_message=query,
                 tools=orchestrator_tools,
                 model=orchestrator_model,
                 history=history,
                 on_token=on_token,
-                system_prompt=orchestrator_system_prompt + (
-                    "\n\nVERIFICATION REQUIRED: a draft answer claimed nothing was found, "
-                    f"but these sources were never checked: {', '.join(sorted(_missing))}. "
-                    "Call them now, then give your final answer based on ALL sources."
-                ),
+                system_prompt=orchestrator_system_prompt + _nudge,
                 max_rounds=_max_orchestrator_rounds,
                 images=images or None,
                 options=_get_optimized_opts("factual_qa", orchestrator_model),
@@ -1318,19 +1367,16 @@ def _run_impl(
         )
         # Text-only vision requests (e.g. "take a screenshot and read it") need
         # tool-calling to take_screenshot first, then usually a follow-up call
-        # once the image exists (multi-round). CLOUD_VISION_MODEL (gemini-3.1-
-        # flash-lite) is requested here specifically so the same model that
-        # reads the screenshot also drives the tool loop — but it's documented
-        # in cloud_client.py as 2/5 on the agentic tool-calling benchmark
-        # (repetitive-loop drift), verified only for single-shot OCR reads, not
-        # multi-round chains like this one. ponytail: shipped as asked; if the
-        # screenshot->read flow starts drifting/looping, that benchmark result
-        # is why — the fix would be deepseek/haiku for the outer tool loop with
-        # CLOUD_VISION_MODEL only for the final image-reading call.
-        # CLOUD_FALLBACK_MODEL == CLOUD_VISION_MODEL (same OpenRouter model) —
-        # cloud_client.chat()'s `if model == fallback_model: raise` guard means
-        # a failure here skips the usual cloud-fallback hop and goes straight to
-        # local_chat()'s outer cloud->gemma4 fallback. No self-retry loop risk.
+        # once the image exists (multi-round). CLOUD_VISION_MODEL is requested
+        # here specifically so the same model that reads the screenshot also
+        # drives the tool loop. 2026-09-24: vision model is now
+        # openai/gpt-4.1-mini (OpenAI direct) — the old gemini-via-OpenRouter
+        # vision models all 404 on this account's ZDR setting, and gemini-3.1-
+        # flash-lite was 2/5 on the agentic tool-calling benchmark
+        # (repetitive-loop drift), a real risk for this multi-round flow that
+        # the OpenAI tier doesn't have. CLOUD_FALLBACK_MODEL (gpt-4o-mini) is a
+        # distinct model now, so a vision failure hops there before the free
+        # tier — chat()'s retry chain dedupes identical models, no loop risk.
         if model is None and not images:
             routed_model = cloud_client.CLOUD_VISION_MODEL
     elif intent == "slack":
@@ -1342,7 +1388,7 @@ def _run_impl(
     elif intent == "whatsapp_search":
         active_tools = _tool(
             "whatsapp_search", "whatsapp_status", "whatsapp_recent_chats",
-            "list_whatsapp_contacts",
+            "list_whatsapp_contacts", "fetch_whatsapp_history",
         )
     elif intent == "spotlight":
         # spotlight_search/find_recent/archive_grep find files by name/metadata;
@@ -1364,7 +1410,7 @@ def _run_impl(
         active_tools = _tool(
             "imessage_search", "imessage_status", "imessage_send",
             "whatsapp_search", "whatsapp_status", "send_whatsapp",
-            "whatsapp_recent_chats",
+            "whatsapp_recent_chats", "fetch_whatsapp_history",
             "list_whatsapp_contacts",
             "slack_search", "slack_status",
             "set_reminder", "get_current_time",
@@ -1458,9 +1504,16 @@ def _run_impl(
     # Persistent memory: expose remember/forget alongside any active toolset, and enable
     # them for otherwise-toolless chat only when the user explicitly asks to remember/forget
     # (keeps the fast no-tools path for ordinary chat). Excludes constrained pipelines.
+    # 2026-09-24 (L3): also expose the READ side (recall_about/search_sessions) to
+    # tool-bearing intents — subagent runs via _execute_intent_pipeline get passive
+    # memory_recall() injected (below), but if similarity recall misses a fact the
+    # specialist needs mid-task (e.g. an address/preference the email agent must act
+    # on), it previously had no tool to fetch it while still being able to WRITE
+    # memory via remember/forget. The orchestrator has had all six (see its tool
+    # list above); this gives intent pipelines the same read access.
     if intent not in ("search", "browser", "plan"):
         if active_tools:
-            active_tools = list(active_tools) + _tool("remember", "forget")
+            active_tools = list(active_tools) + _tool("remember", "forget", "recall_about", "search_sessions")
         elif _MEMORY_TRIGGER_RE.search(query):
             active_tools = _tool("remember", "forget")
 
@@ -1812,6 +1865,19 @@ def _run_impl(
         system_prompt = _dt_line + "\n\n" + _base_instruction
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
+
+    # 2026-09-11: gpt-5-mini golden_queries.py live failure (4/8 timeouts) traced to
+    # re-calling list_emails/read_email/get_latest_email with identical or near-identical
+    # args many times per single query instead of reusing what an earlier round already
+    # returned — burned rounds until the budget/deadline killed the run. Applies to every
+    # intent pipeline (email/calendar/tasks/messaging all showed it), so it goes here
+    # rather than in one intent's block.
+    system_prompt = system_prompt + (
+        "\n\nDo not call the same tool with the same or near-identical arguments more than "
+        "once in this conversation — reuse the result you already got. If a tool returned "
+        "nothing useful, either try genuinely different arguments or move on; repeating the "
+        "same call does not produce new data."
+    )
 
     # Persistent cross-session memory: recall durable facts relevant to this query and
     # prepend them so they apply on every turn, all intents (returns "" when empty).
