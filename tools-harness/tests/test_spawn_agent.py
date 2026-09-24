@@ -21,6 +21,7 @@ def test_unavailable_tool_is_denied_not_executed(monkeypatch):
     monkeypatch.setattr(run_loop, "_execute_tool",
                         lambda n, a: executed.append(n) or "ran")
     rid = rs.create_run("g")
+    rs.append_event(rid, "user_msg", {"text": "go"})
     out = run_loop.run_rounds(rid, lambda m, t: {
         "text": "ok", "tool_calls": [{"id": "t1", "name": "delete_everything",
                                       "args": {}}]}, tools=["web_search"])

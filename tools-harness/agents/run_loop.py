@@ -124,6 +124,20 @@ def run_rounds(run_id: str, model_fn, *, tools: list[str], system: str = "",
         run_store.set_status(run_id, "running")  # resume transition
 
     final_text = ""
+    # Fail fast on an empty journal: a provider 400 ("Input required: specify
+    # ...") is a confusing way to learn the run has no input. This happens
+    # when a run is created without a user_msg (e.g. a hand-rolled run, or a
+    # resume after a truncated journal).
+    probe_msgs, _answered, _known = replay_messages(run_id, system=system)
+    if not any(m.get("role") in ("user", "assistant", "tool")
+               and (m.get("content") or m.get("tool_calls"))
+               for m in probe_msgs):
+        reason = "run journal has no user message — nothing to execute"
+        run_store.append_event(run_id, "status", {"status": "failed",
+                                                   "reason": reason})
+        run_store.set_status(run_id, "failed")
+        return ""
+
     while round_idx < max_rounds:
         # ── Control intents (M2) — drained at every round boundary, never
         # mid-round. The requester only journals intent; transitions happen
