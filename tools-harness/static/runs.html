@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clixen runs</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .running { background: #e6f0ff; color: #124; }
+  .paused  { background: #fff4d6; color: #543; }
+  .failed, .killed { background: #ffe6e6; color: #612; }
+  .succeeded { background: #e6f7e6; color: #146; }
+  .row { padding: 6px 0; border-bottom: 1px solid #eee; }
+  .muted { color: #666; }
+  button { font: inherit; padding: 4px 10px; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+<h1>Runs</h1>
+
+<!-- PRIMARY: status + live plan progress (never collapsed, never scrolled away) -->
+<section aria-labelledby="run-status-h">
+  <h2 id="run-status-h" class="muted">Current run</h2>
+  <p id="status" role="status" aria-live="polite">
+    <span id="status-pill" class="pill running">● Running</span>
+    <span id="goal" class="muted"></span>
+  </p>
+  <!-- SECONDARY: round/tool stream (progressive disclosure) -->
+  <details id="stream-wrap">
+    <summary>Round &amp; tool events</summary>
+    <div id="stream" aria-live="polite" aria-relevant="additions"></div>
+  </details>
+  <!-- TERTIARY: usage + controls -->
+  <p id="usage" class="muted"></p>
+  <p>
+    <button id="pause" tabindex="0" accesskey="p">Pause (P)</button>
+    <button id="resume" tabindex="0" accesskey="r">Resume (R)</button>
+    <button id="kill" tabindex="0" accesskey="k">Kill (K)</button>
+    <label for="steer" class="muted">Steer</label>
+    <input id="steer" tabindex="0" placeholder="e.g. focus on pricing first">
+    <button id="send" tabindex="0">Send (S)</button>
+  </p>
+</section>
+
+<script>
+const ICONS = { running: "●", paused: "⏸", succeeded: "✔", failed: "✕",
+                killed: "✕", "budget-exceeded": "⏱", queued: "○",
+                "retrying": "↻", "steer-waiting": "?" };
+const LABEL = { running: "Running", paused: "Paused", succeeded: "Done",
+                failed: "Failed", killed: "Killed",
+                "budget-exceeded": "Stopped (limit)", queued: "Queued",
+                "retrying": "Retrying", "steer-waiting": "Waiting for you" };
+// Status is icon + TEXT + color (never color alone).
+function renderStatus(s) {
+  const pill = document.getElementById("status-pill");
+  pill.textContent = `${ICONS[s] || "○"} ${LABEL[s] || s}`;
+  pill.className = "pill " + s;
+}
+// Announcements to the live region are throttled to milestones, never per event.
+let lastAnnounced = "";
+function announce(msg) {
+  if (msg === lastAnnounced) return;
+  lastAnnounced = msg;
+  document.getElementById("status").setAttribute("aria-label", msg);
+}
+async function control(action, text) {
+  const runId = new URLSearchParams(location.search).get("run");
+  if (!runId) return;
+  await fetch(`/api/runs/${runId}/control`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, text: text || "" })
+  });
+  announce(`${LABEL[action] || action} requested`);
+}
+document.getElementById("pause").onclick = () => control("pause");
+document.getElementById("resume").onclick = () => control("resume");
+document.getElementById("kill").onclick = () => control("kill");
+document.getElementById("send").onclick = () =>
+  control("steer", document.getElementById("steer").value);
+// Full keyboard path: buttons are natively focusable; shortcuts mirror the
+// visible accesskey hints.
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "p") control("pause");
+  if (e.key === "r") control("resume");
+  if (e.key === "k") control("kill");
+  if (e.key === "s") control("steer", document.getElementById("steer").value);
+});
+function onEvent(ev) {
+  const stream = document.getElementById("stream");
+  const row = document.createElement("div");
+  row.className = "row";
+  if (ev.type === "card" || ev.type === "done") {
+    renderStatus(ev.status);
+    document.getElementById("goal").textContent = ev.goal || "";
+    announce(`Run ${ev.status}: ${ev.goal || ""}`);
+  } else if (ev.type === "tool_result" || ev.type === "tool_call") {
+    row.textContent = `#${ev.seq} ${ev.type} ${(ev.payload || {}).tool || ""}`;
+  } else {
+    row.textContent = `#${ev.seq} ${ev.type}`;
+  }
+  stream.appendChild(row);
+  // Journaled screenshots carry alt text = the step description they were
+  // captured under (never a bare filename).
+  if (ev.type === "screenshot") {
+    const img = document.createElement("img");
+    img.src = ev.payload.url;
+    // Alt text = the step description the screenshot was captured under
+    // (never a bare filename, never empty).
+    img.setAttribute("alt", ev.payload.alt || ev.payload.step || "run screenshot");
+    stream.appendChild(img);
+  }
+}
+async function start() {
+  const runId = new URLSearchParams(location.search).get("run");
+  if (!runId) return;
+  const usage = await (await fetch(`/api/runs/${runId}/budget`)).json();
+  document.getElementById("usage").textContent =
+    `round ${usage.rounds_used}/${usage.max_rounds ?? "?"} · ` +
+    `${usage.tool_calls} tool calls · ${usage.tool_errors} errors · ` +
+    `attempt ${usage.attempt}`;
+  const es = new EventSource(`/api/runs/${runId}/events`);
+  es.onmessage = (m) => onEvent(JSON.parse(m.data));
+}
+start();
+</script>
+</body>
+</html>

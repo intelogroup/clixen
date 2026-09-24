@@ -898,6 +898,50 @@ def run_events(run_id: str, request: Request, after_seq: int = 0):
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@app.get("/api/runs/{run_id}/budget")
+def run_budget(run_id: str, request: Request):
+    """Journal-derived usage for a run. Deliberately reports only what the
+    journal knows (rounds, tool calls, elapsed, policy caps) — never invented
+    token or dollar figures."""
+    _require_auth(request)
+    from agents import run_service
+
+    card = run_service.run_card(run_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="no such run")
+    from store import run_store as _rs
+
+    run = _rs.get_run(run_id)
+    events = _rs.get_events(run_id)
+    kinds = [e["kind"] for e in events]
+    snap = _rs.latest_round(run_id) or {}
+    policy = run.get("policy") or {}
+    rounds_used = (snap.get("round_idx", -1) + 1) if snap else 0
+    try:
+        elapsed = max(0.0, _rs._epoch(run["updated_at"]) - _rs._epoch(run["created_at"]))
+    except Exception:  # noqa: BLE001
+        elapsed = 0.0
+    return {
+        "run_id": run_id,
+        "rounds_used": rounds_used,
+        "max_rounds": policy.get("max_rounds"),
+        "deadline_s": policy.get("deadline_s"),
+        "tool_calls": kinds.count("tool_call"),
+        "tool_errors": sum(
+            1 for e in events
+            if e["kind"] == "tool_result" and str(e["payload"].get("result", "")).startswith("[error]")),
+        "events": len(events),
+        "elapsed_s": round(elapsed, 1),
+        "attempt": run.get("attempt", 0),
+    }
+
+
+@app.get("/runs", response_class=HTMLResponse)
+def runs_page(request: Request):
+    _require_auth(request)
+    return HTMLResponse((Path(__file__).parent / "static" / "runs.html").read_text())
+
+
 @app.post("/api/runs/{run_id}/control")
 def run_control(run_id: str, request: Request, payload: dict):
     _require_auth(request)

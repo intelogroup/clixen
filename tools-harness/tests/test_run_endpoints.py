@@ -1,5 +1,6 @@
-"""Route tests for the M2 run endpoints (auth-gated, SSE journal tail)."""
+"""Route tests for the run endpoints (auth-gated, SSE journal tail, M6 UI)."""
 import sys
+from pathlib import Path
 
 sys.path.insert(0, ".")
 
@@ -107,6 +108,38 @@ def test_control_on_terminal_run_reports_not_ok(monkeypatch):
     rs.set_status(rid, "succeeded")
     resp = c.post(f"/api/runs/{rid}/control", json={"action": "pause"})
     assert resp.json()["ok"] is False
+
+
+def test_budget_summary_is_journal_derived(monkeypatch):
+    c = _authed(_client())
+    from agents import run_service
+    monkeypatch.setattr(run_service, "_default_execute", lambda *a, **k: None)
+    rid = c.post("/api/runs", json={"goal": "g", "policy": {"max_rounds": 7}}).json()["run_id"]
+    rs.set_status(rid, "running")
+    rs.append_event(rid, "round", {"round_idx": 0, "model": "m"})
+    rs.append_event(rid, "tool_call", {"id": "t1", "name": "web_search", "args": {}})
+    rs.append_event(rid, "tool_result", {"id": "t1", "result": "ok"})
+    rs.set_status(rid, "succeeded")
+    data = c.get(f"/api/runs/{rid}/budget").json()
+    assert data["run_id"] == rid
+    assert data["rounds_used"] == 1
+    assert data["tool_calls"] == 1
+    assert data["max_rounds"] == 7
+    assert "tokens" not in data, "never invent token counts we do not track"
+
+
+def test_runs_page_ships_the_accessibility_contract():
+    page = (Path(__file__).resolve().parent.parent / "static" / "runs.html").read_text()
+    # a11y contract (plan M6 exit criteria)
+    assert 'aria-live="polite"' in page
+    assert 'role="status"' in page
+    assert "prefers-reduced-motion" in page
+    assert 'tabindex="0"' in page, "controls must be keyboard reachable"
+    assert "keydown" in page, "keyboard path for pause/kill/steer"
+    # status is never color-alone
+    assert "Running" in page and "Failed" in page and "Paused" in page
+    # screenshot alt text comes from the step description
+    assert 'setAttribute("alt"' in page
 
 
 def test_process_mode_spawns_a_supervised_child(monkeypatch):
