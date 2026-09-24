@@ -12,14 +12,15 @@ def test_set_and_get_plan():
     rid = _rid()
     plan_store.set_plan(rid, ["step a", "step b", "step c"])
     plan = plan_store.get_plan(rid)
-    assert plan == {"steps": ["step a", "step b", "step c"], "done": []}
+    assert plan == {"steps": ["step a", "step b", "step c"], "done": [],
+                    "statuses": ["pending"] * 3}
 
 
 def test_mark_done_updates_state():
     rid = _rid()
     plan_store.set_plan(rid, ["a", "b", "c"])
     result = plan_store.mark_done(rid, [0, 2])
-    assert result == {"steps": ["a", "b", "c"], "done": [0, 2]}
+    assert result["steps"] == ["a", "b", "c"] and result["done"] == [0, 2]
     assert plan_store.get_plan(rid)["done"] == [0, 2]
 
 
@@ -39,7 +40,8 @@ def test_set_plan_replaces_and_resets_done():
     plan_store.set_plan(rid, ["a", "b"])
     plan_store.mark_done(rid, [0])
     plan_store.set_plan(rid, ["x", "y", "z"])
-    assert plan_store.get_plan(rid) == {"steps": ["x", "y", "z"], "done": []}
+    assert plan_store.get_plan(rid)["steps"] == ["x", "y", "z"]
+    assert plan_store.get_plan(rid)["done"] == []
 
 
 def test_plan_block_empty_when_no_plan():

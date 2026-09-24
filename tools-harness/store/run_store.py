@@ -302,6 +302,33 @@ def latest_control_cursor(run_id: str) -> int:
     return cursor
 
 
+def plan_from_journal(run_id: str) -> dict | None:
+    """Rebuild plan state from `plan_step` events (M4). The journal — not
+    plan_store alone — is what a resumed run reads, so plan transitions
+    survive a restart and replay in order."""
+    steps: list[str] = []
+    statuses: list[str] = []
+    seen = False
+    for ev in get_events(run_id):
+        if ev["kind"] != "plan_step":
+            continue
+        p = ev["payload"]
+        steps = p.get("steps") or steps
+        seen = True
+        idx = p.get("index")
+        if idx is None or not isinstance(idx, int) or not 0 <= idx < len(steps):
+            continue
+        while len(statuses) < len(steps):
+            statuses.append("pending")
+        statuses[idx] = p.get("status", "pending")
+    if not seen or not steps:
+        return None
+    while len(statuses) < len(steps):
+        statuses.append("pending")
+    return {"steps": steps, "statuses": statuses,
+            "done": [i for i, s in enumerate(statuses) if s == "done"]}
+
+
 def append_round_snapshot(run_id: str, *, round_idx: int, model: str = "",
                           escalated: bool = False, consecutive_errors: int = 0,
                           force_tool_consumed: bool = False,
