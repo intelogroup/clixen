@@ -572,6 +572,14 @@ def execute_confirmed(token: str, approved: bool) -> str:
                     archive_existing(target)
                 except Exception as exc:
                     return f"[error] could not archive existing output before overwrite: {exc}"
+                # Human approval IS the authorization the read-before-write CAS
+                # guard wants: the user explicitly approved THIS path and this
+                # payload. Without this, every approved overwrite of an unread
+                # file was rejected and the approval flow was a dead end.
+                from pathlib import Path as _Path
+
+                from tools.fs_observation import observe as _observe
+                _observe(_Path(target))
         result = _execute_raw(entry["tool_name"], entry["arguments"])
     if entry["tool_name"] in _EXPORT_TOOL_NAMES:
         from tools.document_output import verify_export
