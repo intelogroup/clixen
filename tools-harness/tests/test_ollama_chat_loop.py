@@ -51,7 +51,12 @@ def test_chat_truncates_large_tool_results_in_followup_round():
     assert result == "done"
     tool_messages = [m for m in captured_messages[-1] if isinstance(m, dict) and m.get("role") == "tool"]
     assert tool_messages, "expected a tool result message in the followup round"
-    assert "[truncated" in tool_messages[0]["content"]
+    content = tool_messages[0]["content"]
+    # Oversized tool output is SPILLED to disk (head/tail preview + locator),
+    # not truncated in-band — tools/spill.py replaced the old [truncated ...]
+    # marker. The point of the guard is that the in-band payload stays bounded.
+    assert len(content) < len(large_result)
+    assert "saved to" in content and "read_file(" in content
 
 
 def test_chat_streams_blocking_synthesis_after_tool_round():

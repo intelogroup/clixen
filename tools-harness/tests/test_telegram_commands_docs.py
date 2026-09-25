@@ -301,8 +301,15 @@ def test_analyze_screenshot_ocr_streams_and_collects(monkeypatch):
 
 
 def test_analyze_screenshot_ocr_surfaces_llm_failure(monkeypatch):
+    """Both model paths must fail, otherwise the cloud fallback answers for
+    real (this test used to hit the live OpenAI API)."""
     fake = _fake_ollama_module([SimpleNamespace(message=SimpleNamespace(content="x"), eval_count=1)], raise_after=0)
     monkeypatch.setitem(sys.modules, "ollama", fake)
+
+    def _cloud_down(*_a, **_kw):
+        raise RuntimeError("cloud down")
+
+    monkeypatch.setattr("clients.cloud_client.raw_completion", _cloud_down)
     assert tb._analyze_screenshot_ocr("q", "text") is None
 
 

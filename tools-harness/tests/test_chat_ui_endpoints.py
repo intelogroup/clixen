@@ -423,4 +423,7 @@ def test_file_access_snapshot_authed(monkeypatch, tmp_path):
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["snapshot"]["ok"] is True
-    assert payload["grants"]["ok"] is True
+    # The TCC map needs Full Disk Access; without it the endpoint reports the
+    # error instead of pretending it is empty (same tolerance as the sibling
+    # grants test above).
+    assert payload["grants"]["ok"] is True or "error" in payload["grants"]

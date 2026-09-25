@@ -262,9 +262,13 @@ def test_cloud_deadline_evicts_oldest_above_50():
         local_agent_nodes._cloud_deadline[f"model-{i}"] = now + 9999
 
     model_new = "trigger-eviction"
-    with patch("agents.local_agent_nodes.is_cloud_model", return_value=True):
-        with patch("clients.cloud_client.raw_completion", side_effect=RuntimeError("no network")):
-            local_agent_nodes._chat(model_new, [], [])
+    with patch("agents.local_agent_nodes.is_cloud_model", return_value=True), \
+         patch("clients.cloud_client.raw_completion", side_effect=RuntimeError("no network")), \
+         patch("agents.local_agent_nodes._run_local", return_value=("local answer", 0.01)):
+        # The cloud failure is intentional here; the code then takes its
+        # offline fallback to local, which must be stubbed — Ollama is not
+        # guaranteed to be running in CI.
+        local_agent_nodes._chat(model_new, [], [])
 
     assert len(local_agent_nodes._cloud_deadline) <= 50
 

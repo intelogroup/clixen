@@ -108,6 +108,9 @@ def test_core_edit_file_smoke():
     import tempfile, pathlib
     f = pathlib.Path(tempfile.mkstemp(suffix=".txt")[1])
     f.write_text("old content")
+    # Read-before-write CAS guard: the file must be observed in-session first
+    # (tools/fs_observation.py) — blind edits of unread files are rejected.
+    EXECUTORS["read_file"]({"path": str(f)})
     result = EXECUTORS["edit_file"]({"path": str(f), "old_str": "old content", "new_str": "new content"})
     assert isinstance(result, str)
     assert f.read_text() == "new content"
@@ -117,10 +120,22 @@ def test_core_edit_file_smoke():
 def test_core_write_file_smoke():
     import tempfile, pathlib
     p = pathlib.Path(tempfile.mkstemp(suffix=".txt")[1])
+    p.unlink()  # fresh path: blind CREATE is allowed, blind OVERWRITE is not
     result = EXECUTORS["write_file"]({"path": str(p), "content": "test"})
     assert isinstance(result, str)
     assert p.read_text() == "test"
     p.unlink()
+
+
+def test_blind_overwrite_of_unread_file_is_rejected():
+    """The guard the two tests above work around, asserted directly."""
+    import tempfile, pathlib
+    f = pathlib.Path(tempfile.mkstemp(suffix=".txt")[1])
+    f.write_text("old")
+    result = EXECUTORS["write_file"]({"path": str(f), "content": "new"})
+    assert "never read" in result
+    assert f.read_text() == "old"
+    f.unlink()
 
 
 def test_core_render_diagram_smoke():
