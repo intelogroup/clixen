@@ -97,3 +97,11 @@ def test_collect_drops_stale_items_but_keeps_undated():
     out = collect(["q"], f=object(), searx=False, sources={"s": src}, warn=lambda _m: None)
     assert [i["url"] for i in out] == ["new", "none"]
     assert len(collect(["q"], f=object(), searx=False, sources={"s": src}, max_age_days=None)) == 3
+
+
+def test_growth_qoq_yoy_and_short_history():
+    from demand.trends import growth
+    y = np.concatenate([np.full(39, 10.0), np.full(13, 20.0), np.full(13, 30.0)])  # 65 weeks
+    g = growth(y)
+    assert g["qoq"] == 0.5 and g["yoy"] == 2.0
+    assert growth(np.full(20, 5.0))["yoy"] is None
