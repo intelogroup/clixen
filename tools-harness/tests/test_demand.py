@@ -1,0 +1,30 @@
+import numpy as np
+
+from demand.backtest import gate, mase, rolling_mase
+from demand.forecast import naive, seasonal_naive, slope
+
+
+def test_naive_mase_is_one_on_random_walk_scale():
+    y = np.arange(30, dtype=float)
+    assert mase(y[-4:], naive(y[:-4], 4), y[:-4]) > 0
+
+
+def test_seasonal_naive_beats_naive_on_seasonal_series():
+    t = np.arange(52 * 3)
+    y = 100 + 20 * np.sin(2 * np.pi * t / 52)
+    assert rolling_mase(y, seasonal_naive) < rolling_mase(y, naive)
+
+
+def test_slope_beats_naive_on_trend():
+    y = 10 + 2.0 * np.arange(60)
+    assert rolling_mase(y, slope) < rolling_mase(y, naive)
+
+
+def test_slope_never_negative():
+    assert (slope(np.array([10.0, 5.0, 1.0, 0.0, 0.0]), 8) >= 0).all()
+
+
+def test_gate_rejects_model_equal_to_baseline():
+    s = {"a": 10 + 2.0 * np.arange(60)}
+    assert not gate(s, naive, naive)["passed"]
+    assert gate(s, slope, naive)["passed"]
