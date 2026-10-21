@@ -57,3 +57,14 @@ def test_cluster_merges_and_tolerates_gaps_and_garbage():
     assert [t["cluster"] for t in merged] == ["slow invoicing", "slow invoicing", "high fees"]
     assert rank(merged)[0]["count"] == 2
     assert [t["cluster"] for t in cluster(tagged, llm=lambda _p: "nope")] == ["slow invoicing", "invoices take too long", "high fees"]
+
+
+def test_collect_dedupes_labels_source_and_survives_a_dead_source():
+    from demand.pain import collect
+    def ok(_f, q):
+        return [{"url": "u1", "text": "a"}, {"url": "u1", "text": "dup"}]
+    def dead(_f, q):
+        raise RuntimeError("403")
+    warns = []
+    out = collect(["q"], f=object(), searx=False, warn=warns.append, sources={"a": ok, "b": dead})
+    assert out == [{"url": "u1", "text": "a", "source": "a"}] and "b failed" in warns[0]
