@@ -123,3 +123,9 @@ def test_week_windows_are_complete_mondays_oldest_first():
     assert len(w) == 4 and all(b - a == 7 * 86400 for a, b in w)
     assert datetime.fromtimestamp(w[-1][1], timezone.utc).date() == date(2026, 10, 19)  # this Monday: current week excluded
     assert datetime.fromtimestamp(w[0][0], timezone.utc).weekday() == 0
+
+
+def test_moving_average_is_flat_at_recent_mean():
+    from demand.forecast import moving_average
+    y = np.concatenate([np.full(20, 100.0), np.full(13, 10.0)])
+    assert (moving_average(y, 5) == 10.0).all() and len(moving_average(y, 5)) == 5
