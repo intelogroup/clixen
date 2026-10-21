@@ -13,6 +13,7 @@ import os
 import re
 import time
 from collections import Counter, defaultdict
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable
 
 from tsdata.http import Fetcher
@@ -41,7 +42,8 @@ def _clean(raw: str) -> str:
 def _hn(f: Fetcher, q: str) -> list[dict]:
     d = f.get_json("https://hn.algolia.com/api/v1/search",
                    params={"query": q, "tags": "comment", "hitsPerPage": 100}, force=True)
-    return [{"url": f'https://news.ycombinator.com/item?id={h["objectID"]}', "text": _clean(h.get("comment_text"))}
+    return [{"url": f'https://news.ycombinator.com/item?id={h["objectID"]}', "text": _clean(h.get("comment_text")),
+             "date": h.get("created_at")}
             for h in d.get("hits", []) if len(h.get("comment_text") or "") > 80]
 
 
@@ -49,7 +51,8 @@ def _ask_hn(f: Fetcher, q: str) -> list[dict]:
     d = f.get_json("https://hn.algolia.com/api/v1/search",
                    params={"query": q, "tags": "ask_hn", "hitsPerPage": 50}, force=True)
     return [{"url": f'https://news.ycombinator.com/item?id={h["objectID"]}',
-             "text": f'{h.get("title", "")} — {_clean(h.get("story_text"))}'[:700]} for h in d.get("hits", [])]
+             "text": f'{h.get("title", "")} — {_clean(h.get("story_text"))}'[:700], "date": h.get("created_at")}
+            for h in d.get("hits", [])]
 
 
 def _softwarerecs(f: Fetcher, q: str) -> list[dict]:
@@ -57,7 +60,8 @@ def _softwarerecs(f: Fetcher, q: str) -> list[dict]:
     d = f.get_json("https://api.stackexchange.com/2.3/search/advanced",
                    params={"site": "softwarerecs", "q": q, "pagesize": 50, "sort": "relevance",
                            "order": "desc", "filter": "withbody"}, force=True)
-    return [{"url": i["link"], "text": f'{html.unescape(i["title"])} — {_clean(i.get("body"))}'[:700]}
+    return [{"url": i["link"], "text": f'{html.unescape(i["title"])} — {_clean(i.get("body"))}'[:700],
+             "date": datetime.fromtimestamp(i["creation_date"], timezone.utc).isoformat()}
             for i in d.get("items", [])]
 
 
@@ -66,7 +70,8 @@ def _github_issues(f: Fetcher, q: str) -> list[dict]:
     time.sleep(6)  # unauthenticated search API allows 10 requests/minute
     d = f.get_json("https://api.github.com/search/issues",
                    params={"q": f"{q} type:issue label:enhancement", "per_page": 50}, force=True)
-    return [{"url": i["html_url"], "text": f'{i["title"]} — {i.get("body") or ""}'[:700]} for i in d.get("items", [])]
+    return [{"url": i["html_url"], "text": f'{i["title"]} — {i.get("body") or ""}'[:700], "date": i.get("created_at")}
+            for i in d.get("items", [])]
 
 
 #: keyless public APIs; each is (fetcher, query) -> [{"url", "text"}].
@@ -82,8 +87,10 @@ KEYWORD_SOURCES = {"softwarerecs"}
 
 def collect(queries: list[str], f: Fetcher | None = None, searx: bool = True,
             warn: Callable[[str], None] = print, sources: dict | None = None,
-            keywords: list[str] | None = None) -> list[dict]:
-    """Complaint snippets from the public APIs plus, if `searx`, Reddit via local SearXNG."""
+            keywords: list[str] | None = None, max_age_days: int | None = 730) -> list[dict]:
+    """Complaint snippets from the public APIs plus, if `searx`, Reddit via local SearXNG.
+
+    Items older than `max_age_days` are dropped; items with no date (Reddit snippets) are kept."""
     f = f or Fetcher(CACHE)
     sources = API_SOURCES if sources is None else sources
     base = os.environ.get("SEARXNG_URL", "http://localhost:8889")
@@ -106,8 +113,12 @@ def collect(queries: list[str], f: Fetcher | None = None, searx: bool = True,
             warn(f"searxng engines down: {d['unresponsive_engines']}")
         for r in d.get("results", []):
             seen.setdefault(r["url"], {"url": r["url"], "source": "reddit",
-                                       "text": f'{r.get("title", "")} — {r.get("content", "")}'.strip()})
-    return list(seen.values())
+                                       "text": f'{r.get("title", "")} — {r.get("content", "")}'.strip(),
+                                       "date": r.get("publishedDate")})
+    if max_age_days is None:
+        return list(seen.values())
+    cutoff = str(date.today() - timedelta(days=max_age_days))
+    return [it for it in seen.values() if not it.get("date") or str(it["date"])[:10] >= cutoff]
 
 
 def _default_llm(prompt: str) -> str:

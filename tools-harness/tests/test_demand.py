@@ -86,3 +86,14 @@ def test_keyword_sources_get_keywords_others_get_queries():
     finally:
         KEYWORD_SOURCES.discard("kw")
     assert seen == {"kw": ["invoicing"], "q": ["long phrase one", "long phrase two"]}
+
+
+def test_collect_drops_stale_items_but_keeps_undated():
+    from demand.pain import collect
+    def src(_f, q):
+        return [{"url": "old", "text": "t", "date": "2019-01-01T00:00:00Z"},
+                {"url": "new", "text": "t", "date": "2999-01-01T00:00:00Z"},
+                {"url": "none", "text": "t", "date": None}]
+    out = collect(["q"], f=object(), searx=False, sources={"s": src}, warn=lambda _m: None)
+    assert [i["url"] for i in out] == ["new", "none"]
+    assert len(collect(["q"], f=object(), searx=False, sources={"s": src}, max_age_days=None)) == 3
