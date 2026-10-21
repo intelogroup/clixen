@@ -55,6 +55,7 @@ def _setup_handler_registry() -> None:
     from jobs.handlers import (
         briefing_morning,
         daily_digest,
+        demand_pain_miner,
         email_attachment_archive,
         email_attachment_watch,
         email_daily_summary,
@@ -73,6 +74,7 @@ def _setup_handler_registry() -> None:
     )
     handler_registry.register("briefing.morning", briefing_morning.handle)
     handler_registry.register("daily_digest", daily_digest.handle)
+    handler_registry.register("demand.pain_miner", demand_pain_miner.handle)
     handler_registry.register("email.attachment_archive", email_attachment_archive.handle)
     handler_registry.register("email.attachment_watch", email_attachment_watch.handle)
     handler_registry.register("email.daily_summary", email_daily_summary.handle)

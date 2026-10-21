@@ -695,6 +695,26 @@ _BUILTIN_WORKFLOWS = [
         "dedupe_key":    "golden.queries",
     },
     {
+        "automation_id": "demand.pain_miner",
+        "task_name":     "Weekly SaaS pain miner",
+        "trigger_type":  "schedule",
+        "action_type":   "notification",
+        "schedule":      _cron_schedule("0 6 * * 1"),
+        "config": {
+            "niche": "invoicing and billing software for freelancers and small businesses",
+            "queries": [
+                "freelance invoicing frustrating", "alternative to freshbooks freelancers",
+                "quickbooks too complicated freelancer invoicing", "invoicing tool freelancers wish existed",
+                "hate invoicing software", "invoice software too expensive small business",
+                "chasing late invoices automate", "recurring billing freelancers tool",
+                "stripe invoicing limitations", "wave accounting alternative", "honeybook alternative",
+                "time tracking to invoice workflow", "invoice reminders automatic software",
+                "looking for simple invoicing app",
+            ],
+        },
+        "dedupe_key":    "demand.pain_miner",
+    },
+    {
         "automation_id": "health_check",
         "task_name":     "Workflow health check",
         "trigger_type":  "schedule",
