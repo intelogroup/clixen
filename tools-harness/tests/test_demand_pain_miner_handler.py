@@ -9,6 +9,7 @@ def test_missing_config_fails_without_running(monkeypatch):
 
 def test_success_counts_items(monkeypatch):
     monkeypatch.setattr("demand.pain.run", lambda niche, queries, keywords=None: [{"count": 3}, {"count": 2}])
+    monkeypatch.setattr("demand.scorecard.run", lambda: [])
     assert demand_pain_miner.handle({"config": {"niche": "n", "queries": ["q"]}}) == {"success": True, "items_processed": 5}
 
 
@@ -18,3 +19,11 @@ def test_run_error_is_reported_not_raised(monkeypatch):
     monkeypatch.setattr("demand.pain.run", boom)
     out = demand_pain_miner.handle({"config": {"niche": "n", "queries": ["q"]}})
     assert out == {"success": False, "items_processed": 0, "error": "down"}
+
+
+def test_scorecard_failure_does_not_fail_the_run(monkeypatch):
+    monkeypatch.setattr("demand.pain.run", lambda niche, queries, keywords=None: [{"count": 1}])
+    def boom():
+        raise RuntimeError("algolia down")
+    monkeypatch.setattr("demand.scorecard.run", boom)
+    assert demand_pain_miner.handle({"config": {"niche": "n", "queries": ["q"]}}) == {"success": True, "items_processed": 1}
