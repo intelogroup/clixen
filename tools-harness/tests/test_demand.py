@@ -26,10 +26,11 @@ def test_slope_never_negative():
 
 def test_tag_keeps_only_software_pain_and_rank_counts():
     from demand.pain import rank, tag
-    items = [{"url": f"u{i}", "text": f"t{i}"} for i in range(3)]
-    reply = ('noise [{"i":0,"software_pain":true,"pain":"manual invoice reminders","incumbent":"QuickBooks","payer":"freelancer"},'
+    items = [{"url": f"u{i}", "text": f"I hate manual reminders {i}"} for i in range(4)]
+    reply = ('noise [{"i":0,"software_pain":true,"pain":"manual invoice reminders","evidence":"hate manual reminders","incumbent":"QuickBooks","payer":"freelancer"},'
              '{"i":1,"software_pain":false,"pain":"client wont pay","incumbent":null,"payer":"unknown"},'
-             '{"i":2,"software_pain":true,"pain":"manual invoice reminders","incumbent":null,"payer":"freelancer"}]')
+             '{"i":2,"software_pain":true,"pain":"manual invoice reminders","evidence":"hate manual reminders","incumbent":null,"payer":"freelancer"},'
+             '{"i":3,"software_pain":true,"pain":"made up","evidence":"quote not in post","incumbent":null,"payer":"unknown"}]')
     tagged = tag(items, "invoicing", llm=lambda _p: reply)
     assert [t["url"] for t in tagged] == ["u0", "u2"]
     assert rank(tagged)[0] == {"pain": "manual invoice reminders", "count": 2,
