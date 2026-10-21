@@ -24,6 +24,23 @@ def test_slope_never_negative():
     assert (slope(np.array([10.0, 5.0, 1.0, 0.0, 0.0]), 8) >= 0).all()
 
 
+def test_tag_keeps_only_software_pain_and_rank_counts():
+    from demand.pain import rank, tag
+    items = [{"url": f"u{i}", "text": f"t{i}"} for i in range(3)]
+    reply = ('noise [{"i":0,"software_pain":true,"pain":"manual invoice reminders","incumbent":"QuickBooks","payer":"freelancer"},'
+             '{"i":1,"software_pain":false,"pain":"client wont pay","incumbent":null,"payer":"unknown"},'
+             '{"i":2,"software_pain":true,"pain":"manual invoice reminders","incumbent":null,"payer":"freelancer"}]')
+    tagged = tag(items, "invoicing", llm=lambda _p: reply)
+    assert [t["url"] for t in tagged] == ["u0", "u2"]
+    assert rank(tagged)[0] == {"pain": "manual invoice reminders", "count": 2,
+                               "incumbents": ["QuickBooks"], "urls": ["u0", "u2"]}
+
+
+def test_tag_survives_garbage_llm_reply():
+    from demand.pain import tag
+    assert tag([{"url": "u", "text": "t"}], "invoicing", llm=lambda _p: "sorry, no") == []
+
+
 def test_gate_rejects_model_equal_to_baseline():
     s = {"a": 10 + 2.0 * np.arange(60)}
     assert not gate(s, naive, naive)["passed"]
