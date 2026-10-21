@@ -46,3 +46,14 @@ def test_gate_rejects_model_equal_to_baseline():
     s = {"a": 10 + 2.0 * np.arange(60)}
     assert not gate(s, naive, naive)["passed"]
     assert gate(s, slope, naive)["passed"]
+
+
+def test_cluster_merges_and_tolerates_gaps_and_garbage():
+    from demand.pain import cluster, rank
+    tagged = [{"url": "a", "pain": "slow invoicing", "incumbent": None},
+              {"url": "b", "pain": "invoices take too long", "incumbent": "Xero"},
+              {"url": "c", "pain": "high fees", "incumbent": None}]
+    merged = cluster(tagged, llm=lambda _p: 'x {"0": "slow invoicing", "1": "Slow Invoicing"}')
+    assert [t["cluster"] for t in merged] == ["slow invoicing", "slow invoicing", "high fees"]
+    assert rank(merged)[0]["count"] == 2
+    assert [t["cluster"] for t in cluster(tagged, llm=lambda _p: "nope")] == ["slow invoicing", "invoices take too long", "high fees"]
