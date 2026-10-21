@@ -105,3 +105,21 @@ def test_growth_qoq_yoy_and_short_history():
     g = growth(y)
     assert g["qoq"] == 0.5 and g["yoy"] == 2.0
     assert growth(np.full(20, 5.0))["yoy"] is None
+
+
+def test_windows_cover_months_contiguously_oldest_first():
+    from datetime import date
+    from demand.backfill import windows
+    w = windows(6, today=date(2026, 10, 21))
+    assert len(w) == 6 and all(a < b for a, b in w)
+    assert all(w[i][1] == w[i + 1][0] for i in range(5))
+    assert len(windows(24, step=3, today=date(2026, 10, 21))) == 8
+
+
+def test_week_windows_are_complete_mondays_oldest_first():
+    from datetime import date, datetime, timezone
+    from demand.backfill import week_windows
+    w = week_windows(4, today=date(2026, 10, 21))  # a Wednesday
+    assert len(w) == 4 and all(b - a == 7 * 86400 for a, b in w)
+    assert datetime.fromtimestamp(w[-1][1], timezone.utc).date() == date(2026, 10, 19)  # this Monday: current week excluded
+    assert datetime.fromtimestamp(w[0][0], timezone.utc).weekday() == 0
