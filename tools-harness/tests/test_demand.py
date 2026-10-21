@@ -68,3 +68,21 @@ def test_collect_dedupes_labels_source_and_survives_a_dead_source():
     warns = []
     out = collect(["q"], f=object(), searx=False, warn=warns.append, sources={"a": ok, "b": dead})
     assert out == [{"url": "u1", "text": "a", "source": "a"}] and "b failed" in warns[0]
+
+
+def test_keyword_sources_get_keywords_others_get_queries():
+    from demand.pain import KEYWORD_SOURCES, collect
+    seen = {"kw": [], "q": []}
+    def kw(_f, q):
+        seen["kw"].append(q)
+        return []
+    def qs(_f, q):
+        seen["q"].append(q)
+        return []
+    KEYWORD_SOURCES.add("kw")
+    try:
+        collect(["long phrase one", "long phrase two"], f=object(), searx=False,
+                sources={"kw": kw, "q": qs}, keywords=["invoicing"])
+    finally:
+        KEYWORD_SOURCES.discard("kw")
+    assert seen == {"kw": ["invoicing"], "q": ["long phrase one", "long phrase two"]}

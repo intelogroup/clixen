@@ -8,7 +8,7 @@ def test_missing_config_fails_without_running(monkeypatch):
 
 
 def test_success_counts_items(monkeypatch):
-    monkeypatch.setattr("demand.pain.run", lambda niche, queries: [{"count": 3}, {"count": 2}])
+    monkeypatch.setattr("demand.pain.run", lambda niche, queries, keywords=None: [{"count": 3}, {"count": 2}])
     assert demand_pain_miner.handle({"config": {"niche": "n", "queries": ["q"]}}) == {"success": True, "items_processed": 5}
 
 

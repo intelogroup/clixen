@@ -76,22 +76,26 @@ API_SOURCES = {"hn": _hn, "ask_hn": _ask_hn, "softwarerecs": _softwarerecs}
 OPTIONAL_SOURCES = {"github_issues": _github_issues}
 
 
+#: sources that match every query word; they get the short `keywords` list instead of the full queries
+KEYWORD_SOURCES = {"softwarerecs"}
+
+
 def collect(queries: list[str], f: Fetcher | None = None, searx: bool = True,
-            warn: Callable[[str], None] = print, sources: dict | None = None) -> list[dict]:
+            warn: Callable[[str], None] = print, sources: dict | None = None,
+            keywords: list[str] | None = None) -> list[dict]:
     """Complaint snippets from the public APIs plus, if `searx`, Reddit via local SearXNG."""
     f = f or Fetcher(CACHE)
     sources = API_SOURCES if sources is None else sources
     base = os.environ.get("SEARXNG_URL", "http://localhost:8889")
     seen: dict[str, dict] = {}
-    for q in queries:
-        for name, fn in sources.items():
+    for name, fn in sources.items():
+        for q in (keywords or queries) if name in KEYWORD_SOURCES else queries:
             try:
                 for it in fn(f, q):
                     seen.setdefault(it["url"], {**it, "source": name})
             except Exception as e:  # one dead source must not kill the run
                 warn(f"{name} failed for {q!r}: {type(e).__name__}")
-        if not searx:
-            continue
+    for q in queries if searx else []:
         time.sleep(2)  # SearXNG's upstream engines suspend on bursts
         try:
             d = f.get_json(f"{base}/search", params={"q": f"{q} site:reddit.com", "format": "json"}, force=True)
@@ -181,10 +185,11 @@ def rank(tagged: list[dict]) -> list[dict]:
         key=lambda r: -r["count"])
 
 
-def run(niche: str, queries: list[str], out_dir=CACHE.parent, searx: bool = True) -> list[dict]:
+def run(niche: str, queries: list[str], out_dir=CACHE.parent, searx: bool = True,
+        keywords: list[str] | None = None) -> list[dict]:
     """collect -> tag -> cluster -> rank, writing the ranking to <out_dir>/ranked_<date>.json."""
     from datetime import date
-    ranked = rank(cluster(tag(collect(queries, searx=searx), niche)))
+    ranked = rank(cluster(tag(collect(queries, searx=searx, keywords=keywords), niche)))
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / f"ranked_{date.today()}.json").write_text(json.dumps({"niche": niche, "ranked": ranked}, indent=1))
     return ranked

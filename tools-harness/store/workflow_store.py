@@ -702,6 +702,7 @@ _BUILTIN_WORKFLOWS = [
         "schedule":      _cron_schedule("0 6 * * 1"),
         "config": {
             "niche": "invoicing and billing software for freelancers and small businesses",
+            "keywords": ["invoicing", "invoice software", "billing software", "time tracking invoice"],
             "queries": [
                 "freelance invoicing frustrating", "alternative to freshbooks freelancers",
                 "quickbooks too complicated freelancer invoicing", "invoicing tool freelancers wish existed",
