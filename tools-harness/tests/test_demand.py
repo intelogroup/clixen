@@ -129,3 +129,21 @@ def test_moving_average_is_flat_at_recent_mean():
     from demand.forecast import moving_average
     y = np.concatenate([np.full(20, 100.0), np.full(13, 10.0)])
     assert (moving_average(y, 5) == 10.0).all() and len(moving_average(y, 5)) == 5
+
+
+def test_score_flags_sparse_and_sorts_by_volume():
+    from demand.scorecard import score
+    dense = np.full(104, 20.0)
+    sparse = np.zeros(104)
+    sparse[::10] = 1.0
+    rows = score({"sparse": sparse, "dense": dense})
+    assert [r["term"] for r in rows] == ["dense", "sparse"]
+    assert rows[0]["recent_avg"] == 20.0 and not rows[0]["sparse"] and rows[1]["sparse"]
+
+
+def test_score_share_growth_removes_overall_volume_shift():
+    from demand.scorecard import score
+    ctl = np.concatenate([np.full(52, 1000.0), np.full(52, 2000.0)])   # HN volume doubles
+    term = np.concatenate([np.full(52, 10.0), np.full(52, 20.0)])       # term doubles too -> share flat
+    r = score({"the": ctl, "t": term})[0]
+    assert r["yoy"] == 1.0 and abs(r["share_yoy"]) < 1e-9

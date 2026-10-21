@@ -17,7 +17,9 @@ TERMS = [
     "time tracking", "accounting software", "bookkeeping", "late payment", "freelance", "freelancer",
     "payment processing", "crm", "project management", "helpdesk", "analytics", "no-code", "automation",
     "email marketing", "payroll", "expense", "scheduling", "chatbot", "observability", "feature flags", "low-code",
+    "the",  # control: ~all comments, to separate a term's share of attention from HN's overall volume
 ]
+CONTROL = "the"
 
 
 def build(terms: list[str] = TERMS, weeks: int = 104, out=OUT, log=print) -> dict[str, np.ndarray]:
