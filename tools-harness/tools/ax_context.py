@@ -11,6 +11,7 @@ apps / private windows.
 """
 from __future__ import annotations
 
+import re
 import time
 
 from tools.screen_watch import _screen_locked, is_blocked
@@ -97,11 +98,26 @@ def _target_app(name: str = ""):
     ws = NSWorkspace.sharedWorkspace()
     if name:
         apps = [a for a in ws.runningApplications() if (a.localizedName() or "").lower() == name.lower()]
-        apps.sort(key=lambda a: not a.isActive())  # the active instance first (two Chromes)
+        # Two Chromes (the user's profile and the agent profile): the one with the most tabs is the one the user works in.
+        # `open -a` and isActive() flip between them unpredictably, so neither decides.
+        apps.sort(key=lambda a: (-tab_count(a.processIdentifier()), not a.isActive()) if len(apps) > 1 else 0)
         a = apps[0] if apps else None
     else:
         a = ws.frontmostApplication()
     return (a.processIdentifier(), a.localizedName() or "") if a else (None, "")
+
+
+def activate_app(name: str) -> bool:
+    """Bring the instance `_target_app` picks to the front (NSRunningApplication, not `open -a`, which picks any instance)."""
+    from AppKit import NSWorkspace
+
+    pid, _ = _target_app(name)
+    for a in NSWorkspace.sharedWorkspace().runningApplications():
+        if a.processIdentifier() == pid:
+            a.activateWithOptions_(2)  # NSApplicationActivateIgnoringOtherApps
+            time.sleep(0.6)
+            return True
+    return False
 
 
 def _ax_app(pid: int):
@@ -374,6 +390,16 @@ def find_element(label: str, app: str = "") -> tuple[float, float] | None:
     return pt
 
 
+def side_panel_open(els) -> bool:
+    return any(e["label"].lower() == "close side panel" for e in els)
+
+
+def toolbar_extensions(els) -> list[str]:
+    """Names of the browser extensions pinned to the toolbar ('Monica: All-In-One AI ... Has access to this site' -> 'Monica')."""
+    return [re.sub(r"\s*has access to.*$", "", e["label"].split(":")[0], flags=re.I).strip()
+            for e in els if e["role"] == "PopUpButton" and "has access to" in e["label"].lower()]
+
+
 def get_window_context(query: str = "", app: str = "") -> str:
     if _screen_locked():
         return "Screen is locked."
@@ -383,6 +409,11 @@ def get_window_context(query: str = "", app: str = "") -> str:
     lines = [f"Front app: {name} — {title or '(no focused window)'}"]
     if pops := popovers(app):
         lines.append(f"POPOVER OPEN: {', '.join(pops)} (floats over the page; elements below are its own. Close it with press_keys('esc') or click_text on its button.)")
+    if side_panel_open(els):
+        lines.append("SIDE PANEL OPEN (an extension such as Thunderbit/Monica, or a Chrome panel) beside the page; it can cover or confuse clicks. "
+                     "Close it with click_text('Close Side Panel').")
+    if ext := toolbar_extensions(els):
+        lines.append(f"Browser extensions in the toolbar (click_text its name to open): {', '.join(ext)}")
     lines.append("Windows:")
     lines += [f"- {w}" for w in window_list()[:12]]
     if not els:

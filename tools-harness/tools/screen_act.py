@@ -18,7 +18,7 @@ import tempfile
 import time
 
 from tools import orb_cursor
-from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, find_element, focused_field, front_url, labels_at, popovers, settle_title, tab_count, window_title
+from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, activate_app, find_element, focused_field, front_url, labels_at, popovers, settle_title, tab_count, window_title
 from tools.screen_watch import _ensure_ocr_bin, _front_window, _screen_locked, is_blocked
 
 CLICK_TEXT_SCHEMA = {
@@ -235,10 +235,24 @@ def dismiss_popovers(app: str = "") -> list[str]:
     return seen
 
 
+def close_side_panel(app: str = "") -> bool:
+    """Click the side panel's close button if one is open (it holds extension UIs like Thunderbit and Monica)."""
+    try:
+        pt = find_element("Close Side Panel", app)
+    except Exception:
+        return False
+    if pt is None:
+        return False
+    _click(*pt)
+    time.sleep(0.8)
+    return True
+
+
 def click_text(text: str, app: str = "") -> str:
     if app:
-        subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)
-        time.sleep(0.6)
+        if not activate_app(app):
+            subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)  # not running yet: launch it
+            time.sleep(0.6)
     if (why := _guard()):
         return why
     try:
@@ -258,6 +272,8 @@ def click_text(text: str, app: str = "") -> str:
     if hit is not None:  # the layout can shift under us (panel closing, popover): confirm the point still holds the target
         want = text.strip().lower()
         if not any(want in lab.lower() for lab in labels_at(*hit)):
+            if "side panel" not in want and close_side_panel(app):  # an open side panel makes page coordinates unreliable
+                note += " (closed the side panel first)"
             time.sleep(0.4)
             try:
                 hit = find_element(text)
@@ -365,8 +381,9 @@ def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str
     import Quartz
 
     if app:
-        subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)
-        time.sleep(0.6)
+        if not activate_app(app):
+            subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)  # not running yet: launch it
+            time.sleep(0.6)
     if (why := _guard()):
         return why
     front, _ = _front_window()
@@ -478,8 +495,9 @@ def press_keys(keys: str, app: str = "") -> str:
     if script is None:
         return f"Did not understand keys '{keys}'. Use e.g. 'cmd+d', 'cmd+shift+t', 'esc', 'cmd+plus'."
     if app:
-        subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)
-        time.sleep(0.6)
+        if not activate_app(app):
+            subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)  # not running yet: launch it
+            time.sleep(0.6)
     front = _front_window()[0]
     if not app and any(t in front.lower() for t in _TERMINALS):
         return f"Front app is a terminal ({front}); pass app (e.g. 'Google Chrome') so the keys go to the right window."

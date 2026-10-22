@@ -42,3 +42,13 @@ def test_click_text_refuses_an_ambiguous_label(monkeypatch):
     monkeypatch.setattr(screen_act, "find_element", boom)
     r = screen_act.click_text("Add to cart")
     assert "2 different elements" in r and "Kettle" in r
+
+
+def test_side_panel_and_extensions_are_reported():
+    from tools import ax_context
+
+    els = [{"role": "PopUpButton", "label": "Monica: All-In-One AI Assist Has access to this site"},
+           {"role": "PopUpButton", "label": "Thunderbit: AI Web Scraping Agent Has access to this site"},
+           {"role": "PopUpButton", "label": "Extensions"}, {"role": "Button", "label": "Close Side Panel"}]
+    assert ax_context.toolbar_extensions(els) == ["Monica", "Thunderbit"]
+    assert ax_context.side_panel_open(els) and not ax_context.side_panel_open(els[:3])

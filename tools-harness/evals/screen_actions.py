@@ -78,8 +78,9 @@ def ensure_fixture_server() -> None:
 
     class H(BaseHTTPRequestHandler):
         def do_GET(self):
-            body = ("<!doctype html><meta charset=utf-8><title>%s</title><body style='font:20px sans-serif'>%s" % (self.path.strip("/"), _PAGES.get(self.path, "<p>404</p>"))).encode()
-            self.send_response(200 if self.path in _PAGES else 404)
+            path = self.path.split("?")[0]  # the query only makes each setup a fresh URL (open_url would skip a page already showing)
+            body = ("<!doctype html><meta charset=utf-8><title>%s</title><body style='font:20px sans-serif'>%s" % (path.strip("/"), _PAGES.get(path, "<p>404</p>"))).encode()
+            self.send_response(200 if path in _PAGES else 404)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(body)
@@ -91,10 +92,10 @@ def ensure_fixture_server() -> None:
     threading.Thread(target=_server.serve_forever, daemon=True).start()
 
 
-def fixture(path: str) -> Callable[[], None]:
+def fixture(path: str, fresh: bool = True) -> Callable[[], None]:
     def go() -> None:
         ensure_fixture_server()
-        open_page(f"http://127.0.0.1:{_PORT}{path}", 2.0)()
+        open_page(f"http://127.0.0.1:{_PORT}{path}" + (f"?r={int(time.time())}" if fresh else ""), 2.0)()
 
     return go
 
@@ -155,6 +156,13 @@ def fixture_then(path: str, then: Callable[[], None]) -> Callable[[], None]:
 def bookmark_bubble_open() -> None:
     subprocess.run(["osascript", "-e", 'tell application "System Events" to keystroke "d" using {command down}'], capture_output=True)
     time.sleep(1)
+
+
+def extension_popup_open() -> None:
+    from tools import screen_act
+
+    screen_act.click_text("Thunderbit", CHROME)  # a real extension popup, not Chrome's own bubble
+    time.sleep(1.5)
 
 
 def two_pages_deep() -> None:
@@ -272,7 +280,7 @@ CASES: list[Case] = [
     Case("clock", "what time is it in Tokyo",
          lambda: None, all_of(used("get_current_time"), reply_matches(r"\d")), 15, tags=["info"]),
     Case("open-same-page-again", "open http://127.0.0.1:8765/long in chrome",
-         fixture("/long"), all_of(used("open_url"), reply_matches(r"already|still|same|didn.?t reopen|not reopen|not opened")), 20, tags=["open", "regression"]),
+         fixture("/long", fresh=False), all_of(used("open_url"), reply_matches(r"already|still|same|didn.?t reopen|not reopen|not opened")), 20, tags=["open", "regression"]),
     Case("page-text-offscreen", "what is the calibration code for the zebra project on this page?",
          fixture("/long"), all_of(used("read_page_text"), not_used("scroll_page"), reply_matches(r"7731")), 25, tags=["read-page"]),
     Case("page-text-collapsed", "what battery capacity do the specs on this page list?",
@@ -287,6 +295,8 @@ CASES: list[Case] = [
          fixture("/form"), all_of(used("press_keys"), no_popover, reply_matches(r"bookmark")), 30, tags=["popover"]),
     Case("click-past-popover", "add the Kettle on this page to the cart",
          fixture_then("/shop", bookmark_bubble_open), all_of(title_has("cart|kettle"), no_popover), 35, tags=["popover", "regression"]),
+    Case("click-past-extension-popup", "add the Lamp on this page to the cart",
+         fixture_then("/shop", extension_popup_open), all_of(title_has("cart|lamp"), no_popover), 40, tags=["popover", "extension"]),
     Case("go-back", "go back to the previous page",
          two_pages_deep, title_has("long"), 30, tags=["keys"]),
     Case("close-this-tab", "close this tab",
