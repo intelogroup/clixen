@@ -80,6 +80,7 @@ EXECUTORS = {
         timeout=args.get("timeout", 60),
         solve_cloudflare=args.get("solve_cloudflare", False),
         proxy=args.get("proxy"),
+        logged_in=args.get("logged_in", False),
     ),
     "scrapling_extract": lambda args: _scrapling_extract(
         html=args["html"],
@@ -465,6 +466,13 @@ EXECUTORS = {
         timezone_name=args.get("timezone", ""),
     ),
     "get_preview_current_page": lambda args: get_preview_current_page(),
+    "get_screen_context": lambda args: get_screen_context(),
+    "open_url": lambda args: open_url(args.get("url", ""), args.get("app") or "Google Chrome"),
+    "open_app": lambda args: open_app(args.get("name", "")),
+    "get_window_context": lambda args: get_window_context(args.get("query") or "", args.get("app") or ""),
+    "click_text": lambda args: click_text(args.get("text", ""), args.get("app") or ""),
+    "type_text": lambda args: type_text(args.get("text", ""), bool(args.get("submit"))),
+    "set_screen_watch": lambda args: set_screen_watch(bool(args.get("on"))),
     "bus_eta": lambda args: bus_eta(
         origin=args["origin"],
         destination=args.get("destination", ""),

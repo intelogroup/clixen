@@ -421,9 +421,11 @@ Your subagent tools:
 26. `ask_verse_agent(query)`: Post a message/question to the other AI agents in the Verse (a separate multi-agent sim), using Clixen's own agent identity there, in Clixen's own voice. For peer opinions/crowd-sourced takes or introducing yourself, not authoritative facts — the reply is asynchronous and arrives later, surfaced via check_verse_replies, not in this turn's answer.
 27. `check_verse_replies()`: Read-only — check whether a Verse peer has replied since you last checked. Use this for "did anyone respond"/"check the Verse", never ask_verse_agent again for that (that posts a new message instead of checking).
 28. `observe_verse(limit)`: Read-only — read recent general activity in the Verse room, not just replies to Clixen's own messages. Use for "what's happening in the Verse"/"what have you seen there" — never query_subagent_findings or any other Clixen-internal-job tool for this, those are unrelated to the Verse.
+29. `open_url(url)`, `open_app(name)`, `click_text(text, app)`, `type_text(text, submit)`, `get_window_context()`, `get_screen_context()`: direct control and native view of the user's OWN Mac screen. Any "click X", "press X", "type X", "where is X", "what can I click", "what window/app am I in" about what the user sees (including a site in their own Chrome) goes to these, never to ask_automation_agent (scheduled workflows only) or ask_browser_agent (a separate browser). ask_vision_agent's window list/OCR is only a fallback.
 
 CRITICAL INSTRUCTIONS:
 - User's home directory: {home_dir}. Resolve relative paths (~/Documents, /documents, downloads) to absolute paths under it before passing them to subagents.
+- SCREEN ACTIONS ARE NEVER DONE FROM MEMORY: every "click X" / "type X" / "open X" request needs its own fresh click_text / type_text / open_url / open_app call in THIS turn, even if an identical earlier turn succeeded. The page changes after each click, so never say you clicked, typed or opened something unless that tool call just returned success; if it returned 'Could not find', say so.
 - For SIMPLE file operations choose the direct tool: ask_read_file, ask_write_file, ask_delete_file, ask_rename_file, or ask_run_command.
 - For COMPLEX multi-step or ambiguous operations (finding files, filling forms, searching) use ask_local_agent.
 - For specialized workflows, let the selected skill provide the detailed procedure and tool subset; do not reproduce domain-specific instructions in this coordinator prompt.
@@ -935,6 +937,7 @@ def _run_impl(
             # SKILLS_MATCH_SCHEMA above.
             *[t for t in ALL_TOOLS if t["function"]["name"] == "promote_task_to_skill"],
             *[t for t in ALL_TOOLS if t["function"]["name"] == "get_preview_current_page"],
+            *[t for t in ALL_TOOLS if t["function"]["name"] in ("get_screen_context", "set_screen_watch", "open_url", "open_app", "click_text", "type_text", "get_window_context")],
         ]
 
         # WhatsApp is a messaging surface, not a second full web UI. Keep the
@@ -1023,6 +1026,11 @@ def _run_impl(
         _forced_tool = None
         if not images and intent == "automation":
             _forced_tool = "ask_automation_agent"
+        elif not images and intent == "macos_native":
+            # Screen/clipboard/Notes requests are actions, never answerable from memory: the model
+            # was seen replying "I clicked X" with no tool call (copying earlier turns).
+            from clients.cloud_client import ANY_TOOL
+            _forced_tool = ANY_TOOL
         elif not images and intent == "temporal":
             _forced_tool = "ask_research_agent" if _SPORTS_RE.search(query) else "ask_web_search"
         # Agent message inbox poll — inject pending messages into context

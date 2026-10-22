@@ -333,6 +333,15 @@ from tools.reminder import SET_REMINDER_SCHEMA, set_reminder
 from tools.telegram_send import SEND_TELEGRAM_SCHEMA, send_telegram
 from tools.time_tool import GET_CURRENT_TIME_SCHEMA, get_current_time
 from tools.preview_watch import GET_PREVIEW_PAGE_SCHEMA, get_preview_current_page
+from tools.open_actions import OPEN_APP_SCHEMA, OPEN_URL_SCHEMA, open_app, open_url
+from tools.ax_context import GET_WINDOW_CONTEXT_SCHEMA, get_window_context
+from tools.screen_act import CLICK_TEXT_SCHEMA, TYPE_TEXT_SCHEMA, click_text, type_text
+from tools.screen_watch import (
+    GET_SCREEN_CONTEXT_SCHEMA,
+    SET_SCREEN_WATCH_SCHEMA,
+    get_screen_context,
+    set_screen_watch,
+)
 from tools.bus_eta import BUS_ETA_SCHEMA, bus_eta
 from tools.gmail import (
     LIST_EMAILS_SCHEMA,

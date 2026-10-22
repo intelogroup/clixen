@@ -171,7 +171,7 @@ ASK_BROWSER_AGENT_SCHEMA = {
     "type": "function",
     "function": {
         "name": "ask_browser_agent",
-        "description": "Invoke the browser automation agent to navigate websites, click, type, fill forms, or interact with web applications (e.g. DoorDash, Uber, banking).",
+        "description": "Invoke the browser automation agent to navigate websites, click, type, fill forms, or interact with web applications (e.g. DoorDash, Uber, banking). It drives its own separate browser, NOT the page the user is looking at: when the user says 'click X' / 'type Y' about what is on their own screen, use click_text / type_text instead.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -321,7 +321,7 @@ ASK_AUTOMATION_AGENT_SCHEMA = {
             "delete_automation, and trigger_automation_now are all directly available — "
             "call them yourself instead of delegating here for anything that fits one of "
             "them. Only use this subagent for delete_workflow_permanently (irreversible "
-            "hard-delete) or a request too ambiguous to map to a single direct tool call."
+            "hard-delete) or a request too ambiguous to map to a single direct tool call. Only about scheduled automations/workflows: never for clicking, typing or anything on the user's screen (that is click_text / type_text)."
         ),
         "parameters": {
             "type": "object",

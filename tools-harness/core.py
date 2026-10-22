@@ -64,6 +64,12 @@ def _run_preview_watch():
     run_preview_watch_daemon()
 
 
+def _run_screen_watch():
+    from tools.screen_watch import run_screen_watch_daemon
+
+    run_screen_watch_daemon()
+
+
 def _surya_python() -> str | None:
     """Resolve Surya's optional isolated runtime without coupling it to OCR-LLM."""
     candidates = []
@@ -160,6 +166,7 @@ _TARGETS = {
     "voiceprint_daemon": _run_voiceprint_daemon,
     "pocket_tts_daemon": _run_pocket_tts_daemon,
     "preview_watch": _run_preview_watch,
+    "screen_watch": _run_screen_watch,
 }
 if (
     _surya_python() is not None

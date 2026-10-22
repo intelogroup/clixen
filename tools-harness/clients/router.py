@@ -605,9 +605,9 @@ git - git status/diff/commit/branch operations
 repl - run or execute a snippet of code and show the output
 temporal - needs current/fresh info: weather, news, prices, scores, "what's happening now", place/business lookups
 filesystem - read/list/find/move/rename/delete local files or folders
-automation - create/manage a recurring workflow, watcher, or scheduled job
+automation - create/manage a recurring workflow, watcher, or scheduled job (never a one-off action on the screen)
 system_status - battery, disk space, memory, wifi status of this Mac
-macos_native - clipboard, Safari tabs, Apple Notes
+macos_native - clipboard, Safari tabs, Apple Notes, or acting on the user's own screen right now: click/press/type something visible, open an app or site in their browser, what window/app/element is on screen
 spotlight - find a specific file/photo/screenshot by name or recent time window
 slack - search or read Slack messages
 imessage - search or read iMessage/SMS history
