@@ -89,3 +89,24 @@ def test_orb_cursor_typing_writes_event(tmp_path, monkeypatch):
     orb_cursor.typing("hello", 0.03)
     v = json.loads((tmp_path / "orb_cursor.json").read_text())
     assert v["type"] == {"text": "hello", "per": 0.03} and "seq" in v and "ts" in v
+
+
+def test_scroll_deltas_wheel_signs():
+    from tools.screen_act import scroll_deltas
+
+    assert scroll_deltas("down", 1, 800) == (0, -800, "up")  # wheel: negative = reveal what is below
+    assert scroll_deltas("up", 0.5, 800) == (0, 400, "down")
+    assert scroll_deltas("right", 1, 800)[0] < 0
+    assert scroll_deltas("bottom", 1, 100)[1] == -3000  # pages ignored for the ends
+    assert scroll_deltas("top", 1, 100)[2] == "down"
+
+
+def test_orb_cursor_scrolling_writes_event(tmp_path, monkeypatch):
+    import json
+
+    from tools import orb_cursor
+
+    monkeypatch.setattr(orb_cursor, "_FILE", tmp_path / "c.json")
+    orb_cursor.scrolling("up", 0.7)
+    v = json.loads((tmp_path / "c.json").read_text())
+    assert v["scroll"] == {"dir": "up", "dur": 0.7} and v["seq"]

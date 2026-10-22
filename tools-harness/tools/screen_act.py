@@ -63,6 +63,27 @@ TYPE_TEXT_SCHEMA = {
     },
 }
 
+SCROLL_PAGE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "scroll_page",
+        "description": (
+            "Scrolls the page or window the user is looking at, with the orb's hand visibly swiping. Use for 'scroll down', 'scroll up', "
+            "'go to the bottom/top of the page', 'scroll right'. direction is where you want to GO: 'down' reveals content further "
+            "down. 'top'/'bottom' jump to the ends. pages is how much (1 = about one screenful, default 1; fractions like 0.5 fine). "
+            "After scrolling, read the screen with get_screen_context if you need to know what is now visible."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "direction": {"type": "string", "enum": ["down", "up", "left", "right", "top", "bottom"], "default": "down"},
+                "pages": {"type": "number", "default": 1},
+                "app": {"type": "string", "description": "App to bring to the front first, e.g. 'Google Chrome'; omit for the front window."},
+            },
+        },
+    },
+}
+
 _FLY_S = 0.85  # orb cursor: fly out 0.75s, then it presses
 
 
@@ -208,3 +229,56 @@ def type_text(text: str, submit: bool = False) -> str:
     if r.returncode != 0:
         return f"Typing failed: {r.stderr.strip()}"
     return f"Typed {len(text)} chars" + (" and pressed Return." if submit else ".")
+
+
+_END_PAGES = 30  # 'top'/'bottom': enough screenfuls to hit the end of any page
+_SCROLL_S = 0.7  # one smooth gesture; long jumps are split into several of these
+
+
+def scroll_deltas(direction: str, pages: float, page_px: float) -> tuple[float, float, str]:
+    """(dx, dy, gesture) in wheel pixels. Wheel convention: positive dy moves content DOWN
+    (towards the top of the page), so going down is negative. gesture = the way the content moves."""
+    d = (direction or "down").lower()
+    pages = _END_PAGES if d in ("top", "bottom") else max(0.1, min(float(pages or 1), 20.0))
+    px = page_px * pages
+    return {
+        "down": (0, -px, "up"), "bottom": (0, -px, "up"),
+        "up": (0, px, "down"), "top": (0, px, "down"),
+        "right": (-px, 0, "left"), "left": (px, 0, "right"),
+    }.get(d, (0, -px, "up"))
+
+
+def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str:
+    import Quartz
+
+    if app:
+        subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)
+        time.sleep(0.6)
+    if (why := _guard()):
+        return why
+    front, _ = _front_window()
+    box = _front_bounds(front) if front else None
+    if box is None:
+        return "No front window to scroll."
+    x, y, w, h = box
+    cx, cy = x + w / 2, y + h / 2
+    dx, dy, gesture = scroll_deltas(direction, pages, h * 0.85)
+    orb_cursor.point(cx, cy, click=False)  # the visible cursor flies to the window first
+    time.sleep(_FLY_S)
+    # The wheel goes to whatever is under the pointer, so park the real pointer there too.
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (cx, cy), Quartz.kCGMouseButtonLeft))
+    total = max(abs(dx), abs(dy))
+    gestures = max(1, int(total // (h * 3)) + 1)  # long jumps (top/bottom) repeat the gesture
+    for g in range(gestures):
+        orb_cursor.scrolling(gesture, _SCROLL_S)
+        steps = 28
+        for i in range(steps):
+            # ease-in-out: slow start, fast middle, soft stop, like a trackpad flick
+            k0, k1 = i / steps, (i + 1) / steps
+            e = lambda k: k * k * (3 - 2 * k)
+            sx, sy = round((dx / gestures) * (e(k1) - e(k0))), round((dy / gestures) * (e(k1) - e(k0)))
+            ev = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitPixel, 2, sy, sx)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+            time.sleep(_SCROLL_S / steps)
+        time.sleep(0.1)
+    return f"Scrolled {direction}" + (f" {pages:g} page(s)" if direction not in ("top", "bottom") else "") + "."
