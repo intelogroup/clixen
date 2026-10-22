@@ -41,6 +41,11 @@ from clients.router import classify_message, model_for_intent, reasoning_effort_
 
 MAX_ROUNDS = ollama_client.MAX_ROUNDS
 
+from concurrent.futures import ThreadPoolExecutor as _TPE
+
+_CLASSIFY_POOL = _TPE(max_workers=4, thread_name_prefix="intent")
+
+
 def local_chat(**kwargs):
     """Dispatch to the cloud (OpenRouter/DeepSeek) or local (Ollama) chat client
     based on the model string — a cloud-prefixed model routes to cloud_client,
@@ -990,8 +995,15 @@ def _run_impl(
         # classify_message() themselves). Classify here, once, only when the
         # caller didn't already — the _forced_tool block right below needs a real
         # intent value to trust, not the bare parameter default.
+        # 2026-10-22: callers that pass no intent (orb, web UI) no longer wait on the classifier
+        # or get a forced first tool: the orchestrator model chooses from the full tool list (every
+        # bug that fix replaced was a forced tool or a missing tool, never the model failing to
+        # choose). The classifier still runs, in parallel, for the post-run verify checks below.
+        # Telegram/WhatsApp pass their own intent, so their forced-tool rules are unchanged.
+        _intent_future = None
         if intent is None:
-            intent = classify_message(query, channel=channel).intent
+            _intent_future = _CLASSIFY_POOL.submit(lambda: classify_message(query, channel=channel).intent)
+            intent = ""
 
         # Nothing should hit the bare model on a query that needs live grounding
         # (scores, news, prices, "who won") — the orchestrator otherwise lets the
@@ -1070,6 +1082,12 @@ def _run_impl(
             force_tool_choice=_forced_tool,
             round_timeout=_round_timeout,
         )
+
+        if _intent_future is not None:
+            try:
+                intent = _intent_future.result(timeout=3.0)
+            except Exception:
+                intent = ""
 
         # Verify-on-absence / verify-on-undercoverage: one retry, straight-line (no recursion/loop possible).
         _missing = None if context_only else _absence_unchecked_sources(result, query, run_id, intent)

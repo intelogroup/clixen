@@ -54,10 +54,10 @@ def test_forced_tool_trusts_automation_intent_not_raw_regex():
     would have forced ask_web_search here; intent-driven logic must not.
     """
     with (
-        patch("harness.classify_message", return_value=_cls("automation")),
         patch("harness.local_chat", return_value="done") as mock_local_chat,
     ):
-        harness.run("pause the Daily Tech News Brief automation", orchestrated=True, chat_id=None)
+        # a caller that passes its own intent (Telegram/WhatsApp) keeps the forced-tool rules
+        harness.run("pause the Daily Tech News Brief automation", orchestrated=True, chat_id=None, intent="automation")
 
     forced = mock_local_chat.call_args.kwargs.get("force_tool_choice")
     assert forced == "ask_automation_agent"
@@ -65,13 +65,23 @@ def test_forced_tool_trusts_automation_intent_not_raw_regex():
 
 def test_forced_tool_still_fires_for_real_temporal_intent():
     with (
+        patch("harness.local_chat", return_value="done") as mock_local_chat,
+    ):
+        harness.run("what's the weather in Tokyo right now", orchestrated=True, chat_id=None, intent="temporal")
+
+    forced = mock_local_chat.call_args.kwargs.get("force_tool_choice")
+    assert forced == "ask_web_search"
+
+
+def test_no_forced_tool_when_caller_passes_no_intent():
+    """Orb / web UI: the model picks from the full tool list; the classifier only feeds post-run checks."""
+    with (
         patch("harness.classify_message", return_value=_cls("temporal")),
         patch("harness.local_chat", return_value="done") as mock_local_chat,
     ):
         harness.run("what's the weather in Tokyo right now", orchestrated=True, chat_id=None)
 
-    forced = mock_local_chat.call_args.kwargs.get("force_tool_choice")
-    assert forced == "ask_web_search"
+    assert mock_local_chat.call_args.kwargs.get("force_tool_choice") is None
 
 
 def test_forced_tool_none_for_unrelated_intent():
