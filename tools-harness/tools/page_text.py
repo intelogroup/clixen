@@ -6,7 +6,7 @@ information", FAQ items) are pressed open first. `query` returns only the passag
 from __future__ import annotations
 
 from tools.ax_context import page_text
-from tools.screen_act import _guard
+from tools.screen_act import _guard, close_side_panel
 
 READ_PAGE_TEXT_SCHEMA = {
     "type": "function",
@@ -18,7 +18,7 @@ READ_PAGE_TEXT_SCHEMA = {
             "accordions, which it opens first). One call, no scrolling. Use it for ANY question about what a "
             "page says: specs, price, reviews, an article, a table, 'what does it say about X'. Pass `query` "
             "(a word or phrase, e.g. 'battery' or 'weight') to get only the passages that mention it, which "
-            "is faster and cheaper; omit it to read the page from the top. Prefer it over scrolling and "
+            "is faster and cheaper; omit it to read the page from the top.Prefer it over scrolling and "
             "get_screen_context for reading; use get_screen_context only for what is visibly on screen."
         ),
         "parameters": {
@@ -56,6 +56,7 @@ def passages(lines: list[str], query: str) -> list[str]:
 def read_page_text(query: str = "", app: str = "", expand: bool = True) -> str:
     if (why := _guard()):
         return why
+    close_side_panel(app)  # an extension panel (Thunderbit, Monica) squeezes the page and pollutes what is read
     try:
         title, url, lines, opened = page_text(app, expand)
     except Exception as e:

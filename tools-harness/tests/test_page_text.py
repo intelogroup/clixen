@@ -47,3 +47,13 @@ def test_passages_returns_matches_with_neighbours_in_page_order():
     assert passages(lines, "battery") == ["Display 10 inch", "Battery 4000 mAh", "Weight 295 g", "more", "Battery life 14 days"]
     assert passages(lines, "") == lines
     assert passages(lines, "zzz") == []
+
+
+def test_read_page_text_closes_extension_side_panel_before_reading(monkeypatch):
+    from tools import page_text as pt
+    calls = []
+    monkeypatch.setattr(pt, "_guard", lambda: None)
+    monkeypatch.setattr(pt, "close_side_panel", lambda app="": calls.append("close"))
+    monkeypatch.setattr(pt, "page_text", lambda app, expand: calls.append("read") or ("T", "u", ["line"], 0))
+    assert "line" in pt.read_page_text("", "Google Chrome")
+    assert calls == ["close", "read"]
