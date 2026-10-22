@@ -603,10 +603,10 @@ ocr - read text from an image/screenshot, or take a screenshot
 library_docs - API/syntax question about a specific library or framework
 git - git status/diff/commit/branch operations
 repl - run or execute a snippet of code and show the output
-temporal - needs current/fresh info: weather, news, prices, scores, "what's happening now", place/business lookups
+temporal - needs current/fresh info from the web: weather, news, prices, scores, "what's happening now", place/business lookups (never the current time or date: that is on this Mac's own clock, see system_status)
 filesystem - read/list/find/move/rename/delete local files or folders
 automation - create/manage a recurring workflow, watcher, or scheduled job (never a one-off action on the screen)
-system_status - battery, disk space, memory, wifi status of this Mac
+system_status - battery, disk space, memory, wifi status of this Mac, and the current local time, date or timezone ("what time is it", "what's today's date")
 macos_native - clipboard, Safari tabs, Apple Notes, or acting on the user's own screen right now: click/press/type something visible, open an app or site in their browser, what window/app/element is on screen
 spotlight - find a specific file/photo/screenshot by name or recent time window
 slack - search or read Slack messages

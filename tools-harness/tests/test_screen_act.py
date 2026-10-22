@@ -61,3 +61,12 @@ def test_settle_title_unchanged_returns_before(monkeypatch):
 
     monkeypatch.setattr(ax, "window_title", lambda app="": "A")
     assert ax.settle_title("A", limit=0.3) == "A"
+
+
+def test_taxonomy_keeps_clock_questions_off_web_search():
+    from clients.router import _INTENT_TAXONOMY
+
+    temporal = next(l for l in _INTENT_TAXONOMY.splitlines() if l.startswith("temporal"))
+    status = next(l for l in _INTENT_TAXONOMY.splitlines() if l.startswith("system_status"))
+    assert "never the current time or date" in temporal
+    assert "what time is it" in status
