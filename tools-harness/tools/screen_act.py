@@ -18,7 +18,7 @@ import tempfile
 import time
 
 from tools import orb_cursor
-from tools.ax_context import find_element
+from tools.ax_context import find_element, settle_title, window_title
 from tools.screen_watch import _ensure_ocr_bin, _front_window, _screen_locked, is_blocked
 
 CLICK_TEXT_SCHEMA = {
@@ -171,8 +171,19 @@ def click_text(text: str, app: str = "") -> str:
     hit = hit or find_text(_ocr_boxes(), text) or find_text(_ocr_boxes(accurate=True), text)
     if hit is None:
         return f"Could not find '{text}' on screen."
+    try:
+        before = window_title(app)
+    except Exception:
+        before = ""
     _click(*hit)
-    return f"Clicked '{text}' at ({hit[0]:.0f}, {hit[1]:.0f})."
+    where = f"Clicked '{text}' at ({hit[0]:.0f}, {hit[1]:.0f})"
+    try:
+        after = settle_title(before, app)
+    except Exception:
+        return where + "."
+    if after != before:
+        return f"{where}; window changed to '{after}'."
+    return f"{where}; window title unchanged (in-page action, or the click may have missed)."
 
 
 def type_text(text: str, submit: bool = False) -> str:

@@ -40,3 +40,24 @@ def test_cut_keeps_only_the_visible_part():
     assert _cut((0, 0, 100, 100), (50, 50, 100, 100)) == (50, 50, 50, 50)
     assert _cut((0, 892, 100, 0), (0, 0, 1000, 892)) is None  # height 0 below the fold: needs scrolling
     assert _cut((5, 5, 10, 10), None) == (5, 5, 10, 10)
+
+
+def test_settle_title_waits_for_change_then_quiet(monkeypatch):
+    import tools.ax_context as ax
+
+    seq = iter(["A", "A", "B", "B", "C", "C", "C", "C", "C", "C"])
+    last = ["A"]
+
+    def fake(app=""):
+        last[0] = next(seq, last[0])
+        return last[0]
+
+    monkeypatch.setattr(ax, "window_title", fake)
+    assert ax.settle_title("A", limit=3.0, quiet=0.25) == "C"
+
+
+def test_settle_title_unchanged_returns_before(monkeypatch):
+    import tools.ax_context as ax
+
+    monkeypatch.setattr(ax, "window_title", lambda app="": "A")
+    assert ax.settle_title("A", limit=0.3) == "A"

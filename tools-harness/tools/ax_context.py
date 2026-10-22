@@ -169,6 +169,31 @@ def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[s
     return name, title, out
 
 
+def window_title(app: str = "") -> str:
+    """Focused window title of the target app, cheap (no tree walk)."""
+    pid, _ = _target_app(app)
+    if pid is None:
+        return ""
+    el = _ax_app(pid)
+    win = _get(el, "AXFocusedWindow") or _get(el, "AXMainWindow")
+    return (_get(win, "AXTitle") or "") if win is not None else ""
+
+
+def settle_title(before: str, app: str = "", limit: float = 3.0, quiet: float = 0.4) -> str:
+    """Poll the window title until it differs from `before` and holds still for `quiet`
+    seconds, or `limit` runs out. Returns the last title seen."""
+    end = time.monotonic() + limit
+    cur, since = before, time.monotonic()
+    while time.monotonic() < end:
+        time.sleep(0.1)
+        t = window_title(app)
+        if t != cur:
+            cur, since = t, time.monotonic()
+        elif cur != before and time.monotonic() - since >= quiet:
+            break
+    return cur
+
+
 def window_list() -> list[str]:
     """One line per normal on-screen window, front to back."""
     import Quartz
