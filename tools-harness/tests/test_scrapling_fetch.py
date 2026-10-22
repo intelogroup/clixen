@@ -428,3 +428,18 @@ class TestErrorPaths(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_stealthy_logged_in_attaches_to_local_cdp(monkeypatch):
+    import scrapling
+    from tools import scrapling_fetch as sf
+
+    seen = {}
+
+    class _Page:
+        html_content, status = "<html></html>", 200
+
+    monkeypatch.setattr(scrapling.StealthyFetcher, "fetch", staticmethod(lambda url, **kw: seen.update(kw) or _Page()))
+    monkeypatch.setattr(sf, "_clamp_scrapling_chrome_version", lambda: None)
+    assert '"ok": true' in sf._scrapling_stealthy_fetch("https://example.com", logged_in=True)
+    assert seen["cdp_url"] == "http://localhost:9222" and seen["headless"] is False

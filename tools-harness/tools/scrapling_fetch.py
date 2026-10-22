@@ -151,6 +151,14 @@ STEALTHY_SCHEMA = {
                     "type": "boolean",
                     "description": "Enable Cloudflare Turnstile solver (default false)",
                 },
+                "logged_in": {
+                    "type": "boolean",
+                    "description": (
+                        "Attach over CDP to the user's own logged-in Chrome (the browser "
+                        "agent-browser drives) so the page renders with their session. "
+                        "Use for account pages; default false."
+                    ),
+                },
                 "proxy": {
                     "type": "string",
                     "description": "Optional proxy URL",
@@ -266,13 +274,19 @@ def _scrapling_fetch(
     })
 
 
+_LOGGED_IN_CDP = "http://localhost:9222"  # Chrome started with --remote-debugging-port=9222
+
+
 def _scrapling_stealthy_fetch(
     url: str,
     timeout: int = 60,
     solve_cloudflare: bool = False,
     proxy: str | None = None,
+    logged_in: bool = False,
 ) -> str:
-    """Stealthy fetch with real Chromium. Returns JSON with html + status."""
+    """Stealthy fetch with real Chromium. Returns JSON with html + status.
+    logged_in=True attaches over CDP to the user's own logged-in Chrome (the one agent-browser
+    drives) instead of launching a fresh profile; fixed to localhost so no arbitrary CDP target."""
     if not _HAS_SCRAPLING:
         return _err("Scrapling not installed. pip install 'scrapling[all]'")
 
@@ -287,6 +301,8 @@ def _scrapling_stealthy_fetch(
         kwargs["proxy"] = proxy
     if solve_cloudflare:
         kwargs["solve_cloudflare"] = True
+    if logged_in:
+        kwargs.update(cdp_url=_LOGGED_IN_CDP, headless=False)
 
     t0 = time.time()
     try:
