@@ -39,3 +39,12 @@ def test_app_not_running_vs_missing_item(monkeypatch):
     assert wm.menu("list", "Nope", "File").startswith("Error: app not running")
     _fake(monkeypatch, rc=1, err='Can’t get menu item "X" of menu 1 of menu bar item "File". (-1728)')
     assert not wm.menu("list", "Finder", "File > X").startswith("Error: app not running")
+
+
+def test_zoom_moves_then_resizes_to_usable_area(monkeypatch):
+    calls = _fake(monkeypatch, out="ok")
+    monkeypatch.setattr(wm, "_usable_area", lambda: (0, 38, 1470, 860))
+    assert wm.window("zoom", "Finder", 2) == "Zoomed window 2 to 1470x860."
+    assert calls == [("Finder", "2", "0", "38"), ("Finder", "2", "1470", "860")]
+    monkeypatch.setattr(wm, "_usable_area", lambda: None)
+    assert wm.window("zoom", "Finder").startswith("Error")

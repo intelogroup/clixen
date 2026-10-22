@@ -1,8 +1,8 @@
 """
 Deterministic window and menu-bar control for the orb via System Events (AX), so "move Chrome to
 the left half" or "File > New Tab" never depends on keystroke guessing. Every value reaches
-AppleScript as argv, never as script text. Fence: no close/quit/delete; menu clicks only on items
-that are currently enabled.
+AppleScript as argv, never as script text. Fence: window close is the red button only (never quits the app); menu clicks refuse close/quit/delete
+items and disabled items.
 """
 from __future__ import annotations
 
@@ -16,13 +16,14 @@ WINDOW_SCHEMA = {
         "description": (
             "Arrange the user's own app windows. action='list' (app): title, position, size of each "
             "window. 'focus' (app, index): raise it. 'move' (app, x, y) and 'resize' (app, width, height): "
-            "screen points, origin top-left. 'minimize' (app, index). index is 1-based, default 1. "
-            "Use for 'put X on the left', 'make this window bigger', 'bring Y forward'. Never closes."
+            "screen points, origin top-left. 'minimize' (app, index), 'zoom' (fill the screen's usable area, not full screen), 'fullscreen' (toggle full screen), "
+            "'close' (red button: the app still asks about unsaved work; never quits the app). index is 1-based, "
+            "default 1. Use for 'put X on the left', 'make this bigger', 'bring Y forward', 'close this window'."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["list", "focus", "move", "resize", "minimize"]},
+                "action": {"type": "string", "enum": ["list", "focus", "move", "resize", "minimize", "zoom", "fullscreen", "close"]},
                 "app": {"type": "string", "description": "Process name, e.g. 'Google Chrome', 'Finder'."},
                 "index": {"type": "integer", "description": "1-based window index, default 1."},
                 "x": {"type": "integer"},
@@ -91,6 +92,20 @@ set size of window (item 2 of argv as integer) to {(item 3 of argv as integer), 
 return "Resized to " & (item 3 of argv) & "x" & (item 4 of argv)
 end tell
 end run''',
+    "close": '''on run argv
+tell application "System Events" to tell process (item 1 of argv)
+click (first button of window (item 2 of argv as integer) whose subrole is "AXCloseButton")
+return "Closed window " & (item 2 of argv)
+end tell
+end run''',
+    "fullscreen": '''on run argv
+tell application "System Events" to tell process (item 1 of argv)
+set w to window (item 2 of argv as integer)
+set now to value of attribute "AXFullScreen" of w
+set value of attribute "AXFullScreen" of w to (not now)
+return "Full screen " & (not now)
+end tell
+end run''',
     "minimize": '''on run argv
 tell application "System Events" to tell process (item 1 of argv)
 set value of attribute "AXMinimized" of window (item 2 of argv as integer) to true
@@ -155,8 +170,36 @@ def _run(script: str, *argv: str) -> str:
     return r.stdout.strip()
 
 
+_VISIBLE_FRAME_JXA = (
+    "ObjC.import('AppKit');"
+    "const f=$.NSScreen.mainScreen.visibleFrame, h=$.NSScreen.screens.objectAtIndex(0).frame.size.height;"
+    "[Math.round(f.origin.x), Math.round(h-f.origin.y-f.size.height), Math.round(f.size.width), Math.round(f.size.height)].join(',')"
+)
+
+
+def _usable_area() -> tuple[int, int, int, int] | None:
+    """x, y (top-left origin), width, height of the main screen minus menu bar and Dock."""
+    try:
+        r = subprocess.run(["/usr/bin/osascript", "-l", "JavaScript", "-e", _VISIBLE_FRAME_JXA], capture_output=True, text=True, timeout=10)
+        x, y, w, h = (int(v) for v in r.stdout.strip().split(","))
+        return x, y, w, h
+    except (subprocess.TimeoutExpired, ValueError):
+        return None
+
+
 def window(action: str, app: str, index: int = 1, x: int | None = None, y: int | None = None,
            width: int | None = None, height: int | None = None) -> str:
+    if action == "zoom":
+        if not app.strip() or index < 1:
+            return "window needs an app name and a 1-based index."
+        area = _usable_area()
+        if area is None:
+            return "Error: could not read the screen size."
+        err = _run(_WINDOW["move"], app, str(index), str(area[0]), str(area[1]))
+        if err.startswith("Error"):
+            return err
+        out = _run(_WINDOW["resize"], app, str(index), str(area[2]), str(area[3]))
+        return out if out.startswith("Error") else f"Zoomed window {index} to {area[2]}x{area[3]}."
     script = _WINDOW.get(action)
     if script is None:
         return f"Unknown window action: {action}."
