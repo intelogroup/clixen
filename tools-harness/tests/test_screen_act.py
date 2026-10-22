@@ -69,4 +69,4 @@ def test_taxonomy_keeps_clock_questions_off_web_search():
     temporal = next(l for l in _INTENT_TAXONOMY.splitlines() if l.startswith("temporal"))
     status = next(l for l in _INTENT_TAXONOMY.splitlines() if l.startswith("system_status"))
     assert "never the current time or date" in temporal
-    assert "what time is it" in status
+    assert "what time is it" in status and "time in Tokyo" in status
