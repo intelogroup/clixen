@@ -305,7 +305,7 @@ def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str
     # The wheel goes to whatever is under the pointer, so park the real pointer there too.
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (cx, cy), Quartz.kCGMouseButtonLeft))
     total = max(abs(dx), abs(dy))
-    gestures = max(1, int(total // (h * 3)) + 1)  # long jumps (top/bottom) repeat the gesture
+    gestures = max(1, int(total // (h * 8)) + 1)  # long jumps (top/bottom) repeat the gesture
     ends = direction in ("top", "bottom")
     last = _window_thumb(box) if ends else None
     moved = not ends

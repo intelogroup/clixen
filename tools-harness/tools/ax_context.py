@@ -70,7 +70,7 @@ def _size(v) -> tuple[float, float] | None:
 
 
 def _label(el) -> str:
-    for attr in ("AXTitle", "AXDescription", "AXValue", "AXHelp"):
+    for attr in ("AXTitle", "AXDescription", "AXPlaceholderValue", "AXValue", "AXHelp"):  # placeholder: YouTube's search box has no other name
         v = _get(el, attr)
         if isinstance(v, str) and v.strip():
             return " ".join(v.split())
@@ -238,10 +238,13 @@ def _cut(a, b):
     return (x, y, w, h) if w > 0 and h > 0 else None
 
 
-def _visible_centre(el, win_rect) -> tuple[float, float] | None:
+def _visible_centre(el, win_rect, strict: bool = False) -> tuple[float, float] | None:
     """Centre of the part of `el` inside its window and every scroll area above it, so a
-    wrapped or half-hidden link is clicked where it can actually be hit."""
-    part = _cut(_frame(el), win_rect)
+    wrapped or half-hidden link is clicked where it can actually be hit. `strict` rejects an
+    element that is mostly cut off: a 1px sliver under a sticky header is not clickable (a
+    click there lands on whatever covers it)."""
+    full = _frame(el)
+    part = _cut(full, win_rect)
     parent = _get(el, "AXParent")
     for _ in range(40):
         if part is None or parent is None:
@@ -249,6 +252,8 @@ def _visible_centre(el, win_rect) -> tuple[float, float] | None:
         if _get(parent, "AXRole") == "AXScrollArea":
             part = _cut(part, _frame(parent))
         parent = _get(parent, "AXParent")
+    if part and strict and full and full[3] > 0 and (part[3] < 0.6 * full[3] or part[3] < 6):
+        return None
     return (part[0] + part[2] / 2, part[1] + part[3] / 2) if part else None
 
 
@@ -287,17 +292,17 @@ def find_element(label: str, app: str = "") -> tuple[float, float] | None:
     best = None
     for e in els:
         lab = e["label"].lower()
-        score = (0 if lab == w else 1, 0 if _visible_centre(e["el"], rect) else 1, len(lab))
+        score = (0 if lab == w else 1, 0 if _visible_centre(e["el"], rect, strict=True) else 1, len(lab))
         if best is None or score < best[0]:
             best = (score, e["el"])
     if best is None:
         return None
     el = best[1]
-    pt = _visible_centre(el, rect)
-    if pt is None:  # scrolled out of view: ask the app to bring it in, then measure again
+    pt = _visible_centre(el, rect, strict=True)
+    if pt is None:  # off-screen or mostly cut off: ask the app to bring it in, then measure again
         _scroll_into_view(el)
         time.sleep(0.4)
-        pt = _visible_centre(el, rect)
+        pt = _visible_centre(el, rect, strict=True) or _visible_centre(el, rect)
     return pt
 
 
