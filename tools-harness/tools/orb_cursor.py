@@ -32,6 +32,15 @@ def typing(text: str, per_char_s: float) -> None:
     tmp.replace(_FILE)
 
 
+def scrolling(direction: str, duration_s: float) -> None:
+    """Tell the orb to show the two-finger scroll gesture at the parked cursor, swiping toward
+    `direction` (up/down/left/right: where the content moves to reveal) for `duration_s`."""
+    _FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "scroll": {"dir": direction, "dur": duration_s}}))
+    tmp.replace(_FILE)
+
+
 def front_window_center(app_name: str, wait_s: float = 0.6) -> tuple[float, float] | None:
     """Centre of `app_name`'s front-most on-screen window, once it has had a
     moment to appear. None if it has no window (the orb then just doesn't fly)."""

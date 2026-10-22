@@ -634,6 +634,11 @@ fn spawn_cursor_watcher(app: AppHandle) {
                 let _ = app.emit("cursor-type", t.clone());
                 continue;
             }
+            // Scrolling: the overlay shows a two-finger swipe at the parked cursor.
+            if let Some(t) = v.get("scroll") {
+                let _ = app.emit("cursor-scroll", t.clone());
+                continue;
+            }
             if let (Some(x), Some(y)) = (
                 v.get("x").and_then(|x| x.as_f64()),
                 v.get("y").and_then(|y| y.as_f64()),

@@ -33,6 +33,7 @@ let park = null; // [x, y] where the cursor last clicked
 let parkTimer = null;
 let trail = [];
 let typing = null; // { text, per, t0 } while the typing hand is shown
+let scrolling = null; // { dir, dur, t0 } while the scroll gesture is shown
 
 function drawPark(alpha = 1) {
   ctx.clearRect(0, 0, W, H);
@@ -137,10 +138,91 @@ function typeTick() {
   requestAnimationFrame(typeTick);
 }
 
+// Scrolling: a two-finger hand swipes in the direction the content moves while chevrons stream
+// the same way, for the length of the real wheel gesture.
+const T_SCROLL_TAIL = 0.35;
+const SCROLL_VEC = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+let pendingScroll = null; // a scroll that arrived while the cursor was still flying in
+listen("cursor-scroll", (ev) => {
+  if (fly) { pendingScroll = ev.payload; return; }
+  startScroll(ev.payload);
+});
+
+function startScroll({ dir, dur }) {
+  if (!park) park = [W / 2, H / 2];
+  clearTimeout(parkTimer);
+  scrolling = { dir: SCROLL_VEC[dir] ? dir : "up", dur: Math.max(0.2, Number(dur) || 0.7), t0: performance.now() / 1000 };
+  requestAnimationFrame(scrollTick);
+}
+
+function scrollHand(x, y, k, dir, alpha) {
+  // k 0..1 = progress through the gesture. The hand rides an eased sweep along `dir`.
+  const [vx, vy] = SCROLL_VEC[dir];
+  const sweep = (k * k * (3 - 2 * k) - 0.5) * 70;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x + 22 + vx * sweep, y + 30 + vy * sweep);
+  if (vx) ctx.rotate(vx > 0 ? Math.PI / 2 : -Math.PI / 2); // draw the hand pointing along the swipe
+  else if (vy > 0) ctx.rotate(Math.PI);
+  ctx.shadowColor = `rgba(${AMBER},0.7)`;
+  ctx.shadowBlur = 10;
+  roundRect(-16, -2, 32, 26, 9); // palm
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = "rgba(20,20,30,0.85)";
+  ctx.stroke();
+  for (const fx of [-11, 1]) { // index + middle finger extended
+    roundRect(fx, -26, 10, 30, 5);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+  // chevrons streaming the way the page moves
+  ctx.save();
+  ctx.translate(x + 22, y + 30);
+  ctx.strokeStyle = `rgba(${AMBER},1)`;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 3; i++) {
+    const ph = (k * 2.4 + i / 3) % 1;
+    ctx.globalAlpha = alpha * Math.sin(Math.PI * ph);
+    const d = (ph - 0.5) * 80 + 56; // distance along the swipe, beside the hand
+    ctx.save();
+    ctx.translate(vx ? vx * d : 52, vy ? vy * d : 0);
+    ctx.rotate(Math.atan2(vy, vx));
+    ctx.beginPath();
+    ctx.moveTo(-5, -7);
+    ctx.lineTo(3, 0);
+    ctx.lineTo(-5, 7);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function scrollTick() {
+  if (!scrolling) return;
+  const t = performance.now() / 1000 - scrolling.t0;
+  if (t >= scrolling.dur + T_SCROLL_TAIL) {
+    scrolling = null;
+    drawPark();
+    parkTimer = setTimeout(fadePark, PARK_S * 1000);
+    return;
+  }
+  const out = clamp01((t - scrolling.dur) / T_SCROLL_TAIL);
+  ctx.clearRect(0, 0, W, H);
+  arrow(park[0], park[1], 1.2, 1);
+  scrollHand(park[0], park[1], clamp01(t / scrolling.dur), scrolling.dir, 1 - out);
+  requestAnimationFrame(scrollTick);
+}
+
 function fadePark() {
   const t0 = performance.now() / 1000;
   const step = () => {
-    if (fly || typing || !park) return; // a new action took over
+    if (fly || typing || scrolling || !park) return; // a new action took over
     const k = (performance.now() / 1000 - t0) / FADE_S;
     if (k >= 1) { park = null; drawPark(); return; }
     drawPark(1 - k);
@@ -194,12 +276,13 @@ function tick() {
   const t = performance.now() / 1000 - fly.t0;
   ctx.clearRect(0, 0, W, H);
 
-  if (t >= T_TOTAL) {
+  if (t >= (fly.click ? T_TOTAL : T_FLY + 0.05)) { // a no-click glide (before a scroll) lands and frees the cursor at once
     park = fly.to;
     fly = null;
     drawPark();
     parkTimer = setTimeout(fadePark, PARK_S * 1000);
     emit("cursor-done").catch(() => {});
+    if (pendingScroll) { const p = pendingScroll; pendingScroll = null; startScroll(p); }
     return;
   }
 
