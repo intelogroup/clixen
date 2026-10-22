@@ -603,6 +603,11 @@ fn spawn_cursor_watcher(app: AppHandle) {
             if now - v.get("ts").and_then(|t| t.as_f64()).unwrap_or(0.0) > 3.0 {
                 continue;
             }
+            // Typing: the overlay shows a hand + text bubble at the parked cursor.
+            if let Some(t) = v.get("type") {
+                let _ = app.emit("cursor-type", t.clone());
+                continue;
+            }
             if let (Some(x), Some(y)) = (
                 v.get("x").and_then(|x| x.as_f64()),
                 v.get("y").and_then(|y| y.as_f64()),

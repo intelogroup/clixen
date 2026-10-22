@@ -23,6 +23,15 @@ def point(x: float, y: float, click: bool = True) -> None:
     tmp.replace(_FILE)
 
 
+def typing(text: str, per_char_s: float) -> None:
+    """Tell the orb to show the typing hand + text bubble at the parked cursor: it reveals one
+    character per `per_char_s`, the same pace the keystrokes are sent at."""
+    _FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "type": {"text": text[:400], "per": per_char_s}}))
+    tmp.replace(_FILE)
+
+
 def front_window_center(app_name: str, wait_s: float = 0.6) -> tuple[float, float] | None:
     """Centre of `app_name`'s front-most on-screen window, once it has had a
     moment to appear. None if it has no window (the orb then just doesn't fly)."""

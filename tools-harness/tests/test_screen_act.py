@@ -70,3 +70,22 @@ def test_taxonomy_keeps_clock_questions_off_web_search():
     status = next(l for l in _INTENT_TAXONOMY.splitlines() if l.startswith("system_status"))
     assert "never the current time or date" in temporal
     assert "what time is it" in status and "time in Tokyo" in status
+
+
+def test_type_script_types_each_character_and_escapes():
+    from tools.screen_act import _type_script
+
+    s = _type_script('say "hi"\\', 0.04, submit=True)
+    assert 'repeat with c in characters of "say \\"hi\\"\\\\"' in s
+    assert "keystroke c" in s and "delay 0.040" in s and s.rstrip().endswith("end tell")
+    assert "key code 36" in s and "key code 36" not in _type_script("x", 0.04, submit=False)
+
+
+def test_orb_cursor_typing_writes_event(tmp_path, monkeypatch):
+    import json
+    from tools import orb_cursor
+
+    monkeypatch.setattr(orb_cursor, "_FILE", tmp_path / "orb_cursor.json")
+    orb_cursor.typing("hello", 0.03)
+    v = json.loads((tmp_path / "orb_cursor.json").read_text())
+    assert v["type"] == {"text": "hello", "per": 0.03} and "seq" in v and "ts" in v

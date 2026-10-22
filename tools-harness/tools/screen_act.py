@@ -186,15 +186,25 @@ def click_text(text: str, app: str = "") -> str:
     return f"{where}; window title unchanged (in-page action, or the click may have missed)."
 
 
+def _type_script(text: str, per: float, submit: bool) -> str:
+    esc = text.replace("\\", "\\\\").replace('"', '\\"')
+    script = (
+        f'tell application "System Events"\n'
+        f'repeat with c in characters of "{esc}"\n'
+        f"keystroke c\ndelay {per:.3f}\nend repeat\n"
+    )
+    if submit:
+        script += "key code 36\n"
+    return script + "end tell"
+
+
 def type_text(text: str, submit: bool = False) -> str:
     if (why := _guard(typing=True)):
         return why
-    # AppleScript keystroke handles unicode and layout; System Events is already needed elsewhere.
-    esc = text.replace("\\", "\\\\").replace('"', '\\"')
-    script = f'tell application "System Events" to keystroke "{esc}"'
-    if submit:
-        script += '\ntell application "System Events" to key code 36'
-    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=15)
+    # One keystroke per character, at the pace the orb's typing hand animates (about 2.5s for any length).
+    per = min(0.05, max(0.004, 2.5 / max(len(text), 1)))
+    orb_cursor.typing(text, per)
+    r = subprocess.run(["osascript", "-e", _type_script(text, per, submit)], capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
         return f"Typing failed: {r.stderr.strip()}"
     return f"Typed {len(text)} chars" + (" and pressed Return." if submit else ".")

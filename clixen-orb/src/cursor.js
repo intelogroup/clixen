@@ -32,16 +32,115 @@ let fly = null; // { from, to, click, t0 }
 let park = null; // [x, y] where the cursor last clicked
 let parkTimer = null;
 let trail = [];
+let typing = null; // { text, per, t0 } while the typing hand is shown
 
 function drawPark(alpha = 1) {
   ctx.clearRect(0, 0, W, H);
   if (park) arrow(park[0], park[1], 1.2, alpha);
 }
 
+// Typing: a small hand taps four keys under the parked cursor while a bubble fills in the
+// text, one character per `per` seconds, the same pace the keystrokes are sent at.
+const T_TYPE_TAIL = 0.5;
+listen("cursor-type", (ev) => {
+  if (fly) return;
+  const { text, per } = ev.payload;
+  if (!park) park = [W / 2, H / 2]; // no earlier click: type from the middle of the screen
+  clearTimeout(parkTimer);
+  typing = { text: String(text || ""), per: Math.max(0.004, Number(per) || 0.04), t0: performance.now() / 1000 };
+  requestAnimationFrame(typeTick);
+});
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function hand(x, y, t, alpha) {
+  // x,y = cursor tip. Hand sits just below-right; fingers alternate down on a row of keys.
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x + 16, y + 26);
+  ctx.shadowColor = `rgba(${AMBER},0.7)`;
+  ctx.shadowBlur = 10;
+  roundRect(-6, -24, 52, 20, 7); // back of the hand
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = "rgba(20,20,30,0.85)";
+  ctx.stroke();
+  for (let i = 0; i < 4; i++) {
+    const tap = Math.max(0, Math.sin(t * 22 + i * 1.9)); // each finger taps on its own phase
+    const fx = i * 12.5 - 1, fy = -6 + tap * 7;
+    roundRect(fx, fy, 10, 18, 5); // finger
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.stroke();
+    roundRect(fx - 0.5, 18 + 5, 11, 5, 2); // key under it
+    ctx.fillStyle = tap > 0.6 ? `rgba(${AMBER},0.95)` : "rgba(40,40,60,0.9)";
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function bubble(x, y, text, caret, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = '600 13px ui-monospace, "SF Mono", Menlo, monospace';
+  const shown = text.length > 34 ? "…" + text.slice(-33) : text;
+  const w = Math.max(54, ctx.measureText(shown).width + 28);
+  const bx = x + 26, by = y - 44;
+  ctx.shadowColor = `rgba(${AMBER},0.55)`;
+  ctx.shadowBlur = 12;
+  roundRect(bx, by, w, 28, 14);
+  ctx.fillStyle = "rgba(20,20,30,0.9)";
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = `rgba(${AMBER},0.85)`;
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(shown, bx + 14, by + 14.5);
+  if (caret) {
+    const cx = bx + 14 + ctx.measureText(shown).width + 1.5;
+    ctx.fillStyle = `rgba(${AMBER},1)`;
+    ctx.fillRect(cx, by + 7, 2, 14);
+  }
+  ctx.restore();
+}
+
+function typeTick() {
+  if (!typing) return;
+  const t = performance.now() / 1000 - typing.t0;
+  const full = typing.text.length * typing.per;
+  if (t >= full + T_TYPE_TAIL) {
+    typing = null;
+    drawPark();
+    parkTimer = setTimeout(fadePark, PARK_S * 1000);
+    return;
+  }
+  const n = Math.min(typing.text.length, Math.floor(t / typing.per));
+  const typingNow = t < full;
+  const out = clamp01((t - full) / T_TYPE_TAIL); // bubble and hand fade out after the last key
+  ctx.clearRect(0, 0, W, H);
+  arrow(park[0], park[1], 1.2, 1);
+  const a = 1 - out;
+  hand(park[0], park[1], typingNow ? t : full, a);
+  bubble(park[0], park[1], typing.text.slice(0, n), typingNow ? true : Math.floor(t * 3) % 2 === 0, a);
+  requestAnimationFrame(typeTick);
+}
+
 function fadePark() {
   const t0 = performance.now() / 1000;
   const step = () => {
-    if (fly || !park) return; // a new action took over
+    if (fly || typing || !park) return; // a new action took over
     const k = (performance.now() / 1000 - t0) / FADE_S;
     if (k >= 1) { park = null; drawPark(); return; }
     drawPark(1 - k);
