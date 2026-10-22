@@ -22,6 +22,7 @@ SEE = {
 def _setup(monkeypatch, calls):
     ua._last_seen.clear()
     ua._last_center.clear()
+    ua._last_head.clear()
     monkeypatch.setattr(ua, "_peekaboo", lambda: "/x/peekaboo")
     monkeypatch.setattr(ua, "_centers", lambda sid: {"e1": (10, 20), "e2": (30, 40), "e3": (421, 302)})
 
@@ -97,3 +98,12 @@ def test_see_query_filters_before_the_cap(monkeypatch):
     _setup(monkeypatch, [])
     assert ua.ui_see("Finder", "down").splitlines()[1:] == ["e3 other Downloads"]
     assert "none labelled 'zzz'" in ua.ui_see("Finder", "zzz")
+
+
+def test_filtered_sees_of_the_same_window_accumulate_ids(monkeypatch):
+    _setup(monkeypatch, [])
+    ua.ui_see("Finder", "back")
+    ua.ui_see("Finder", "downloads")  # a second filtered look must not drop 'back'
+    assert set(ua._last_seen["Finder"]) == {"e1", "e3"}
+    ua.ui_see("Finder")  # an unfiltered look replaces
+    assert set(ua._last_seen["Finder"]) == {"e1", "e2", "e3"}

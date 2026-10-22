@@ -25,7 +25,7 @@ UI_SEE_SCHEMA = {
             "type": "object",
             "properties": {
                 "app": {"type": "string", "description": "App name, e.g. 'Finder'. Omit for the frontmost app."},
-                "query": {"type": "string", "description": "Only controls whose label contains this text. Use it in a crowded window (big folder, long list): the list is capped at 80 controls."},
+                "query": {"type": "string", "description": "Only controls whose label contains this text. Use it in a crowded window (big folder, long list): the list is capped at 80 controls. Several filtered looks at the same window keep all their ids, so look up the source and the target separately, then ui_drag."},
             },
         },
     },
@@ -71,6 +71,8 @@ _REFUSED = ("close", "quit", "delete", "trash", "remove", "erase", "log out", "s
 _last_seen: dict[str, dict[str, str]] = {}
 # same key -> {element id: (x, y)} screen-point center from the snapshot frame
 _last_center: dict[str, dict[str, tuple[int, int]]] = {}
+# same key -> window head line of the latest ui_see, so a filtered look at the same window adds to the ids instead of replacing them
+_last_head: dict[str, str] = {}
 
 
 def _peekaboo() -> str | None:
@@ -145,7 +147,9 @@ def ui_see(app: str = "", query: str = "") -> str:
     if isinstance(got, str):
         return got
     head, seen, centers, lines = got
-    _last_seen[app], _last_center[app] = seen, centers
+    if query.strip() and _last_head.get(app) == head.rsplit(":", 1)[0]:  # filtered look at the same window: keep the ids from the earlier look
+        seen, centers = {**_last_seen.get(app, {}), **seen}, {**_last_center.get(app, {}), **centers}
+    _last_seen[app], _last_center[app], _last_head[app] = seen, centers, head.rsplit(":", 1)[0]
     return head + "\n" + "\n".join(lines) if lines else head + (f" (none labelled {query!r})" if query else " (none labelled)")
 
 
