@@ -43,14 +43,18 @@ function drawPark(alpha = 1) {
 // Typing: a small hand taps four keys under the parked cursor while a bubble fills in the
 // text, one character per `per` seconds, the same pace the keystrokes are sent at.
 const T_TYPE_TAIL = 0.5;
+let pending = null; // a typing/scroll gesture that arrived while the cursor was still flying in
 listen("cursor-type", (ev) => {
-  if (fly) return;
-  const { text, per } = ev.payload;
+  if (fly) { pending = () => startType(ev.payload); return; }
+  startType(ev.payload);
+});
+
+function startType({ text, per }) {
   if (!park) park = [W / 2, H / 2]; // no earlier click: type from the middle of the screen
   clearTimeout(parkTimer);
   typing = { text: String(text || ""), per: Math.max(0.004, Number(per) || 0.04), t0: performance.now() / 1000 };
   requestAnimationFrame(typeTick);
-});
+}
 
 function roundRect(x, y, w, h, r) {
   ctx.beginPath();
@@ -142,9 +146,8 @@ function typeTick() {
 // the same way, for the length of the real wheel gesture.
 const T_SCROLL_TAIL = 0.35;
 const SCROLL_VEC = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-let pendingScroll = null; // a scroll that arrived while the cursor was still flying in
 listen("cursor-scroll", (ev) => {
-  if (fly) { pendingScroll = ev.payload; return; }
+  if (fly) { pending = () => startScroll(ev.payload); return; }
   startScroll(ev.payload);
 });
 
@@ -282,7 +285,7 @@ function tick() {
     drawPark();
     parkTimer = setTimeout(fadePark, PARK_S * 1000);
     emit("cursor-done").catch(() => {});
-    if (pendingScroll) { const p = pendingScroll; pendingScroll = null; startScroll(p); }
+    if (pending) { const go = pending; pending = null; go(); }
     return;
   }
 
