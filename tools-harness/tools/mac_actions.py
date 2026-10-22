@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 
+_MENUBAR_BUTTONS = {"Siri", "Spotlight", "Control Center", "Notification Center", "Clock", "Wi-Fi", "Battery"}
 _NEVER_QUIT = {"finder", "clixen orb", "dock", "systemuiserver", "loginwindow", "windowserver"}
 
 APP_SCHEMA = {
@@ -211,7 +212,8 @@ def dialog(action: str, button: str = "", text: str = "", field: str = "") -> st
         return _fail(r)
     if action == "list":
         d = (_json(r) or {}).get("data") or {}
-        if not d.get("title") and not d.get("textElements"):
+        buttons = {b for b in d.get("buttons", []) if b}
+        if not (d.get("title") or d.get("textElements") or d.get("textFields") or buttons - _MENUBAR_BUTTONS):
             return "No dialog on screen."  # Peekaboo falls back to the menu-bar window when none is up
         return json.dumps({k: [x for x in v if x] if isinstance(v, list) else v for k, v in d.items()})[:1500]
     return {"click": f"Clicked '{button}'.", "input": "Typed into the dialog.", "dismiss": "Dismissed the dialog."}[action]
@@ -238,7 +240,11 @@ def system(action: str, level: int = -1, title: str = "", message: str = "", on:
         if action == "set_volume":
             if not 0 <= level <= 100:
                 return "set_volume needs level 0-100."
-            return _osa(f"set volume output volume {level}") or f"Volume set to {level}."
+            was_muted = _osa("output muted of (get volume settings)") == "true"
+            err = _osa(f"set volume output volume {level}")  # macOS unmutes as a side effect
+            if was_muted and not err:
+                err = _osa("set volume output muted true")
+            return err or f"Volume set to {level}."
         if action in ("mute", "unmute"):
             return _osa(f"set volume output muted {'true' if action == 'mute' else 'false'}") or f"{action.capitalize()}d."
         if action == "notify":

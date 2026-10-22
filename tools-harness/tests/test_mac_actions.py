@@ -33,6 +33,8 @@ def test_dialog_guards_and_empty(monkeypatch):
     assert ma.dialog("click").startswith("dialog click needs")
     assert ma.dialog("list") == "No dialog on screen."
     assert len(calls) == 1
+    _pb(monkeypatch, json.dumps({"data": {"title": "", "buttons": ["OK", "Cancel"], "textElements": [], "textFields": [{"value": ""}]}}))
+    assert ma.dialog("list").startswith("{")  # untitled alert with a text field is a real dialog
 
 
 def test_dock_space_list_and_validation(monkeypatch):
@@ -49,3 +51,10 @@ def test_system_validation(monkeypatch):
     assert ma.system("set_volume", level=150).startswith("set_volume needs")
     assert ma.system("notify").startswith("notify needs")
     assert ma.system("bogus").startswith("Unknown system action")
+
+
+def test_set_volume_keeps_mute(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ma, "_osa", lambda script: calls.append(script) or ("true" if "muted of" in script else ""))
+    assert ma.system("set_volume", level=10) == "Volume set to 10."
+    assert calls[-1] == "set volume output muted true"
