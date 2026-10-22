@@ -15,7 +15,8 @@ GET_CURRENT_TIME_SCHEMA = {
             "MUST call this BEFORE creating any calendar event, task, or reminder with relative "
             "dates (tomorrow, next week, in 2 days). Use the returned local timezone offset "
             "when computing ISO 8601 timestamps for event creation. "
-            "Also the ONLY way to answer 'what time is it' / 'what's today's date' — never use web "
+            "Also the ONLY way to answer 'what time is it' / 'what's today's date', here or in any other "
+            "city or country ('time in Tokyo': pass timezone='Asia/Tokyo') — never use web "
             "search for that. "
             "NEVER guess or hardcode dates — always call this tool first."
         ),

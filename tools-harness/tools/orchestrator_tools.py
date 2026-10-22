@@ -153,7 +153,7 @@ ASK_WEB_SEARCH_SCHEMA = {
     "type": "function",
     "function": {
         "name": "ask_web_search",
-        "description": "Invoke the search subagent to perform an internet search for recent info, schedules, scores, prices, weather/forecasts, etc. Use this for weather questions, including detailed ones (specific address/zip/date) — do NOT use ask_research_agent for weather, its multi-round scrape chain takes 30-200+ seconds vs a few seconds here for the same answer.",
+        "description": "Invoke the search subagent to perform an internet search for recent info, schedules, scores, prices, weather/forecasts, etc. Never for the current time or date, here or in any city: use get_current_time. Use this for weather questions, including detailed ones (specific address/zip/date) — do NOT use ask_research_agent for weather, its multi-round scrape chain takes 30-200+ seconds vs a few seconds here for the same answer.",
         "parameters": {
             "type": "object",
             "properties": {
