@@ -245,6 +245,9 @@ def _is_deepseek_thinking(real_model: str) -> bool:
 _LEAK_HOLDBACK = 80
 
 
+# force_tool_choice sentinel: tool_choice="required" instead of one named tool.
+ANY_TOOL = "__any__"
+
 class _StreamLeakFilter:
     """Buffers streamed deltas so a leak marker split across multiple chunks
     (e.g. "<｜｜DSML" in one delta, "｜｜tool_calls>" in the next) is caught
@@ -435,7 +438,7 @@ _PROVIDERS: dict[str, tuple[str, str]] = {
 # now 404s through this OpenRouter key — the account ZDR setting excludes
 # all google-ai-studio endpoints, not just 2.5-flash-lite — and Haiku 402s
 # (OpenRouter out of credits), so OpenAI direct is the only live paid tier.
-DEFAULT_CLOUD_MODEL = "openai/gpt-4.1-mini"
+DEFAULT_CLOUD_MODEL = "openai/gpt-6-luna"  # 2026-10-22: was gpt-4.1-mini
 CLOUD_FALLBACK_MODEL = "openai/gpt-4o-mini"
 # Last-resort tier: reached only when both above fail (dead provider / 402 /
 # 5xx / network). OpenAI direct via OPENAI_API_KEY (see openai/ tier above).
@@ -943,18 +946,22 @@ def _one_round(state: "_LoopState", round_idx: int) -> "_RoundOutcome":
     # to answer straight from parametric knowledge, but stays free-choice after
     # that so it can still synthesize/reply normally once grounded.
     _extra = {}
-    if force_tool_choice and _round == 0:
+    if force_tool_choice == ANY_TOOL and _round == 0:
+        _extra["tool_choice"] = "required"  # must call SOME tool first; the model picks which
+    elif force_tool_choice and _round == 0:
         _extra["tool_choice"] = {"type": "function", "function": {"name": force_tool_choice}}
     # gpt-5-family renamed max_tokens -> max_completion_tokens; the old
     # name 400s ("Unsupported parameter: 'max_tokens'...").
-    _tok_kwarg = "max_completion_tokens" if real_model.startswith("gpt-5") else "max_tokens"
+    _tok_kwarg = "max_completion_tokens" if real_model.startswith(("gpt-5", "gpt-6")) else "max_tokens"
+    # gpt-6 chat-completions rejects function tools unless reasoning_effort is "none" (verified live).
+    _gpt6 = {"reasoning_effort": "none"} if real_model.startswith("gpt-6") else {}
     _call = lambda _on_token: _stream_completion(
         client, _on_token,
         model=real_model,
         messages=messages,
         tools=tools or None,
         **{_tok_kwarg: 8192},
-        **_extra, **_reasoning,
+        **_extra, **_reasoning, **_gpt6,
     )
     resp = _with_deadline(_call, on_token, round_timeout, model=real_model)
     usage = getattr(resp, "usage", None)
@@ -1129,7 +1136,7 @@ def _run_tool_loop(
     # verify-on-absence / golden-suite / subagent-envelope see the same entries.
     # Idempotency: chat()'s fallback retry reuses the (already-mutated) messages
     # list, so skip if a tool result is already seeded.
-    if force_tool_choice and not any(m.get("role") == "tool" for m in messages):
+    if force_tool_choice and force_tool_choice != ANY_TOOL and not any(m.get("role") == "tool" for m in messages):
         _q = ""
         _last = messages[-1] if messages else {}
         if _last.get("role") == "user" and isinstance(_last.get("content"), str):
@@ -1340,6 +1347,8 @@ def raw_completion(
         r = {"model": rm, "messages": sent, "tools": tools or None}
         if not rm.startswith("gpt-5"):
             r["temperature"] = temperature
+        if rm.startswith("gpt-6"):
+            r["reasoning_effort"] = "none"  # tools 400 otherwise (see _tok_kwarg note)
         return r
 
     served_model = model
