@@ -470,6 +470,11 @@ EXECUTORS = {
     "open_url": lambda args: open_url(args.get("url", ""), args.get("app") or "Google Chrome"),
     "open_app": lambda args: open_app(args.get("name", "")),
     "finder": lambda args: finder(args.get("action", ""), args.get("path", "")),
+    "window": lambda args: window(
+        args.get("action", ""), args.get("app", ""), int(args.get("index") or 1),
+        args.get("x"), args.get("y"), args.get("width"), args.get("height"),
+    ),
+    "menu": lambda args: menu(args.get("action", ""), args.get("app", ""), args.get("path", "")),
     "get_window_context": lambda args: get_window_context(args.get("query") or "", args.get("app") or ""),
     "click_text": lambda args: click_text(args.get("text", ""), args.get("app") or ""),
     "read_page_text": lambda args: read_page_text(args.get("query") or "", args.get("app") or "", args.get("expand") is not False),
