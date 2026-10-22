@@ -471,6 +471,7 @@ EXECUTORS = {
     "open_app": lambda args: open_app(args.get("name", "")),
     "get_window_context": lambda args: get_window_context(args.get("query") or "", args.get("app") or ""),
     "click_text": lambda args: click_text(args.get("text", ""), args.get("app") or ""),
+    "read_page_text": lambda args: read_page_text(args.get("query") or "", args.get("app") or "", args.get("expand") is not False),
     "scroll_page": lambda args: scroll_page(args.get("direction") or "down", args.get("pages") or 1, args.get("app") or ""),
     "type_text": lambda args: type_text(args.get("text", ""), bool(args.get("submit"))),
     "set_screen_watch": lambda args: set_screen_watch(bool(args.get("on"))),

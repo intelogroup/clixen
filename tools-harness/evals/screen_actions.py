@@ -48,6 +48,51 @@ class Case:
     tags: list[str] = field(default_factory=list)
 
 
+# ---- local fixture pages (deterministic, nothing to guess from training data) --------------------
+
+_PORT = 8765
+_PAGES = {
+    "/long": "<h1>Field notes</h1>" + "".join(f"<p>Paragraph {i}: weather, gardens and other filler text.</p>" for i in range(1, 90))
+             + "<p>The calibration code for the zebra project is 7731-ZULU.</p>",
+    "/specs": "<h1>Kestrel X9 recorder</h1><p>A small voice recorder.</p>"
+              "<details><summary>Product information</summary><p>Battery capacity: 4,731 mAh. Weight: 88 grams.</p></details>"
+              "<button aria-expanded='false' onclick=\"var d=document.getElementById('w');var o=this.getAttribute('aria-expanded')=='true';"
+              "this.setAttribute('aria-expanded',!o);d.style.display=o?'none':'block'\">Warranty</button>"
+              "<div id='w' style='display:none'><p>Warranty period: 37 months.</p></div>",
+}
+_server = None
+
+
+def ensure_fixture_server() -> None:
+    global _server
+    if _server:
+        return
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = ("<!doctype html><meta charset=utf-8><title>%s</title><body style='font:20px sans-serif'>%s" % (self.path.strip("/"), _PAGES.get(self.path, "<p>404</p>"))).encode()
+            self.send_response(200 if self.path in _PAGES else 404)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    _server = HTTPServer(("127.0.0.1", _PORT), H)
+    threading.Thread(target=_server.serve_forever, daemon=True).start()
+
+
+def fixture(path: str) -> Callable[[], None]:
+    def go() -> None:
+        ensure_fixture_server()
+        open_page(f"http://127.0.0.1:{_PORT}{path}", 2.0)()
+
+    return go
+
+
 # ---- setup helpers -----------------------------------------------------------------------------
 
 def open_page(url: str, wait: float = 3.0) -> Callable[[], None]:
@@ -105,6 +150,10 @@ def used(tool: str) -> Callable[[State], str | None]:
     return lambda s: None if tool in s.tools else f"never called {tool} (called {s.tools})"
 
 
+def not_used(tool: str) -> Callable[[State], str | None]:
+    return lambda s: None if tool not in s.tools else f"called {tool} (it should not be needed)"
+
+
 def page_moved(s: State) -> str | None:
     return None if s.moved else "page did not move"
 
@@ -158,6 +207,16 @@ CASES: list[Case] = [
          open_page(TURING), reply_matches(r"turing"), 20, tags=["read"]),
     Case("clock", "what time is it in Tokyo",
          lambda: None, all_of(used("get_current_time"), reply_matches(r"\d")), 15, tags=["info"]),
+    Case("open-same-page-again", "open http://127.0.0.1:8765/long in chrome",
+         fixture("/long"), all_of(used("open_url"), reply_matches(r"already|still|same|didn.?t reopen|not reopen|not opened")), 20, tags=["open", "regression"]),
+    Case("page-text-offscreen", "what is the calibration code for the zebra project on this page?",
+         fixture("/long"), all_of(used("read_page_text"), not_used("scroll_page"), reply_matches(r"7731")), 25, tags=["read-page"]),
+    Case("page-text-collapsed", "what battery capacity do the specs on this page list?",
+         fixture("/specs"), all_of(used("read_page_text"), reply_matches(r"4,?731")), 25, tags=["read-page"]),
+    Case("page-text-accordion", "what warranty period does this page list?",
+         fixture("/specs"), all_of(used("read_page_text"), reply_matches(r"37")), 25, tags=["read-page"]),
+    Case("page-text-absent", "what is the price of the item on this page?",
+         fixture("/specs"), all_of(used("read_page_text"), reply_matches(r"\$\s?\d|\d+\s?(usd|dollars)", False)), 25, tags=["read-page", "honesty"]),
     Case("chain-scroll-click", "scroll down and then click the link Bletchley Park",
          open_page(TURING), title_has("bletchley"), 45, tags=["chain"]),
 ]

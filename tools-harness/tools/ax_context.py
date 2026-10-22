@@ -194,6 +194,19 @@ def focused_field(app: str = "") -> tuple[str, str] | None:
     return str(_get(el, "AXRole") or ""), v if isinstance(v, str) else ""
 
 
+def front_url(app: str = "") -> str:
+    """URL of the page in the target app's front window ('' when it is not a web page)."""
+    pid, _ = _target_app(app)
+    if pid is None:
+        return ""
+    el = _ax_app(pid)
+    win = _get(el, "AXFocusedWindow") or _get(el, "AXMainWindow")
+    if win is None:
+        return ""
+    url = _get(_web_area(win), "AXURL")
+    return str(url) if url else ""
+
+
 def settle_title(before: str, app: str = "", limit: float = 3.0, quiet: float = 0.4) -> str:
     """Poll the window title until it differs from `before` and holds still for `quiet`
     seconds, or `limit` runs out. Returns the last title seen."""
@@ -322,3 +335,108 @@ def get_window_context(query: str = "", app: str = "") -> str:
         if len(els) > 80:
             lines.append(f"… {len(els) - 80} more; pass `query` to narrow.")
     return "\n".join(lines)
+
+
+# ---- whole-page text -------------------------------------------------------------------------------
+
+_BLOCKS = {"AXGroup", "AXRow", "AXCell", "AXList", "AXHeading", "AXParagraph", "AXTable", "AXLandmark", "AXListItem", "AXArticle"}
+_FLUSH = object()
+
+
+def _walk_text(root, deadline: float) -> list[str]:
+    """Visible-or-not text of a subtree in document order: one line per block, headings marked."""
+    lines: list[str] = []
+    cur: list[str] = []
+
+    def flush() -> None:
+        t = " ".join(" ".join(cur).split())
+        cur.clear()
+        if t and (not lines or lines[-1] != t):
+            lines.append(t)
+
+    stack = [root]
+    n = 0
+    while stack and n < 80000 and time.monotonic() < deadline:
+        el = stack.pop()
+        if el is _FLUSH:
+            flush()
+            continue
+        n += 1
+        role = _get(el, "AXRole")
+        if role == "AXStaticText":
+            v = _get(el, "AXValue")
+            if isinstance(v, str) and v.strip():
+                cur.append(v)
+        elif role in ("AXImage", "AXButton", "AXCheckBox", "AXRadioButton", "AXTextField", "AXTextArea"):
+            v = _get(el, "AXValue") if role in ("AXTextField", "AXTextArea") else None
+            lab = v if isinstance(v, str) and v.strip() else (_get(el, "AXTitle") or _get(el, "AXDescription"))
+            if isinstance(lab, str) and lab.strip() and not _get(el, "AXChildren"):
+                cur.append(lab)
+        if role == "AXHeading":
+            flush()
+            cur.append("#")
+        kids = _get(el, "AXChildren")
+        if role in _BLOCKS:
+            stack.append(_FLUSH)
+        if kids:
+            stack.extend(reversed(kids))
+        if role == "AXHeading":
+            pass
+    flush()
+    return lines
+
+
+def _web_area(win):
+    stack = [win]
+    for _ in range(4000):
+        if not stack:
+            return win
+        el = stack.pop()
+        if _get(el, "AXRole") == "AXWebArea":
+            return el
+        stack.extend(reversed(_get(el, "AXChildren") or ()))
+    return win
+
+
+def _collapsed(root, deadline: float) -> list:
+    """Elements that report AXExpanded == False and are safe to press open: disclosure triangles and
+    plain expanders. Anything that opens a popup (menus, dropdowns) is left alone."""
+    found, stack, n = [], [root], 0
+    while stack and n < 80000 and time.monotonic() < deadline:
+        el = stack.pop()
+        n += 1
+        role = _get(el, "AXRole")
+        if role in ("AXDisclosureTriangle", "AXButton", "AXGroup", "AXHeading") and _get(el, "AXExpanded") is False \
+                and not _get(el, "AXHasPopup") and "AXPress" in (_actions(el) or ()):
+            found.append(el)
+        stack.extend(reversed(_get(el, "AXChildren") or ()))
+    return found
+
+
+def page_text(app: str = "", expand: bool = True) -> tuple[str, str, list[str], int]:
+    """(title, url, text lines, sections opened) of the whole page in the target app's front window,
+    including text scrolled out of view. With `expand`, collapsed sections are pressed open first."""
+    from ApplicationServices import AXUIElementPerformAction
+
+    pid, _ = _target_app(app)
+    if pid is None:
+        return "", "", [], 0
+    win = _get(_ax_app(pid), "AXFocusedWindow") or _get(_ax_app(pid), "AXMainWindow")
+    if win is None:
+        return "", "", [], 0
+    title = _get(win, "AXTitle") or ""
+    root = _web_area(win)
+    deadline = time.monotonic() + 10.0
+    opened = 0
+    if expand:
+        for el in _collapsed(root, deadline)[:12]:
+            if AXUIElementPerformAction(el, "AXPress") == 0:
+                opened += 1
+        if opened:
+            time.sleep(0.5)  # let the page render what it just opened
+    url = _get(root, "AXURL")
+    lines = _walk_text(root, deadline)
+    if len(lines) < 3:  # Chromium may still be building its tree on the first call
+        time.sleep(1.2)
+        lines = _walk_text(root, time.monotonic() + 10.0)
+    return title, str(url) if url else "", lines, opened

@@ -335,6 +335,7 @@ from tools.time_tool import GET_CURRENT_TIME_SCHEMA, get_current_time
 from tools.preview_watch import GET_PREVIEW_PAGE_SCHEMA, get_preview_current_page
 from tools.open_actions import OPEN_APP_SCHEMA, OPEN_URL_SCHEMA, open_app, open_url
 from tools.ax_context import GET_WINDOW_CONTEXT_SCHEMA, get_window_context
+from tools.page_text import READ_PAGE_TEXT_SCHEMA, read_page_text
 from tools.screen_act import CLICK_TEXT_SCHEMA, SCROLL_PAGE_SCHEMA, TYPE_TEXT_SCHEMA, click_text, scroll_page, type_text
 from tools.screen_watch import (
     GET_SCREEN_CONTEXT_SCHEMA,

@@ -3,7 +3,7 @@ from evals.screen_actions import CASES, State, all_of, front_is, page_moved, rep
 
 def test_cases_are_well_formed():
     ids = [c.id for c in CASES]
-    assert len(ids) == len(set(ids)) and len(ids) >= 12
+    assert len(ids) == len(set(ids)) and len(ids) >= 17
     assert all(c.prompt and callable(c.setup) and callable(c.check) and c.max_s > 0 for c in CASES)
 
 
