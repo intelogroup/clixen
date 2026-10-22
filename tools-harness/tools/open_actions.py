@@ -81,12 +81,39 @@ def _open(args: list[str]) -> str | None:
     return None if r.returncode == 0 else (r.stderr.strip() or f"open exited {r.returncode}")
 
 
+def norm_url(u: str) -> str:
+    """URL identity for 'is this the same page': no scheme, no www., no fragment, no trailing slash."""
+    u = u.strip().lower().split("#", 1)[0]
+    u = u.split("://", 1)[-1]
+    u = u[4:] if u.startswith("www.") else u
+    return u.rstrip("/")
+
+
+def same_page(current: str, wanted: str) -> bool:
+    return bool(current) and norm_url(current) == norm_url(wanted)
+
+
+def _front_url(app: str) -> str:
+    """URL of the page showing in `app`'s front window, read from the accessibility tree: it follows
+    the window the user actually sees, whichever Chrome instance or profile owns it (AppleScript and
+    the debugging port each address only one of them)."""
+    try:
+        from tools.ax_context import front_url
+
+        return front_url(app)
+    except Exception:
+        return ""
+
+
 def open_url(url: str, app: str = "Google Chrome") -> str:
     url = url.strip()
     if not valid_url(url):
         return refusal(url)
     if not _app_installed(app):
         return f"App not found: {app}."
+    if same_page(_front_url(app), url):
+        point_at_app(app)
+        return f"{url} is already showing in {app}: not opened again."
     err = _open(["-a", app, url])
     if err:
         return f"Error opening {url} in {app}: {err}"
