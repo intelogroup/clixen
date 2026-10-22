@@ -26,7 +26,7 @@ from store import run_store
 
 # Tools known-safe to re-execute when a resume hits a dangling call.
 REPLAYABLE_TOOLS = frozenset({
-    "browser_tree", "browser_status", "browser_capture", "browser_eval",
+    "browser_tree", "browser_status", "browser_capture", "browser_eval", "browser_network",
     "get_current_time", "web_search", "browser_wait_for",
 })
 

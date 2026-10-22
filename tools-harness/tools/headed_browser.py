@@ -38,6 +38,7 @@ Env:
 from __future__ import annotations
 
 import json
+from collections import deque
 import logging
 import os
 import queue
@@ -114,6 +115,7 @@ class _Session:
     context = None
     page = None
     mode = ""  # "headed (chrome)" | "headed (chromium)" | "headless (...)" | "cdp"
+    net = None  # deque of recent XHR/fetch/document responses (browser_network)
 
 
 _S = _Session()
@@ -143,7 +145,7 @@ def _close_inner() -> None:
             _S.pw.stop()
         except Exception:
             pass
-    _S.pw = _S.browser = _S.context = _S.page = None
+    _S.pw = _S.browser = _S.context = _S.page = _S.net = None
     _S.mode = ""
 
 
@@ -222,6 +224,8 @@ def _launch_inner(headless: bool | None, url: str) -> str:
             raise RuntimeError("all launch attempts failed: " + " | ".join(errors))
 
     _S.context.set_default_timeout(8000)
+    _S.net = deque(maxlen=200)
+    _S.context.on("response", _on_response)
     _S.page = _S.context.pages[0] if _S.context.pages else _S.context.new_page()
     try:
         _S.page.on("console", lambda _: None)
@@ -380,6 +384,75 @@ def _status_line() -> str:
         return f"url: {_S.page.url} | title: {_S.page.title()}"
     except Exception:
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Network log — what the page actually fetched (JSON APIs beat scraping the DOM)
+# ---------------------------------------------------------------------------
+
+
+def _on_response(resp) -> None:
+    try:
+        if _S.net is not None:
+            req = resp.request
+            _S.net.append({"method": req.method, "url": resp.url, "status": resp.status, "type": req.resource_type, "resp": resp})
+    except Exception:
+        pass
+
+
+def _network_inner(filter_text: str, types: str, limit: int, body_of: int) -> str:
+    _require_page()
+    rows = list(_S.net or [])
+    if body_of:
+        if not 1 <= body_of <= len(rows):
+            return f"No request #{body_of}: the log holds {len(rows)}. List first."
+        r = rows[body_of - 1]
+        try:
+            text = r["resp"].text()
+        except Exception as exc:
+            return f"Could not read the body of #{body_of} (bodies are only kept while the page that made the request is still open): {exc}"
+        return f"#{body_of} {r['method']} {r['url']} -> {r['status']}\n" + (text if len(text) <= 3000 else text[:3000] + "... (body truncated)")
+    want = {t.strip() for t in types.split(",") if t.strip()}
+    out = [f"#{i} {r['method']} {r['status']} {r['type']} {r['url'][:160]}" for i, r in enumerate(rows, 1)
+           if (not want or r["type"] in want) and filter_text.lower() in r["url"].lower()]
+    return "\n".join(out[-limit:]) or "No matching requests yet (load or interact with the page first)."
+
+
+# ---------------------------------------------------------------------------
+# Tabs of the automation window (never the user's own tabs: closing is refused in CDP mode)
+# ---------------------------------------------------------------------------
+
+
+def _tabs_inner(action: str, index: int, url: str) -> str:
+    _require_page()
+    pages = [pg for pg in _S.context.pages if not pg.is_closed()]
+    cur = _S.page
+    listing = "\n".join(f"{i}. {'* ' if pg is cur else ''}{(pg.title() or '(untitled)')[:60]} - {pg.url}" for i, pg in enumerate(pages, 1))
+    if action == "list":
+        return listing
+    if action == "new":
+        pg = _S.context.new_page()
+        _S.page = pg
+        if url:
+            _goto_inner(url)
+        pg.bring_to_front()
+        return f"Opened tab {len(pages) + 1}. {_status_line()}"
+    if not 1 <= index <= len(pages):
+        return f"Tab {index} does not exist.\n{listing}"
+    pg = pages[index - 1]
+    if action == "switch":
+        _S.page = pg
+        pg.bring_to_front()
+        return f"Switched to tab {index}. {_status_line()}"
+    if action == "close":
+        if _S.mode == "cdp":
+            return "Refused: this is attached to the user's own Chrome; ask the user to close their tabs."
+        if len(pages) == 1:
+            return "Refused: that is the only tab; use browser_quit to end the session."
+        pg.close()
+        _S.page = next(p for p in pages if not p.is_closed())
+        return f"Closed tab {index}. {_status_line()}"
+    return f"Unknown tabs action: {action}."
 
 
 def _click_inner(ref: str, force: bool) -> str:
@@ -577,6 +650,14 @@ def browser_capture(path: str = "", full_page: bool = False) -> str:
 
 def browser_eval(js: str) -> str:
     return _call(_eval_inner, js)
+
+
+def browser_network(filter: str = "", types: str = "xhr,fetch", limit: int = 20, body_of: int = 0) -> str:
+    return _call(_network_inner, filter, types, limit, body_of)
+
+
+def browser_tabs(action: str = "list", index: int = 0, url: str = "") -> str:
+    return _call(_tabs_inner, action, index, url)
 
 
 def browser_quit() -> str:
@@ -846,6 +927,43 @@ BROWSER_EVAL_SCHEMA = {
     },
 }
 
+BROWSER_NETWORK_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "browser_network",
+        "description": (
+            "What the headed page fetched: numbered XHR/fetch requests (method, status, url). Pass body_of=N to read "
+            "that response body, usually clean JSON: read the data from the API instead of scraping the page. "
+            "filter narrows by url text, types is comma-separated resource types (xhr,fetch,document,script). Read-only."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filter": {"type": "string"},
+                "types": {"type": "string", "description": "default 'xhr,fetch'"},
+                "limit": {"type": "integer", "description": "last N rows, default 20"},
+                "body_of": {"type": "integer", "description": "request number from the list: return its body"},
+            },
+        },
+    },
+}
+
+BROWSER_TABS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "browser_tabs",
+        "description": "Tabs of the headed browser window. action='list' | 'new' (url) | 'switch' (index) | 'close' (index, never the last tab). 1-based index.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["list", "new", "switch", "close"]},
+                "index": {"type": "integer"},
+                "url": {"type": "string"},
+            },
+        },
+    },
+}
+
 BROWSER_QUIT_SCHEMA = {
     "type": "function",
     "function": {
@@ -872,5 +990,7 @@ HEADED_BROWSER_SCHEMAS = [
     BROWSER_STATUS_SCHEMA,
     BROWSER_CAPTURE_SCHEMA,
     BROWSER_EVAL_SCHEMA,
+    BROWSER_NETWORK_SCHEMA,
+    BROWSER_TABS_SCHEMA,
     BROWSER_QUIT_SCHEMA,
 ]

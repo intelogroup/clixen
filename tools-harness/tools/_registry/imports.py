@@ -442,6 +442,8 @@ from tools.headed_browser import (
     browser_status,
     browser_capture,
     browser_eval,
+    browser_network,
+    browser_tabs,
     browser_quit,
 )
 from tools.automation_tools import AUTOMATION_TOOLS_SCHEMAS, AUTOMATION_EXECUTORS

@@ -89,6 +89,8 @@ TOOL_TAGS: dict[str, frozenset[str]] = {
     "browser_status": frozenset({"browser"}),
     "browser_capture": frozenset({"browser"}),
     "browser_eval": frozenset({"browser"}),
+    "browser_network": frozenset({"browser"}),
+    "browser_tabs": frozenset({"browser"}),
     "browser_quit": frozenset({"browser"}),
     "bus_eta": frozenset({"spec_transport", "transit"}),
     "make_phone_call": frozenset({"spec_phone_call", "utility"}),

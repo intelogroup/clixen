@@ -734,6 +734,13 @@ EXECUTORS = {
         full_page=args.get("full_page", False),
     ),
     "browser_eval": lambda args: browser_eval(js=args["js"]),
+    "browser_network": lambda args: browser_network(
+        filter=args.get("filter", ""), types=args.get("types", "xhr,fetch"),
+        limit=args.get("limit", 20), body_of=args.get("body_of", 0),
+    ),
+    "browser_tabs": lambda args: browser_tabs(
+        action=args.get("action", "list"), index=args.get("index", 0), url=args.get("url", ""),
+    ),
     "browser_quit": lambda args: browser_quit(),
     # Semantic search
     "index_directory": lambda args: index_directory(

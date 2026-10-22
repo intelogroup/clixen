@@ -135,7 +135,7 @@ EXPECTED_TOOLS = [
     "browser_open", "browser_tree", "browser_click_ref", "browser_fill_ref",
     "browser_fill_secret", "browser_select_ref", "browser_check_ref",
     "browser_press_key", "browser_scroll_page", "browser_wait_for",
-    "browser_status", "browser_capture", "browser_eval", "browser_quit",
+    "browser_status", "browser_capture", "browser_eval", "browser_network", "browser_tabs", "browser_quit",
 ]
 
 
