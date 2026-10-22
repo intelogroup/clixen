@@ -174,6 +174,7 @@ class TestHarnessFoodIntentGuard:
             response, model_used, intent = harness.run(
                 "I'm hungry",
                 chat_id="test-food-session-1",
+                orchestrated=False,  # the pre-guard only runs for callers that are not model-driven
             )
 
         mock_chat.assert_not_called()

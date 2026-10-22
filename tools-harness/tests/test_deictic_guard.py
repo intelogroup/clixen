@@ -129,6 +129,7 @@ class TestHarnessDeicticGuard:
             response, model_used, intent = harness.run(
                 "explain me in details this process",
                 chat_id="test-session-1",
+                orchestrated=False,
             )
 
         mock_chat.assert_not_called()

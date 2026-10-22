@@ -229,10 +229,28 @@ def test_orchestrator_retries_exactly_once(monkeypatch):
     monkeypatch.setattr(harness, "_guard_check", lambda *a, **k: None)
     monkeypatch.setattr(harness, "trim_to_budget", lambda h, m, q, chat_id=None: h)
 
-    result, model, path = harness.run(query="Do I have anything scheduled today?", chat_id=None)
+    # a caller-supplied intent keeps the verify retry (Telegram/WhatsApp); model-driven callers skip it
+    result, model, path = harness.run(query="Do I have anything scheduled today?", chat_id=None, intent="")
 
     assert len(calls) == 2
     assert "VERIFICATION REQUIRED" in calls[1]["system_prompt"]
     assert "ask_email_agent" in calls[1]["system_prompt"]
     assert result == "Found it: booking at 8:25 AM."
     assert path == "orchestrator"
+
+
+def test_model_driven_run_never_retries(monkeypatch):
+    """No caller intent (orb/web): the model's first answer is final, no verify-on-absence round."""
+    calls = []
+
+    def fake_local_chat(**kwargs):
+        calls.append(kwargs)
+        return "Nothing scheduled today."
+
+    _stub_trace(monkeypatch, ["ask_calendar_agent"])
+    monkeypatch.setattr(harness, "local_chat", fake_local_chat)
+    monkeypatch.setattr(harness, "trim_to_budget", lambda h, m, q, chat_id=None: h)
+
+    result, _, _ = harness.run(query="Do I have anything scheduled today?", chat_id=None)
+
+    assert len(calls) == 1 and result == "Nothing scheduled today."

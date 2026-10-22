@@ -41,10 +41,6 @@ from clients.router import classify_message, model_for_intent, reasoning_effort_
 
 MAX_ROUNDS = ollama_client.MAX_ROUNDS
 
-from concurrent.futures import ThreadPoolExecutor as _TPE
-
-_CLASSIFY_POOL = _TPE(max_workers=4, thread_name_prefix="intent")
-
 
 def local_chat(**kwargs):
     """Dispatch to the cloud (OpenRouter/DeepSeek) or local (Ollama) chat client
@@ -668,7 +664,10 @@ def _run_impl(
     # tool/skill overrides, or when images are attached — an attached image resolves
     # deictic references like "this image" that the text-only guard can't see and
     # would otherwise misflag as ambiguous.
-    if not _is_plan and not _is_skill_or_direct and not images:
+    # Model-driven path (orb/web: orchestrated, no caller intent): the model asks its own clarifying
+    # questions, so no pre-guard and no weather rewrite.
+    _model_driven = orchestrated and intent is None
+    if not _is_plan and not _is_skill_or_direct and not images and not _model_driven:
         has_history = False
         lock = None
         if chat_id is not None:
@@ -987,22 +986,10 @@ def _run_impl(
             orchestrator_tools = [t for t in orchestrator_tools
                                   if t["function"]["name"] != "ask_deep_research"]
 
-        # The orchestrated block returns before ever reaching the classify_message()
-        # call further down (that one only runs for non-orchestrated callers) — so
-        # `intent` here is still just whatever the caller passed as a parameter
-        # (None for callers that don't pre-classify, e.g. the web UI; Telegram/
-        # WhatsApp pass their own pre-computed intent after calling
-        # classify_message() themselves). Classify here, once, only when the
-        # caller didn't already — the _forced_tool block right below needs a real
-        # intent value to trust, not the bare parameter default.
-        # 2026-10-22: callers that pass no intent (orb, web UI) no longer wait on the classifier
-        # or get a forced first tool: the orchestrator model chooses from the full tool list (every
-        # bug that fix replaced was a forced tool or a missing tool, never the model failing to
-        # choose). The classifier still runs, in parallel, for the post-run verify checks below.
-        # Telegram/WhatsApp pass their own intent, so their forced-tool rules are unchanged.
-        _intent_future = None
+        # Model-driven callers (orb, web UI: no intent passed) get no classifier, no forced tool, no
+        # pre-guard and no verify retries: the model picks its tools from the full list. Telegram and
+        # WhatsApp pass their own pre-computed intent, so the forced-tool rules below still apply to them.
         if intent is None:
-            _intent_future = _CLASSIFY_POOL.submit(lambda: classify_message(query, channel=channel).intent)
             intent = ""
 
         # Nothing should hit the bare model on a query that needs live grounding
@@ -1083,14 +1070,9 @@ def _run_impl(
             round_timeout=_round_timeout,
         )
 
-        if _intent_future is not None:
-            try:
-                intent = _intent_future.result(timeout=3.0)
-            except Exception:
-                intent = ""
-
         # Verify-on-absence / verify-on-undercoverage: one retry, straight-line (no recursion/loop possible).
-        _missing = None if context_only else _absence_unchecked_sources(result, query, run_id, intent)
+        # Model-driven runs skip both retries: they were patches for weaker models, and cost an extra round.
+        _missing = None if (context_only or _model_driven) else _absence_unchecked_sources(result, query, run_id, intent)
         if _missing:
             _log.warning("[verify-on-absence] run_id=%s missing=%s — retrying with nudge", run_id, sorted(_missing))
             _explicit_delivery = "ask_email_agent" in _missing and _EXPLICIT_DELIVERY_RE.search(query)
@@ -1122,7 +1104,7 @@ def _run_impl(
         else:
             # Only run the claim-check if verify-on-absence didn't already retry —
             # one adversarial pass per run, same invariant as above.
-            _claim_trace = _needs_claim_check(query, run_id, intent)
+            _claim_trace = None if _model_driven else _needs_claim_check(query, run_id, intent)
             if _claim_trace:
                 _discrepancy = _check_claim_against_trace(result, _claim_trace)
                 if _discrepancy:
