@@ -74,7 +74,20 @@ def _label(el) -> str:
         v = _get(el, attr)
         if isinstance(v, str) and v.strip():
             return " ".join(v.split())
-    return ""
+    return _child_text(el)
+
+
+def _child_text(el, depth: int = 3) -> str:
+    """Text of the element's own children: web links often carry it only there."""
+    parts = []
+    for kid in _get(el, "AXChildren") or ():
+        v = _get(kid, "AXValue") if _get(kid, "AXRole") == "AXStaticText" else None
+        v = v if isinstance(v, str) else _get(kid, "AXTitle")
+        if isinstance(v, str) and v.strip():
+            parts.append(v)
+        elif depth > 1:
+            parts.append(_child_text(kid, depth - 1))
+    return " ".join(" ".join(parts).split())
 
 
 def _target_app(name: str = ""):
@@ -95,9 +108,12 @@ def _ax_app(pid: int):
     from ApplicationServices import AXUIElementCreateApplication, AXUIElementSetAttributeValue
 
     el = AXUIElementCreateApplication(pid)
-    # Chromium/Electron build their web tree only once an assistive client asks (the set
-    # reports an error but still flips it on); the tree appears within about a second.
+    # Chrome turns its web tree on when a client asks the application element for its role
+    # and refuses the manual switch; Electron takes AXManualAccessibility (the set reports an
+    # error but still flips it on). Both are cheap, so ask both (browser-use/macos-harness).
+    _get(el, "AXRole")
     AXUIElementSetAttributeValue(el, "AXManualAccessibility", True)
+    AXUIElementSetAttributeValue(el, "AXEnhancedUserInterface", True)
     return el
 
 
@@ -106,9 +122,10 @@ def _window_rect(win) -> tuple[float, float, float, float] | None:
     return (p[0], p[1], s[0], s[1]) if p and s else None
 
 
-def elements(app: str = "", query: str = "") -> tuple[str, str, list[dict]]:
+def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[str, str, list[dict]]:
     """(app name, window title, on-screen actionable elements) of the target app's focused
-    window. Each element: {role, label, x, y, w, h} with x,y the centre."""
+    window. Each element: {role, label, x, y, w, h, el} with x,y the centre. `offscreen`
+    also keeps elements scrolled out of view (for scroll_into_view)."""
     pid, name = _target_app(app)
     if pid is None:
         return "", "", []
@@ -133,14 +150,15 @@ def elements(app: str = "", query: str = "") -> tuple[str, str, list[dict]]:
             role = _get(el, "AXRole")
             if role in _ACTIONABLE:
                 p, s = _point(_get(el, "AXPosition")), _size(_get(el, "AXSize"))
-                if p and s and s[0] > 0 and s[1] > 0:
+                # below the fold Chrome reports height 0: keep those when scrolling will fix it
+                if p and s and s[0] > 0 and (s[1] > 0 or offscreen):
                     cx, cy = p[0] + s[0] / 2, p[1] + s[1] / 2
                     inside = rect is None or (rect[0] <= cx <= rect[0] + rect[2] and rect[1] <= cy <= rect[1] + rect[3])
                     label = _label(el)
                     key = (role, label, round(cx), round(cy))
-                    if inside and key not in seen and (label or role in ("AXTextField", "AXTextArea", "AXSearchField")) and (not q or q in label.lower()):
+                    if (inside or offscreen) and key not in seen and (label or role in ("AXTextField", "AXTextArea", "AXSearchField")) and (not q or q in label.lower()):
                         seen.add(key)
-                        out.append({"role": role[2:], "label": label, "x": round(cx), "y": round(cy), "w": round(s[0]), "h": round(s[1])})
+                        out.append({"role": role[2:], "label": label, "x": round(cx), "y": round(cy), "w": round(s[0]), "h": round(s[1]), "el": el})
             kids = _get(el, "AXChildren")
             if kids:
                 stack.extend(reversed(kids))  # keep document order
@@ -166,17 +184,81 @@ def window_list() -> list[str]:
     return rows
 
 
+def _frame(el) -> tuple[float, float, float, float] | None:
+    p, s = _point(_get(el, "AXPosition")), _size(_get(el, "AXSize"))
+    return (p[0], p[1], s[0], s[1]) if p and s else None
+
+
+def _cut(a, b):
+    """The part of rect `a` inside rect `b`, None when nothing is left."""
+    if a is None or b is None:
+        return a
+    x, y = max(a[0], b[0]), max(a[1], b[1])
+    w, h = min(a[0] + a[2], b[0] + b[2]) - x, min(a[1] + a[3], b[1] + b[3]) - y
+    return (x, y, w, h) if w > 0 and h > 0 else None
+
+
+def _visible_centre(el, win_rect) -> tuple[float, float] | None:
+    """Centre of the part of `el` inside its window and every scroll area above it, so a
+    wrapped or half-hidden link is clicked where it can actually be hit."""
+    part = _cut(_frame(el), win_rect)
+    parent = _get(el, "AXParent")
+    for _ in range(40):
+        if part is None or parent is None:
+            break
+        if _get(parent, "AXRole") == "AXScrollArea":
+            part = _cut(part, _frame(parent))
+        parent = _get(parent, "AXParent")
+    return (part[0] + part[2] / 2, part[1] + part[3] / 2) if part else None
+
+
+def _scroll_into_view(el) -> None:
+    """Ask the app to scroll `el` on screen (pattern from browser-use/macos-harness)."""
+    from ApplicationServices import AXUIElementCopyParameterizedAttributeValue, AXUIElementPerformAction
+
+    if "AXScrollToVisible" in (_actions(el) or ()):
+        AXUIElementPerformAction(el, "AXScrollToVisible")
+    parent = _get(el, "AXParent")
+    for _ in range(40):
+        if parent is None:
+            return
+        if _get(parent, "AXRole") == "AXScrollArea":
+            AXUIElementCopyParameterizedAttributeValue(parent, "AXScrollToShowDescendant", el, None)
+            return
+        parent = _get(parent, "AXParent")
+
+
+def _actions(el):
+    from ApplicationServices import AXUIElementCopyActionNames
+
+    err, names = AXUIElementCopyActionNames(el, None)
+    return names if err == 0 else None
+
+
 def find_element(label: str, app: str = "") -> tuple[float, float] | None:
-    """Centre of the best on-screen element whose label matches: exact > shortest substring."""
-    _, _, els = elements(app, label)
+    """Clickable point of the best element whose label matches: exact > shortest substring.
+    Scrolls it into view first and aims at its visible part."""
+    pid, _ = _target_app(app)
+    _, _, els = elements(app, label, offscreen=True)
     w = label.strip().lower()
+    app_el = _ax_app(pid)
+    win = _get(app_el, "AXFocusedWindow") or _get(app_el, "AXMainWindow")
+    rect = _window_rect(win) if win else None
     best = None
     for e in els:
         lab = e["label"].lower()
-        score = (0 if lab == w else 1, len(lab))
+        score = (0 if lab == w else 1, 0 if _visible_centre(e["el"], rect) else 1, len(lab))
         if best is None or score < best[0]:
-            best = (score, (float(e["x"]), float(e["y"])))
-    return best[1] if best else None
+            best = (score, e["el"])
+    if best is None:
+        return None
+    el = best[1]
+    pt = _visible_centre(el, rect)
+    if pt is None:  # scrolled out of view: ask the app to bring it in, then measure again
+        _scroll_into_view(el)
+        time.sleep(0.4)
+        pt = _visible_centre(el, rect)
+    return pt
 
 
 def get_window_context(query: str = "", app: str = "") -> str:

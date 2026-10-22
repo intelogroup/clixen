@@ -32,3 +32,11 @@ def test_click_text_prefers_native_position(monkeypatch):
     monkeypatch.setattr(screen_act, "_click", lambda x, y: clicked.append((x, y)))
     assert "Clicked" in screen_act.click_text("Donate")
     assert clicked == [(10.0, 20.0)]
+
+
+def test_cut_keeps_only_the_visible_part():
+    from tools.ax_context import _cut
+
+    assert _cut((0, 0, 100, 100), (50, 50, 100, 100)) == (50, 50, 50, 50)
+    assert _cut((0, 892, 100, 0), (0, 0, 1000, 892)) is None  # height 0 below the fold: needs scrolling
+    assert _cut((5, 5, 10, 10), None) == (5, 5, 10, 10)
