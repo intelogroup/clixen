@@ -68,3 +68,25 @@ def test_tabs_close_refused_on_users_own_chrome(monkeypatch):
     _session(monkeypatch, [a, b], mode="cdp")
     assert hb._tabs_inner("close", 2, "").startswith("Refused: this is attached to the user's own Chrome") and not b.closed_called
 
+
+def test_point_cursor_converts_to_screen_points_and_skips_headless(monkeypatch):
+    from tools import orb_cursor
+
+    got = []
+    monkeypatch.setattr(orb_cursor, "point", lambda x, y, click=True: got.append((x, y, click)))
+
+    class Loc:
+        def bounding_box(self):
+            return {"x": 100, "y": 10, "width": 40, "height": 20}
+
+    class P:
+        def evaluate(self, js):
+            return [22, 34 + 143]  # screenX, screenY + (outerHeight - innerHeight)
+
+    monkeypatch.setattr(hb._S, "page", P(), raising=False)
+    monkeypatch.setattr(hb._S, "mode", "headed (chrome)", raising=False)
+    hb._point_cursor(Loc())
+    assert got == [(142.0, 197.0, True)]
+    monkeypatch.setattr(hb._S, "mode", "headless (chrome)", raising=False)
+    hb._point_cursor(Loc())
+    assert len(got) == 1

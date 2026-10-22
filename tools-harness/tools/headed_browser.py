@@ -203,7 +203,9 @@ def _launch_inner(headless: bool | None, url: str) -> str:
                         headless=hl,
                         slow_mo=0 if hl else slow_mo,
                         args=args,
-                        viewport={"width": 1440, "height": 900},
+                        # headed: follow the real window so window.outerHeight - innerHeight is the true chrome
+                        # height (orb cursor maths); headless has no window, keep a fixed viewport
+                        **({"viewport": {"width": 1440, "height": 900}} if hl else {"no_viewport": True}),
                         ignore_https_errors=True,
                     )
                     kind = "headless" if hl else "headed"
@@ -387,6 +389,27 @@ def _status_line() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Orb cursor: fly the orb's pointer to what the browser is about to touch
+# ---------------------------------------------------------------------------
+
+
+def _point_cursor(loc, click: bool = True) -> None:
+    """Best effort, never blocks the action. Screen point = window origin + chrome offset + element centre."""
+    if "headless" in _S.mode:
+        return
+    try:
+        from tools import orb_cursor
+
+        box = loc.bounding_box()
+        if not box:
+            return
+        ox, oy = _S.page.evaluate("[window.screenX, window.screenY + (window.outerHeight - window.innerHeight)]")
+        orb_cursor.point(ox + box["x"] + box["width"] / 2, oy + box["y"] + box["height"] / 2, click)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Network log — what the page actually fetched (JSON APIs beat scraping the DOM)
 # ---------------------------------------------------------------------------
 
@@ -458,6 +481,7 @@ def _tabs_inner(action: str, index: int, url: str) -> str:
 def _click_inner(ref: str, force: bool) -> str:
     loc, ref = _locator_for(ref)
     loc.scroll_into_view_if_needed(timeout=3000)
+    _point_cursor(loc)
     loc.click(force=force)
     _settle()
     return f"Clicked @{ref}. {_status_line()}"
@@ -466,6 +490,7 @@ def _click_inner(ref: str, force: bool) -> str:
 def _fill_inner(ref: str, text: str, press_enter: bool) -> str:
     loc, ref = _locator_for(ref)
     loc.scroll_into_view_if_needed(timeout=3000)
+    _point_cursor(loc)
     try:
         loc.fill(text, timeout=5000)
     except Exception:
