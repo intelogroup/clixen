@@ -548,6 +548,30 @@ fn cursor_file() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/g4l/data/orb_cursor.json")
 }
 
+/// Index of the monitor rect (logical x, y, w, h) that holds the point, if any.
+fn pick_monitor(rects: &[(f64, f64, f64, f64)], x: f64, y: f64) -> Option<usize> {
+    rects.iter().position(|&(mx, my, mw, mh)| x >= mx && x < mx + mw && y >= my && y < my + mh)
+}
+
+/// Move the overlay onto the monitor holding logical point (x, y); returns that monitor's
+/// logical origin, or None when no monitor holds it (the overlay stays where it is).
+fn follow_target(cur: &WebviewWindow, x: f64, y: f64) -> Option<(f64, f64)> {
+    let monitors = cur.available_monitors().ok()?;
+    let rects: Vec<_> = monitors
+        .iter()
+        .map(|m| {
+            let s = m.scale_factor().max(0.01);
+            (m.position().x as f64 / s, m.position().y as f64 / s, m.size().width as f64 / s, m.size().height as f64 / s)
+        })
+        .collect();
+    let i = pick_monitor(&rects, x, y)?;
+    let (mx, my, _, _) = rects[i];
+    let m = &monitors[i];
+    let _ = cur.set_size(tauri::Size::Physical(*m.size()));
+    let _ = cur.set_position(tauri::Position::Physical(*m.position()));
+    Some((mx, my))
+}
+
 /// Send the overlay cursor from the orb's centre to a screen point (logical px,
 /// top-left origin). The overlay window covers the monitor, so subtract its origin.
 fn cursor_fly(app: &AppHandle, x: f64, y: f64, click: bool) {
@@ -557,10 +581,12 @@ fn cursor_fly(app: &AppHandle, x: f64, y: f64, click: bool) {
     };
     let scale = orb.scale_factor().unwrap_or(1.0).max(0.01);
     let (Ok(op), Ok(os)) = (orb.outer_position(), orb.outer_size()) else { return };
-    let off = cur
-        .outer_position()
-        .map(|p| (p.x as f64 / scale, p.y as f64 / scale))
-        .unwrap_or((0.0, 0.0));
+    // The overlay covers one monitor at a time: follow the target onto whichever one holds it.
+    let off = follow_target(&cur, x, y).unwrap_or_else(|| {
+        cur.outer_position()
+            .map(|p| (p.x as f64 / scale, p.y as f64 / scale))
+            .unwrap_or((0.0, 0.0))
+    });
     let from = (
         (op.x as f64 + os.width as f64 / 2.0) / scale - off.0,
         (op.y as f64 + os.height as f64 / 2.0) / scale - off.1,
@@ -877,4 +903,18 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running clixen orb");
+}
+#[cfg(test)]
+mod tests {
+    use super::pick_monitor;
+
+    #[test]
+    fn picks_the_monitor_holding_the_point() {
+        let rects = [(0.0, 0.0, 1512.0, 982.0), (1512.0, -200.0, 1920.0, 1080.0), (-1280.0, 0.0, 1280.0, 800.0)];
+        assert_eq!(pick_monitor(&rects, 100.0, 100.0), Some(0));
+        assert_eq!(pick_monitor(&rects, 1600.0, -50.0), Some(1));
+        assert_eq!(pick_monitor(&rects, -10.0, 10.0), Some(2));
+        assert_eq!(pick_monitor(&rects, 1512.0, 0.0), Some(1));
+        assert_eq!(pick_monitor(&rects, 5000.0, 0.0), None);
+    }
 }
