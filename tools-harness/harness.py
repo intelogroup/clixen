@@ -1734,7 +1734,7 @@ def _run_impl(
             "  browser_screenshot, browser_save_session, browser_load_session\n"
             "There is no other way \u2014 do not create function names like 'click:button:X'.\n\n"
             "PRIMARY FLOW (visible browser \u2014 use for logins, signups, forms):\n"
-            "  1. browser_open(url) \u2014 starts the visible Chrome window (persistent profile).\n"
+            "  1. browser_open(url) \u2014 starts the visible Chrome window (persistent profile). Never pass headless unless the user asks: the visible window is where the orb's cursor flies to each click.\n"
             "  2. browser_tree() \u2014 see the page as @refs: '@e3 [textbox] \"Email\" name=email'.\n"
             "  3. Act with browser_click_ref / browser_fill_ref / browser_select_ref /\n"
             "     browser_check_ref. After every click or navigation call browser_tree() again \u2014\n"
