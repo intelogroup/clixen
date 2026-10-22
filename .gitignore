@@ -92,3 +92,4 @@ frontier-reading-anchors-*.md
 *.pdf
 *.zip
 *.webp
+tools-harness/evals/results/
