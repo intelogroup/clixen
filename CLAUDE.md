@@ -100,6 +100,18 @@ Gotcha, confirmed live (2026-09-14): `com.clixen.core.plist`'s `PATH` was missin
 ## Tauri Desktop App (next phase)
 Not yet built. See `.claude/skills/tauri-migration-plan/SKILL.md`.
 
+## Clixen Orb (floating voice orb — `clixen-orb/`)
+A UI-less `NSPanel` overlay that floats above every other window and answers by voice.
+Two windows: a 150×150 `orb` (the sphere) and a 420×78 `caption` strip beneath it.
+Tauri v2 + `tauri-nspanel`; HTTP and the Keychain token live in Rust, the webview only renders.
+Backend is the normal `chat_ui.py` (`/voice/process`, `/chat/stream`, `/tts/speak/stream`).
+**Four landmines, all documented in `clixen-orb/README.md`:** the `NSNonactivatingPanelMask`
+style bit must be set *before* the `object_setClass` swap (after it, `setStyleMask:` throws
+mid-flight and leaves a nil content view — the webview dies silently); the SSE field is `kind`,
+not `type`; `pointerup` must be bound to the window, not the canvas, or the mic never stops;
+tao reports moves in physical pixels while `set_position(Logical)` wants points.
+Run the bundled `.app`, not `tauri dev` — dev has no `Info.plist`, so macOS kills it on mic access.
+
 ## Automations & Task Worker
 `jobs/worker.py` (in `core.py`'s `task_worker` thread) polls every 10s: one-shot `job_queue` + scheduled `workflow_store`. 14 builtin automations seeded idempotently on startup. User/LLM-created automations share `automation_id="user.automation"` → generic handler reads `action_type`/`config` (telegram/notification/webhook/email/tool_call/imessage/workflow-with-branching). Full detail + bug history: `docs/agents/automations.md`.
 

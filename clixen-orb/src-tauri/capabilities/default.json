@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "orb-capability",
+  "description": "Minimal capability for the floating orb overlay — it renders, drags itself, and calls the app's own commands. Nothing else.",
+  "windows": ["orb", "caption", "cursor"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-outer-position",
+    "core:window:allow-set-position",
+    "core:event:allow-listen",
+    "core:event:allow-emit"
+  ]
+}

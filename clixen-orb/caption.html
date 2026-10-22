@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title></title>
+  <link rel="stylesheet" href="/src/caption.css" />
+</head>
+<body>
+  <!--
+    The whisper strip lives in its OWN window for a deliberate reason:
+    the orb window stays tight (150x150) so it never swallows clicks meant
+    for the page underneath, while this one is pure decoration — it ignores
+    mouse events entirely and only ever speaks.
+
+    It doubles as the typed-input surface. A non-activating panel can never
+    become key, so the orb's own webview can't receive keystrokes; the strip
+    is a normal window and can be focused, so a double-click on the orb
+    hands the keyboard over to it.
+  -->
+  <div id="line" class="you"></div>
+  <form id="ask" hidden>
+    <input id="ask-field" type="text" autocomplete="off" spellcheck="false" placeholder="Ask Clixen…" />
+  </form>
+  <script type="module" src="/src/caption.js"></script>
+</body>
+</html>

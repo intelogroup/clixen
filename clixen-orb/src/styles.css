@@ -1,0 +1,40 @@
+/* Clixen Orb — the whole window is transparent; only the orb paints pixels. */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#orb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+#orb:active { cursor: grabbing; }
+
+/* Single dot of truth when the Clixen backend is unreachable. */
+#status {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff5f56;
+  box-shadow: 0 0 7px rgba(255, 95, 86, 0.9);
+  pointer-events: none;
+}

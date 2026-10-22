@@ -1,0 +1,81 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Clixen Orb",
+  "version": "0.1.0",
+  "identifier": "com.clixen.orb",
+  "build": {
+    "beforeDevCommand": "npm run dev:web",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build:web",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "orb",
+        "title": "Clixen Orb",
+        "width": 150,
+        "height": 150,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": true
+      },
+      {
+        "label": "caption",
+        "url": "caption.html",
+        "title": "",
+        "width": 420,
+        "height": 78,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": false
+      },
+      {
+        "label": "cursor",
+        "url": "cursor.html",
+        "title": "",
+        "width": 800,
+        "height": 600,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": ["orb-capability"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "A floating voice orb that lives on top of your desktop.",
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

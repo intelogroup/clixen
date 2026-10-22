@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clixen Orb</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <!--
+    The orb IS the entire interface. This window is a tight 150x150 so its
+    transparent corners can never intercept a click meant for the page below;
+    text lives in the separate `caption` window instead.
+  -->
+  <div id="stage">
+    <canvas id="orb"></canvas>
+    <div id="status" title="Clixen Orb" hidden></div>
+  </div>
+
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
