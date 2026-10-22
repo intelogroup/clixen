@@ -2,25 +2,29 @@ from __future__ import annotations
 import os
 import sys
 import time
-import tempfile
 import threading
 import json
 import urllib.request
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime
 
+import mlx.core as mx
 import numpy as np
+from parakeet_mlx import BaseParakeet, from_pretrained
+from parakeet_mlx.audio import get_logmel
 from pynput import keyboard
 import sounddevice as sd
 import soundfile as sf
-from pywhispercpp.model import Model
 
 SAVE_DIR = Path.home() / "Documents" / "clixen-voice"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 SAMPLERATE = 16000
 INPUT_DEVICE = os.environ.get("CLIXEN_PTT_INPUT_DEVICE", "").strip() or None
-_model: Model | None = None
+# English + 24 European languages (incl. French, Spanish), language auto-detected.
+PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+_model: BaseParakeet | None = None
 recording = False
 frames: list = []
 stream = None
@@ -35,16 +39,28 @@ autotype_this = False  # per-session flag, set by whichever key started the reco
 _typing = False          # guard: prevent simulated Shift events from re-triggering the listener during autotype
 
 
-def get_model() -> Model:
+# MLX streams belong to the thread that created them and die with it (mlx
+# >=0.31.2): a model loaded in a startup thread that has since exited raises
+# "There is no Stream(cpu, 1) in current thread" when pynput's listener thread
+# transcribes. So every MLX call runs on this one long-lived thread; it also
+# serializes them, so a recording made during warm-up just waits for it.
+_mlx_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
+
+
+def _get_model() -> BaseParakeet:  # only ever called on _mlx_thread
     global _model
     if _model is None:
-        _model = Model("base", models_dir=str(Path.home() / ".cache" / "whisper.cpp"), n_threads=os.cpu_count())
+        model = from_pretrained(PARAKEET_MODEL)
+        assert model.preprocessor_config.sample_rate == SAMPLERATE
+        # Weights load lazily; one pass on 1s of silence pulls them in now so
+        # the first real recording doesn't pay for it.
+        model.generate(get_logmel(mx.zeros(SAMPLERATE), model.preprocessor_config))
+        _model = model
     return _model
 
 
-def _whisper(wav_path: str) -> str:
-    segs = get_model().transcribe(wav_path)
-    return "".join(s.text for s in segs).strip()
+def warm_model() -> Future:
+    return _mlx_thread.submit(_get_model)
 
 
 def prewarm_mic() -> bool:
@@ -124,7 +140,7 @@ def stop_rec():
         print("■ transcribing…", flush=True)
         text = transcribe_array(audio)
         print(f"  text: {text}", flush=True)
-        if text.strip() and "[BLANK_AUDIO]" not in text and "[BLANK AUDIO]" not in text:
+        if text.strip():
             type_text(text)
         return
 
@@ -133,7 +149,7 @@ def stop_rec():
     wav = SAVE_DIR / f"{ts}.wav"
     txt = SAVE_DIR / f"{ts}.txt"
     sf.write(str(wav), audio, SAMPLERATE)
-    text = transcribe(wav)
+    text = transcribe_array(audio)
     txt.write_text(text, encoding="utf-8")
     print(f"  saved: {wav.name} + {txt.name}", flush=True)
     print(f"  text: {text}", flush=True)
@@ -158,17 +174,18 @@ def type_text(text: str) -> None:
         _typing = False
 
 
-def transcribe(wav_path: Path) -> str:
-    return _whisper(str(wav_path))
-
-
 def transcribe_array(audio: np.ndarray) -> str:
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        sf.write(f.name, audio, SAMPLERATE)
-        try:
-            return _whisper(f.name)
-        finally:
-            os.unlink(f.name)
+    # In memory: no temp file, and no ffmpeg (model.transcribe(path) shells out to
+    # it, and it's not on launchd's PATH).
+    # ponytail: whole recording in one pass, like model.transcribe's default; if a
+    # very long RIGHT-Option toggle recording runs out of memory, chunk it the way
+    # model.transcribe(chunk_duration=120) does.
+    def run() -> str:
+        model = _get_model()
+        mel = get_logmel(mx.array(audio.reshape(-1).astype(np.float32)), model.preprocessor_config)
+        return model.generate(mel)[0].text.strip()
+
+    return _mlx_thread.submit(run).result()
 
 
 def send_to_clixen(text: str) -> None:
@@ -247,6 +264,6 @@ if __name__ == "__main__":
               "  launchctl kickstart -k gui/$(id -u)/com.clixen.pushtotalk\n",
               flush=True)
         sys.exit(2)
-    threading.Thread(target=get_model, daemon=True).start()
+    warm_model()
     with keyboard.Listener(on_press=on_press, on_release=on_release) as l:
         l.join()

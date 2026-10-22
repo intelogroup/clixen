@@ -74,6 +74,7 @@ dependencies = [
   "pocket-tts>=2.1.0",
   "fastmcp>=2.14.1",
   "mlx-audio>=0.5.3",
+  "parakeet-mlx>=0.5.3",
 ]
 
 [project.optional-dependencies]
