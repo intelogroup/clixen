@@ -179,6 +179,21 @@ def window_title(app: str = "") -> str:
     return (_get(win, "AXTitle") or "") if win is not None else ""
 
 
+_NOT_EDITABLE = {"AXButton", "AXLink", "AXWebArea", "AXStaticText", "AXImage", "AXMenuItem", "AXMenuButton", "AXRadioButton", "AXCheckBox", "AXTab"}
+
+
+def focused_field(app: str = "") -> tuple[str, str] | None:
+    """(role, value) of the keyboard-focused element of the target app, or None when it can't be read."""
+    pid, _ = _target_app(app)
+    if pid is None:
+        return None
+    el = _get(_ax_app(pid), "AXFocusedUIElement")
+    if el is None:
+        return None
+    v = _get(el, "AXValue")
+    return str(_get(el, "AXRole") or ""), v if isinstance(v, str) else ""
+
+
 def settle_title(before: str, app: str = "", limit: float = 3.0, quiet: float = 0.4) -> str:
     """Poll the window title until it differs from `before` and holds still for `quiet`
     seconds, or `limit` runs out. Returns the last title seen."""

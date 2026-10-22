@@ -18,7 +18,7 @@ import tempfile
 import time
 
 from tools import orb_cursor
-from tools.ax_context import find_element, settle_title, window_title
+from tools.ax_context import _NOT_EDITABLE, find_element, focused_field, settle_title, window_title
 from tools.screen_watch import _ensure_ocr_bin, _front_window, _screen_locked, is_blocked
 
 CLICK_TEXT_SCHEMA = {
@@ -50,7 +50,7 @@ TYPE_TEXT_SCHEMA = {
         "name": "type_text",
         "description": (
             "Only for entering text characters (never for clicking: use click_text for that). Types text into whatever field currently has focus on the user's screen (click it first "
-            "with click_text). Set submit=true to press Return afterwards, e.g. to run a search."
+            "with click_text, using the field's own placeholder text, never a button like 'Search'). Returns what the field reads after typing, or an error if no text field is focused. Set submit=true to press Return afterwards, e.g. to run a search."
         ),
         "parameters": {
             "type": "object",
@@ -219,19 +219,36 @@ def _type_script(text: str, per: float, submit: bool) -> str:
     return script + "end tell"
 
 
+def _focus() -> tuple[str, str] | None:
+    try:
+        return focused_field()
+    except Exception:
+        return None  # accessibility unreadable: type anyway, report unverified
+
+
 def type_text(text: str, submit: bool = False) -> str:
     if (why := _guard(typing=True)):
         return why
+    f = _focus()
+    if f and f[0] in _NOT_EDITABLE:
+        # A click that landed on a button or link leaves nothing to type into; saying so beats typing into the void.
+        return f"Nothing typed: the focused element is a {f[0][2:].lower()}, not a text field. Click the field itself (use its own placeholder or label text) and retry."
     # One keystroke per character, at the pace the orb's typing hand animates (about 2.5s for any length).
     per = min(0.05, max(0.004, 2.5 / max(len(text), 1)))
     orb_cursor.typing(text, per)
-    r = subprocess.run(["osascript", "-e", _type_script(text, per, submit)], capture_output=True, text=True, timeout=30)
+    r = subprocess.run(["osascript", "-e", _type_script(text, per, False)], capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
         return f"Typing failed: {r.stderr.strip()}"
-    return f"Typed {len(text)} chars" + (" and pressed Return." if submit else ".")
+    after = _focus()
+    seen = f" Field reads: '{after[1][-60:]}'." if after and after[1] else ""
+    verified = bool(after and text[-20:] in after[1])
+    if submit:
+        subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 36'], capture_output=True, timeout=10)
+    note = "" if verified or not after else " (text not visible in the focused field: check it landed)"
+    return f"Typed {len(text)} chars" + (" and pressed Return." if submit else ".") + seen + note
 
 
-_END_PAGES = 30  # 'top'/'bottom': enough screenfuls to hit the end of any page
+_END_PAGES = 80  # 'top'/'bottom': screenfuls to try; the loop stops once the page stops moving
 _SCROLL_S = 0.7  # one smooth gesture; long jumps are split into several of these
 
 
