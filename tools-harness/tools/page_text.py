@@ -18,7 +18,7 @@ READ_PAGE_TEXT_SCHEMA = {
             "accordions, which it opens first). One call, no scrolling. Use it for ANY question about what a "
             "page says: specs, price, reviews, an article, a table, 'what does it say about X'. Pass `query` "
             "(a word or phrase, e.g. 'battery' or 'weight') to get only the passages that mention it, which "
-            "is faster and cheaper; omit it to read the page from the top.Prefer it over scrolling and "
+            "is faster and cheaper; omit it to read the page from the top. Long pages are cut at 12000 characters without a query, so for one fact (a count, price, date, name) always pass `query` (e.g. 'stars'). Prefer it over scrolling and "
             "get_screen_context for reading; use get_screen_context only for what is visibly on screen."
         ),
         "parameters": {
