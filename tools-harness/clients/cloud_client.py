@@ -491,7 +491,7 @@ FREE_FALLBACK_CANDIDATES = [
 # intent runs a MULTI-round tool loop (screenshot -> read) — gpt-4.1-mini has
 # no documented looping behavior, so that known drift risk is gone too.
 # Re-verify before repointing at OpenRouter even if its settings change.
-CLOUD_VISION_MODEL = "openai/gpt-4.1-mini"
+CLOUD_VISION_MODEL = "openai/gpt-6-luna"  # 2026-10-22: was gpt-4.1-mini; live-probed image read OK
 MAX_ROUNDS = 25
 
 # Hard cap on a single tool-execution round inside the cloud tool loop (same

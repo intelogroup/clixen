@@ -43,9 +43,9 @@ Cloud-first (2026-07): main agent default cloud via OpenRouter — local gemma4 
 
 | Model | Where | Role |
 |-------|-------|------|
-| `deepseek/deepseek-v4-flash` | Cloud | **Default** — chat + agentic tool use |
+| `openai/gpt-6-luna` | Cloud (OpenAI direct) | **Default** (2026-10-22) — chat, agentic tool use, intent classifier. Needs `max_completion_tokens` and `reasoning_effort: "none"` when tools are on |
 | `openrouter/anthropic/claude-haiku-4.5` | Cloud | Fallback on error / 3 consecutive tool errors |
-| `openrouter/google/gemini-3.1-flash-lite` | Cloud | Primary vision (`harness.py` routes `vision` intent here via `CLOUD_VISION_MODEL`) |
+| `openai/gpt-6-luna` | Cloud (OpenAI direct) | Vision (`harness.py` routes `vision` intent here via `CLOUD_VISION_MODEL`) |
 | `gemma4:12b` (GGUF) | Local | OCR/vision-capable, intent classifier, manual override, IDE-mode fallback — replaced `-mlx` tag 2026-08-08, mlx never received image bytes (Ollama runtime bug) |
 | `qwen3:8b` | Local | Query rewriting, history compaction — replaced `qwen3.5:4b` 2026-08-19, that tag never actually pulled |
 | `tools/local_vision.py` | Local | Replaces qwen3-vl for most screenshot analysis tasks |
