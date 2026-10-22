@@ -97,7 +97,7 @@ def test_scroll_deltas_wheel_signs():
     assert scroll_deltas("down", 1, 800) == (0, -800, "up")  # wheel: negative = reveal what is below
     assert scroll_deltas("up", 0.5, 800) == (0, 400, "down")
     assert scroll_deltas("right", 1, 800)[0] < 0
-    assert scroll_deltas("bottom", 1, 100)[1] == -3000  # pages ignored for the ends
+    assert scroll_deltas("bottom", 1, 100)[1] == -8000  # pages ignored for the ends
     assert scroll_deltas("top", 1, 100)[2] == "down"
 
 
@@ -110,3 +110,14 @@ def test_orb_cursor_scrolling_writes_event(tmp_path, monkeypatch):
     orb_cursor.scrolling("up", 0.7)
     v = json.loads((tmp_path / "c.json").read_text())
     assert v["scroll"] == {"dir": "up", "dur": 0.7} and v["seq"]
+
+
+def test_same_view_ignores_a_blinking_caret_but_not_a_scroll():
+    from tools.screen_act import _same_view
+
+    base = [200] * 2560
+    caret = base[:]
+    caret[100] = 0  # one pixel of 2560
+    scrolled = [200 if i % 64 < 32 else 40 for i in range(2560)]
+    assert _same_view(base, caret)
+    assert not _same_view(base, scrolled)

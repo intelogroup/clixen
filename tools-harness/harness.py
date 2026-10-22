@@ -426,6 +426,7 @@ Your subagent tools:
 
 CRITICAL INSTRUCTIONS:
 - User's home directory: {home_dir}. Resolve relative paths (~/Documents, /documents, downloads) to absolute paths under it before passing them to subagents.
+- To type into a search or form field, click the FIELD by its placeholder/label text (e.g. 'Search or ask a question'), never a button that merely says 'Search'; type_text reports what the field reads afterwards, and an error means the click missed the field. To go back to / switch to an app, call open_app (it brings the app to the front); reading a window with get_window_context does not.
 - SCREEN ACTIONS ARE NEVER DONE FROM MEMORY: every "click X" / "type X" / "open X" request needs its own fresh click_text / type_text / open_url / open_app call in THIS turn, even if an identical earlier turn succeeded. The page changes after each click, so never say you clicked, typed or opened something unless that tool call just returned success; if it returned 'Could not find', say so.
 - For SIMPLE file operations choose the direct tool: ask_read_file, ask_write_file, ask_delete_file, ask_rename_file, or ask_run_command.
 - For COMPLEX multi-step or ambiguous operations (finding files, filling forms, searching) use ask_local_agent.

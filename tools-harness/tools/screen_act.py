@@ -265,6 +265,26 @@ def scroll_deltas(direction: str, pages: float, page_px: float) -> tuple[float, 
     }.get(d, (0, -px, "up"))
 
 
+def _window_thumb(box) -> list[int]:
+    """64x40 grayscale thumbnail of the window, to tell whether a scroll moved the page."""
+    from PIL import Image
+
+    x, y, w, h = box
+    fd, path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        subprocess.run(["/usr/sbin/screencapture", "-x", "-R", f"{x:.0f},{y:.0f},{w:.0f},{h:.0f}", path], capture_output=True, timeout=10)
+        with Image.open(path) as im:
+            return list(im.convert("L").resize((64, 40)).getdata())
+    finally:
+        os.unlink(path)
+
+
+def _same_view(a: list[int], b: list[int]) -> bool:
+    # A blinking caret or a fading overlay changes a few thumbnail pixels; a scroll changes many.
+    return sum(abs(p - q) for p, q in zip(a, b)) / len(a) < 1.5
+
+
 def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str:
     import Quartz
 
@@ -286,6 +306,9 @@ def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (cx, cy), Quartz.kCGMouseButtonLeft))
     total = max(abs(dx), abs(dy))
     gestures = max(1, int(total // (h * 3)) + 1)  # long jumps (top/bottom) repeat the gesture
+    ends = direction in ("top", "bottom")
+    last = _window_thumb(box) if ends else None
+    moved = not ends
     for g in range(gestures):
         orb_cursor.scrolling(gesture, _SCROLL_S)
         steps = 28
@@ -298,4 +321,12 @@ def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
             time.sleep(_SCROLL_S / steps)
         time.sleep(0.1)
+        if ends:
+            time.sleep(0.45)  # let the orb's gesture overlay fade, or its animation reads as page movement
+            now = _window_thumb(box)
+            if _same_view(now, last):
+                break  # the page stopped moving: it is at the end
+            moved, last = True, now
+    if ends and not moved:
+        return f"Already at the {direction} of the page (nothing moved)."
     return f"Scrolled {direction}" + (f" {pages:g} page(s)" if direction not in ("top", "bottom") else "") + "."
