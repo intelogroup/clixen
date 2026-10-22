@@ -334,6 +334,7 @@ from tools.telegram_send import SEND_TELEGRAM_SCHEMA, send_telegram
 from tools.time_tool import GET_CURRENT_TIME_SCHEMA, get_current_time
 from tools.preview_watch import GET_PREVIEW_PAGE_SCHEMA, get_preview_current_page
 from tools.finder_actions import FINDER_SCHEMA, finder
+from tools.ui_element_actions import UI_CLICK_SCHEMA, UI_SEE_SCHEMA, ui_click, ui_see
 from tools.window_menu_actions import MENU_SCHEMA, WINDOW_SCHEMA, menu, window
 from tools.open_actions import OPEN_APP_SCHEMA, OPEN_URL_SCHEMA, open_app, open_url
 from tools.ax_context import GET_WINDOW_CONTEXT_SCHEMA, get_window_context

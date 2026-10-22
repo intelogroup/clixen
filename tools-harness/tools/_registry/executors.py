@@ -474,6 +474,8 @@ EXECUTORS = {
         args.get("action", ""), args.get("app", ""), int(args.get("index") or 1),
         args.get("x"), args.get("y"), args.get("width"), args.get("height"),
     ),
+    "ui_see": lambda args: ui_see(args.get("app", "")),
+    "ui_click": lambda args: ui_click(args.get("id", ""), args.get("app", ""), bool(args.get("double")), bool(args.get("right"))),
     "menu": lambda args: menu(args.get("action", ""), args.get("app", ""), args.get("path", "")),
     "get_window_context": lambda args: get_window_context(args.get("query") or "", args.get("app") or ""),
     "click_text": lambda args: click_text(args.get("text", ""), args.get("app") or ""),
