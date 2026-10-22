@@ -77,7 +77,23 @@ def test_centers_reads_snapshot_frames(monkeypatch, tmp_path):
 def test_drag_uses_both_centers_and_requires_see(monkeypatch):
     calls = []
     _setup(monkeypatch, calls)
+    monkeypatch.setattr(ua.time, "sleep", lambda s: None)
     assert ua.ui_drag("e1", "e3", "Finder").startswith("Refused")
     ua.ui_see("Finder")
+    gone = {"e3": (421, 302)}  # after the move 'back' is no longer at (10, 20)
+    monkeypatch.setattr(ua, "_centers", lambda sid: gone)
     assert ua.ui_drag("e1", "e3", "Finder") == "Dragged e1 (back) onto e3 (Downloads)."
-    assert calls[-1] == ["/x/peekaboo", "drag", "--from-coords", "10,20", "--to-coords", "421,302", "--app", "Finder"]
+    assert [c for c in calls if c[1] == "drag"][-1] == ["/x/peekaboo", "drag", "--from-coords", "10,20", "--to-coords", "421,302", "--app", "Finder"]
+
+
+def test_drag_warns_when_item_did_not_move(monkeypatch):
+    _setup(monkeypatch, [])
+    monkeypatch.setattr(ua.time, "sleep", lambda s: None)
+    ua.ui_see("Finder")  # same centres come back after the drag: nothing moved
+    assert "WARNING: 'back' is still at its old spot" in ua.ui_drag("e1", "e3", "Finder")
+
+
+def test_see_query_filters_before_the_cap(monkeypatch):
+    _setup(monkeypatch, [])
+    assert ua.ui_see("Finder", "down").splitlines()[1:] == ["e3 other Downloads"]
+    assert "none labelled 'zzz'" in ua.ui_see("Finder", "zzz")

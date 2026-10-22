@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 
 UI_SEE_SCHEMA = {
     "type": "function",
@@ -22,7 +23,10 @@ UI_SEE_SCHEMA = {
         ),
         "parameters": {
             "type": "object",
-            "properties": {"app": {"type": "string", "description": "App name, e.g. 'Finder'. Omit for the frontmost app."}},
+            "properties": {
+                "app": {"type": "string", "description": "App name, e.g. 'Finder'. Omit for the frontmost app."},
+                "query": {"type": "string", "description": "Only controls whose label contains this text. Use it in a crowded window (big folder, long list): the list is capped at 80 controls."},
+            },
         },
     },
 }
@@ -102,7 +106,8 @@ def _label(e: dict) -> str:
     return (e.get("label") or e.get("title") or e.get("description") or "").strip()
 
 
-def ui_see(app: str = "") -> str:
+def _scan(app: str, query: str = "") -> tuple[str, dict[str, str], dict[str, tuple[int, int]], list[str]] | str:
+    """One Peekaboo look at the app: (head line, id->label, id->centre, listing lines), or an error string. Touches no state."""
     exe = _peekaboo()
     if not exe:
         return "Error: peekaboo not installed (brew install steipete/tap/peekaboo)."
@@ -117,23 +122,31 @@ def ui_see(app: str = "") -> str:
     if not d.get("success"):
         return f"Error: {str(d.get('error') or d)[:200]}"
     data = d["data"]
+    want = query.strip().lower()
     seen: dict[str, str] = {}
     lines = []
     for e in data.get("ui_elements", []):
         label = _label(e)
-        if not e.get("is_actionable") or not label or label in ("image", "group"):
+        if not e.get("is_actionable") or not label or label in ("image", "group") or e["id"] in seen:
             continue
-        if e["id"] in seen:
+        if want and want not in label.lower():
             continue
         seen[e["id"]] = label
         lines.append(f"{e['id']} {e['role']} {label}")
         if len(lines) >= _MAX_ELEMENTS:
             break
-    _last_seen[app] = seen
     centers = _centers(data.get("snapshot_id", ""))
-    _last_center[app] = {i: centers[i] for i in seen if i in centers}
     head = f"{data.get('application_name')} - {data.get('window_title')}: {len(lines)} of {data.get('interactable_count')} controls"
-    return head + "\n" + "\n".join(lines) if lines else head + " (none labelled)"
+    return head, seen, {i: centers[i] for i in seen if i in centers}, lines
+
+
+def ui_see(app: str = "", query: str = "") -> str:
+    got = _scan(app, query)
+    if isinstance(got, str):
+        return got
+    head, seen, centers, lines = got
+    _last_seen[app], _last_center[app] = seen, centers
+    return head + "\n" + "\n".join(lines) if lines else head + (f" (none labelled {query!r})" if query else " (none labelled)")
 
 
 def ui_click(id: str, app: str = "", double: bool = False, right: bool = False) -> str:
@@ -175,4 +188,10 @@ def ui_drag(from_id: str, to_id: str, app: str = "") -> str:
     if r.returncode != 0:
         return f"Error: {(r.stderr or r.stdout).strip()[:200] or 'peekaboo drag failed'}"
     labels = _last_seen.get(app, {})
-    return f"Dragged {from_id} ({labels.get(from_id, '?')}) onto {to_id} ({labels.get(to_id, '?')})."
+    name = labels.get(from_id, "?")
+    msg = f"Dragged {from_id} ({name}) onto {to_id} ({labels.get(to_id, '?')})."
+    time.sleep(1.0)  # let the app finish the move before looking again
+    after = _scan(app, name) if name != "?" else None
+    if after and not isinstance(after, str) and any(abs(x - fx) < 12 and abs(y - fy) < 12 for x, y in after[2].values()):
+        msg += f" WARNING: '{name}' is still at its old spot, so the drag may not have worked; verify before saying it is done."
+    return msg
