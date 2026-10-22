@@ -17,3 +17,28 @@ def test_registered_and_offered_on_the_orb_path():
 
     assert "close_tabs" in EXECUTORS
     assert "close_tabs" in open(harness.__file__).read()
+
+
+def test_key_script_understands_shortcuts():
+    ks = screen_act.key_script
+    assert ks("cmd+d") == 'tell application "System Events" to keystroke "d" using {command down}'
+    assert ks("cmd+shift+t").endswith("using {command down, shift down}")
+    assert ks("esc").endswith("key code 53")
+    assert '"="' in ks("cmd+plus") and ks("cmd++") == ks("cmd+plus")  # unshifted plus key
+    assert ks("hyper+x") is None and ks("cmd+notakey") is None and ks("") is None
+
+
+def test_press_keys_refuses_a_terminal_front_window(monkeypatch):
+    monkeypatch.setattr(screen_act, "_front_window", lambda: ("Terminal", "zsh"))
+    assert "terminal" in screen_act.press_keys("cmd+d")
+
+
+def test_click_text_refuses_an_ambiguous_label(monkeypatch):
+    from tools import ax_context
+
+    monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
+    def boom(t, app=""):
+        raise ax_context.AmbiguousTarget(["Add to cart Kettle", "Add to cart Mug"])
+    monkeypatch.setattr(screen_act, "find_element", boom)
+    r = screen_act.click_text("Add to cart")
+    assert "2 different elements" in r and "Kettle" in r

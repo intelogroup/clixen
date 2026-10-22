@@ -18,7 +18,7 @@ import tempfile
 import time
 
 from tools import orb_cursor
-from tools.ax_context import _NOT_EDITABLE, find_element, focused_field, settle_title, tab_count, window_title
+from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, find_element, focused_field, front_url, labels_at, popovers, settle_title, tab_count, window_title
 from tools.screen_watch import _ensure_ocr_bin, _front_window, _screen_locked, is_blocked
 
 CLICK_TEXT_SCHEMA = {
@@ -100,6 +100,29 @@ CLOSE_TABS_SCHEMA = {
                 "app": {"type": "string", "description": "Browser name, e.g. 'Google Chrome'; omit for the front app."},
                 "keep": {"type": "integer", "default": 0, "description": "Tabs to leave open in each instance."},
             },
+        },
+    },
+}
+
+PRESS_KEYS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "press_keys",
+        "description": (
+            "Presses a keyboard shortcut in the user's own app. Prefer this over hunting for toolbar buttons: back 'cmd+[', forward "
+            "'cmd+]', reload 'cmd+r', new tab 'cmd+t', close THIS tab 'cmd+w', reopen closed tab 'cmd+shift+t', bookmark 'cmd+d', "
+            "zoom in 'cmd+plus', zoom out 'cmd+minus', reset zoom 'cmd+0', address bar 'cmd+l', find 'cmd+f', next tab 'ctrl+tab', "
+            "close a popover 'esc'. Modifiers: cmd shift alt ctrl. Keys: letters, digits, esc, return, tab, space, delete, left, "
+            "right, up, down, plus, minus, [ ]. A popover the shortcut opens (bookmark bubble) is closed again automatically. "
+            "Reports whether the page or title changed."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "keys": {"type": "string", "description": "e.g. 'cmd+d', 'cmd+shift+t', 'esc'"},
+                "app": {"type": "string", "description": "App to bring to the front first, e.g. 'Google Chrome'; required when the front app is a terminal."},
+            },
+            "required": ["keys"],
         },
     },
 }
@@ -199,6 +222,19 @@ def _click(x: float, y: float) -> None:
         time.sleep(0.05)
 
 
+def dismiss_popovers(app: str = "") -> list[str]:
+    """Esc until the app's popovers are gone (3 tries). Returns the titles that were closed."""
+    seen: list[str] = []
+    for _ in range(3):
+        now = popovers(app)
+        if not now:
+            break
+        seen = seen or now
+        subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 53'], capture_output=True, timeout=10)
+        time.sleep(0.5)
+    return seen
+
+
 def click_text(text: str, app: str = "") -> str:
     if app:
         subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)
@@ -207,8 +243,28 @@ def click_text(text: str, app: str = "") -> str:
         return why
     try:
         hit = find_element(text)  # native accessibility position first: exact, no OCR
+    except AmbiguousTarget as a:
+        return f"'{text}' matches {len(a.args[0])} different elements: {a.args[0][:8]}. Say which one by using its full label."
     except Exception:
         hit = None
+    if hit is None and (closed := dismiss_popovers(app)):  # a stray popover hides the page: close it, look again
+        try:
+            hit = find_element(text)
+        except Exception:
+            hit = None
+        note = f" (closed popover '{closed[0]}' first)"
+    else:
+        note = ""
+    if hit is not None:  # the layout can shift under us (panel closing, popover): confirm the point still holds the target
+        want = text.strip().lower()
+        if not any(want in lab.lower() for lab in labels_at(*hit)):
+            time.sleep(0.4)
+            try:
+                hit = find_element(text)
+            except Exception:
+                hit = None
+            if hit is not None and not any(want in lab.lower() for lab in labels_at(*hit)):
+                return f"Not clicked: the point for '{text}' now holds '{(labels_at(*hit) or ['something else'])[0]}' (the page moved). Read the screen again and retry."
     hit = hit or find_text(_ocr_boxes(), text) or find_text(_ocr_boxes(accurate=True), text)
     if hit is None:
         return f"Could not find '{text}' on screen."
@@ -217,7 +273,7 @@ def click_text(text: str, app: str = "") -> str:
     except Exception:
         before = ""
     _click(*hit)
-    where = f"Clicked '{text}' at ({hit[0]:.0f}, {hit[1]:.0f})"
+    where = f"Clicked '{text}' at ({hit[0]:.0f}, {hit[1]:.0f}){note}"
     try:
         after = settle_title(before, app)
     except Exception:
@@ -389,3 +445,62 @@ def close_tabs(app: str = "", keep: int = 0) -> str:
         closed += n - now
         left += now
     return f"Closed {closed} tab(s) in {inst[0].localizedName()} across {len(inst)} instance(s); {left} left."
+
+
+_KEYCODES = {"esc": 53, "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51, "left": 123, "right": 124, "down": 125, "up": 126}
+_MODS = {"cmd": "command down", "command": "command down", "shift": "shift down", "alt": "option down", "option": "option down",
+         "ctrl": "control down", "control": "control down"}
+
+
+def key_script(keys: str) -> str | None:
+    """AppleScript line for 'cmd+shift+t'-style input; None when a part is not understood."""
+    parts = [p.strip().lower() for p in keys.split("+") if p.strip()]
+    if keys.strip().endswith("++"):  # 'cmd++' means cmd and the plus key
+        parts = [p.strip().lower() for p in keys.strip()[:-2].split("+") if p.strip()] + ["plus"]
+    if not parts:
+        return None
+    mods, key = parts[:-1], parts[-1]
+    if any(m not in _MODS for m in mods):
+        return None
+    using = f" using {{{', '.join(_MODS[m] for m in mods)}}}" if mods else ""
+    if key in _KEYCODES:
+        act = f"key code {_KEYCODES[key]}{using}"
+    else:
+        ch = {"plus": "=", "minus": "-"}.get(key, key)  # Chrome zooms in on cmd+=, the unshifted plus key
+        if len(ch) != 1:
+            return None
+        act = f'keystroke "{ch}"{using}'
+    return f'tell application "System Events" to {act}'
+
+
+def press_keys(keys: str, app: str = "") -> str:
+    script = key_script(keys)
+    if script is None:
+        return f"Did not understand keys '{keys}'. Use e.g. 'cmd+d', 'cmd+shift+t', 'esc', 'cmd+plus'."
+    if app:
+        subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)
+        time.sleep(0.6)
+    front = _front_window()[0]
+    if not app and any(t in front.lower() for t in _TERMINALS):
+        return f"Front app is a terminal ({front}); pass app (e.g. 'Google Chrome') so the keys go to the right window."
+    if (why := _guard(typing=True)):
+        return why
+    try:
+        t0, u0 = window_title(app), front_url(app)
+    except Exception:
+        t0 = u0 = ""
+    subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
+    time.sleep(0.8)
+    closed = [] if keys.strip().lower() == "esc" else dismiss_popovers(app)
+    try:
+        t1, u1 = window_title(app), front_url(app)
+    except Exception:
+        t1, u1 = t0, u0
+    out = f"Pressed {keys}."
+    if closed:
+        out += f" It opened a popover '{closed[0]}', closed again with Esc."
+    if u0 != u1 or t0 != t1:
+        out += f" Now showing '{t1}'" + (f" ({u1})." if u1 else ".")
+    else:
+        out += " Page and title unchanged."
+    return out

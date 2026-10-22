@@ -339,10 +339,12 @@ from tools.page_text import READ_PAGE_TEXT_SCHEMA, read_page_text
 from tools.screen_act import (
     CLICK_TEXT_SCHEMA,
     CLOSE_TABS_SCHEMA,
+    PRESS_KEYS_SCHEMA,
     SCROLL_PAGE_SCHEMA,
     TYPE_TEXT_SCHEMA,
     click_text,
     close_tabs,
+    press_keys,
     scroll_page,
     type_text,
 )

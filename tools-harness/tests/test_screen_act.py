@@ -27,6 +27,7 @@ def test_type_text_refuses_terminal(monkeypatch):
 def test_click_text_prefers_native_position(monkeypatch):
     monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
     monkeypatch.setattr(screen_act, "find_element", lambda t: (10.0, 20.0))
+    monkeypatch.setattr(screen_act, "labels_at", lambda x, y: ["Donate"])
     monkeypatch.setattr(screen_act, "_ocr_boxes", lambda accurate=False: (_ for _ in ()).throw(AssertionError("OCR used")))
     clicked = []
     monkeypatch.setattr(screen_act, "_click", lambda x, y: clicked.append((x, y)))

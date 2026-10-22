@@ -170,13 +170,28 @@ def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[s
 
 
 def window_title(app: str = "") -> str:
-    """Focused window title of the target app, cheap (no tree walk)."""
+    """Title of the target app's focused window, cheap (no tree walk). A popover (bookmark bubble,
+    extension popup) is not the window: its title is skipped in favour of the real window under it."""
     pid, _ = _target_app(app)
     if pid is None:
         return ""
     el = _ax_app(pid)
     win = _get(el, "AXFocusedWindow") or _get(el, "AXMainWindow")
+    if win is not None and _get(win, "AXSubrole") not in (None, "AXStandardWindow"):
+        win = _get(el, "AXMainWindow") or win
     return (_get(win, "AXTitle") or "") if win is not None else ""
+
+
+def popovers(app: str = "") -> list[str]:
+    """Titles of the target app's transient floating windows (bookmark bubble, extension popup, zoom bubble)."""
+    pid, _ = _target_app(app)
+    if pid is None:
+        return []
+    out = []
+    for w in _get(_ax_app(pid), "AXWindows") or ():
+        if _get(w, "AXSubrole") not in ("AXStandardWindow", "AXDialog", "AXSystemDialog"):
+            out.append(str(_get(w, "AXTitle") or "(untitled popover)"))
+    return out
 
 
 _NOT_EDITABLE = {"AXButton", "AXLink", "AXWebArea", "AXStaticText", "AXImage", "AXMenuItem", "AXMenuButton", "AXRadioButton", "AXCheckBox", "AXTab"}
@@ -310,6 +325,25 @@ def _actions(el):
     return names if err == 0 else None
 
 
+class AmbiguousTarget(Exception):
+    """More than one element contains the wanted text and none matches it exactly."""
+
+
+def labels_at(x: float, y: float) -> list[str]:
+    """Labels of the element under a screen point and its three nearest ancestors (what a click there would hit)."""
+    from ApplicationServices import AXUIElementCopyElementAtPosition, AXUIElementCreateSystemWide
+
+    err, el = AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), x, y, None)
+    out = []
+    for _ in range(4):
+        if el is None:
+            break
+        if lab := _label(el):
+            out.append(lab)
+        el = _get(el, "AXParent")
+    return out
+
+
 def find_element(label: str, app: str = "") -> tuple[float, float] | None:
     """Clickable point of the best element whose label matches: exact > shortest substring.
     Scrolls it into view first and aims at its visible part."""
@@ -320,6 +354,10 @@ def find_element(label: str, app: str = "") -> tuple[float, float] | None:
     win = _get(app_el, "AXFocusedWindow") or _get(app_el, "AXMainWindow")
     rect = _window_rect(win) if win else None
     best = None
+    if w and not any(e["label"].lower() == w for e in els):
+        names = sorted({e["label"] for e in els})
+        if len(names) > 1:
+            raise AmbiguousTarget(names)
     for e in els:
         lab = e["label"].lower()
         score = (0 if lab == w else 1, 0 if _visible_centre(e["el"], rect, strict=True) else 1, len(lab))
@@ -342,7 +380,10 @@ def get_window_context(query: str = "", app: str = "") -> str:
     name, title, els = elements(app, query)
     if name and is_blocked(name, title):
         return "Front window is private or a password manager; not reading it."
-    lines = [f"Front app: {name} — {title or '(no focused window)'}", "Windows:"]
+    lines = [f"Front app: {name} — {title or '(no focused window)'}"]
+    if pops := popovers(app):
+        lines.append(f"POPOVER OPEN: {', '.join(pops)} (floats over the page; elements below are its own. Close it with press_keys('esc') or click_text on its button.)")
+    lines.append("Windows:")
     lines += [f"- {w}" for w in window_list()[:12]]
     if not els:
         lines.append("Elements: none exposed (app has no accessibility tree; try get_screen_context or click_text OCR).")

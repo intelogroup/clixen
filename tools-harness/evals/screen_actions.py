@@ -59,6 +59,12 @@ _PAGES = {
               "<button aria-expanded='false' onclick=\"var d=document.getElementById('w');var o=this.getAttribute('aria-expanded')=='true';"
               "this.setAttribute('aria-expanded',!o);d.style.display=o?'none':'block'\">Warranty</button>"
               "<div id='w' style='display:none'><p>Warranty period: 37 months.</p></div>",
+    "/form": "<h1>Contact</h1><label>Name <input id='n' placeholder='Your name'></label><br><label>Email <input id='e' placeholder='Your email'></label><br>"
+             "<label><input type='checkbox' id='c'> Subscribe to newsletter</label><br>"
+             "<button onclick=\"document.title='submitted|'+n.value+'|'+e.value+'|'+(c.checked?'sub':'nosub')\">Submit</button>",
+    "/shop": "<h1>Shop</h1>"
+             + "".join(f"<div><b>{n}</b> price ${p} <button onclick=\"document.title='cart|{n}'\">Add to cart {n}</button></div>"
+                       for n, p in (("Kettle", 40), ("Lamp", 125), ("Chair", 310), ("Mug", 9))),
 }
 _server = None
 
@@ -136,6 +142,42 @@ def open_tabs(n: int) -> Callable[[], None]:
 def no_tabs_left(s: State) -> str | None:
     left = _chrome_tabs()
     return None if left == 0 else f"{left} Chrome tab(s) still open (counted over every Chrome instance)"
+
+
+def fixture_then(path: str, then: Callable[[], None]) -> Callable[[], None]:
+    def go() -> None:
+        fixture(path)()
+        then()
+
+    return go
+
+
+def bookmark_bubble_open() -> None:
+    subprocess.run(["osascript", "-e", 'tell application "System Events" to keystroke "d" using {command down}'], capture_output=True)
+    time.sleep(1)
+
+
+def two_pages_deep() -> None:
+    """Two pages in ONE tab (open_url would make a new tab, which has no history to go back to)."""
+    from tools import screen_act
+
+    fixture("/long")()
+    screen_act.press_keys("cmd+l", CHROME)
+    screen_act.type_text(f"http://127.0.0.1:{_PORT}/specs", submit=True)
+    time.sleep(2)
+
+
+def extra_tab_in_front() -> None:
+    fixture("/long")()
+    subprocess.run(["/usr/bin/open", "-a", CHROME, "https://example.com"], capture_output=True)
+    time.sleep(3)
+
+
+def no_popover(s: State) -> str | None:
+    from tools.ax_context import popovers
+
+    left = popovers(CHROME)
+    return None if not left else f"popover still open: {left}"
 
 
 def calculator_in_front() -> None:
@@ -241,6 +283,14 @@ CASES: list[Case] = [
          fixture("/specs"), all_of(used("read_page_text"), reply_matches(r"\$\s?\d|\d+\s?(usd|dollars)", False)), 25, tags=["read-page", "honesty"]),
     Case("close-all-tabs", "close all the tabs",
          open_tabs(5), all_of(used("close_tabs"), no_tabs_left), 40, tags=["tabs", "regression"]),
+    Case("bookmark-popover-closed", "bookmark this page",
+         fixture("/form"), all_of(used("press_keys"), no_popover, reply_matches(r"bookmark")), 30, tags=["popover"]),
+    Case("click-past-popover", "add the Kettle on this page to the cart",
+         fixture_then("/shop", bookmark_bubble_open), all_of(title_has("cart|kettle"), no_popover), 35, tags=["popover", "regression"]),
+    Case("go-back", "go back to the previous page",
+         two_pages_deep, title_has("long"), 30, tags=["keys"]),
+    Case("close-this-tab", "close this tab",
+         extra_tab_in_front, all_of(used("press_keys"), title_has("long")), 30, tags=["keys", "tabs"]),
     Case("chain-scroll-click", "scroll down and then click the link Bletchley Park",
          open_page(TURING), title_has("bletchley"), 45, tags=["chain"]),
 ]
