@@ -18,7 +18,7 @@ import tempfile
 import time
 
 from tools import orb_cursor
-from tools.ax_context import _NOT_EDITABLE, find_element, focused_field, settle_title, window_title
+from tools.ax_context import _NOT_EDITABLE, find_element, focused_field, settle_title, tab_count, window_title
 from tools.screen_watch import _ensure_ocr_bin, _front_window, _screen_locked, is_blocked
 
 CLICK_TEXT_SCHEMA = {
@@ -79,6 +79,26 @@ SCROLL_PAGE_SCHEMA = {
                 "direction": {"type": "string", "enum": ["down", "up", "left", "right", "top", "bottom"], "default": "down"},
                 "pages": {"type": "number", "default": 1},
                 "app": {"type": "string", "description": "App to bring to the front first, e.g. 'Google Chrome'; omit for the front window."},
+            },
+        },
+    },
+}
+
+CLOSE_TABS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "close_tabs",
+        "description": (
+            "Closes ALL tabs in the user's own browser (every window and every running instance of it, e.g. both Chrome "
+            "profiles), by pressing Cmd+W on what the user actually sees. Use for 'close all the tabs / close everything in "
+            "Chrome'. Never touches terminals. Closing the last tab closes that window; the app stays open. app defaults to "
+            "the front app, or Chrome when the front app is a terminal. keep leaves that many tabs open."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "app": {"type": "string", "description": "Browser name, e.g. 'Google Chrome'; omit for the front app."},
+                "keep": {"type": "integer", "default": 0, "description": "Tabs to leave open in each instance."},
             },
         },
     },
@@ -330,3 +350,42 @@ def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str
     if ends and not moved:
         return f"Already at the {direction} of the page (nothing moved)."
     return f"Scrolled {direction}" + (f" {pages:g} page(s)" if direction not in ("top", "bottom") else "") + "."
+
+
+def close_tabs(app: str = "", keep: int = 0) -> str:
+    """Cmd+W every tab of every running instance of `app`, then recount from the AX tree."""
+    from AppKit import NSWorkspace
+
+    err = _guard()
+    if err:
+        return err
+    apps = NSWorkspace.sharedWorkspace().runningApplications()
+    name = (app or _front_window()[0]).lower()
+    if not app and any(t in name for t in _TERMINALS):
+        name = "google chrome"  # the user is talking from a terminal; they mean the browser
+    if any(t in name for t in _TERMINALS):
+        return f"{name} is a terminal; not closing its tabs."
+    inst = [a for a in apps if a.activationPolicy() == 0 and a.localizedName() and a.localizedName().lower() == name]
+    if not inst:
+        return f"{app or name} is not running."
+    closed, left = 0, 0
+    for a in inst:
+        pid = a.processIdentifier()
+        n = tab_count(pid)
+        if n <= keep:
+            left += n
+            continue
+        a.activateWithOptions_(2)  # NSApplicationActivateIgnoringOtherApps
+        time.sleep(0.4)
+        now = n
+        for _ in range(6):  # Chrome drops keystrokes while busy: recount and press again until it stops shrinking
+            for _ in range(now - keep):
+                subprocess.run(["osascript", "-e", 'tell application "System Events" to keystroke "w" using command down'], capture_output=True, timeout=10)
+                time.sleep(0.12)
+            time.sleep(0.6)
+            was, now = now, tab_count(pid)
+            if now <= keep or now >= was:
+                break
+        closed += n - now
+        left += now
+    return f"Closed {closed} tab(s) in {inst[0].localizedName()} across {len(inst)} instance(s); {left} left."

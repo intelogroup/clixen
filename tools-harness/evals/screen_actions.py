@@ -116,6 +116,28 @@ def open_then_scroll(url: str, pages: float) -> Callable[[], None]:
     return go
 
 
+def _chrome_tabs() -> int:
+    from AppKit import NSWorkspace
+
+    from tools.ax_context import tab_count
+
+    return sum(tab_count(a.processIdentifier()) for a in NSWorkspace.sharedWorkspace().runningApplications()
+               if a.localizedName() == CHROME)
+
+
+def open_tabs(n: int) -> Callable[[], None]:
+    def go() -> None:
+        subprocess.run(["/usr/bin/open", "-a", CHROME, *[f"http://127.0.0.1:{_PORT}/long?t={i}" for i in range(n)]], capture_output=True)
+        time.sleep(3)
+
+    return go
+
+
+def no_tabs_left(s: State) -> str | None:
+    left = _chrome_tabs()
+    return None if left == 0 else f"{left} Chrome tab(s) still open (counted over every Chrome instance)"
+
+
 def calculator_in_front() -> None:
     subprocess.run(["/usr/bin/open", "-a", "Calculator"], capture_output=True)
     time.sleep(1.5)
@@ -217,6 +239,8 @@ CASES: list[Case] = [
          fixture("/specs"), all_of(used("read_page_text"), reply_matches(r"37")), 25, tags=["read-page"]),
     Case("page-text-absent", "what is the price of the item on this page?",
          fixture("/specs"), all_of(used("read_page_text"), reply_matches(r"\$\s?\d|\d+\s?(usd|dollars)", False)), 25, tags=["read-page", "honesty"]),
+    Case("close-all-tabs", "close all the tabs",
+         open_tabs(5), all_of(used("close_tabs"), no_tabs_left), 40, tags=["tabs", "regression"]),
     Case("chain-scroll-click", "scroll down and then click the link Bletchley Park",
          open_page(TURING), title_has("bletchley"), 45, tags=["chain"]),
 ]

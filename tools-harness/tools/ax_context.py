@@ -207,6 +207,23 @@ def front_url(app: str = "") -> str:
     return str(url) if url else ""
 
 
+def tab_count(pid: int) -> int:
+    """Tabs across all of one app instance's windows (0 when its windows have no tab strip)."""
+    el = _ax_app(pid)
+    n = 0
+    for win in _get(el, "AXWindows") or ():
+        stack = [win]
+        for _ in range(400):  # the tab strip sits near the top of the tree
+            if not stack:
+                break
+            e = stack.pop()
+            if _get(e, "AXRole") == "AXTabGroup":
+                n += len(_get(e, "AXChildren") or ())
+                break
+            stack.extend(_get(e, "AXChildren") or ())
+    return n
+
+
 def settle_title(before: str, app: str = "", limit: float = 3.0, quiet: float = 0.4) -> str:
     """Poll the window title until it differs from `before` and holds still for `quiet`
     seconds, or `limit` runs out. Returns the last title seen."""
