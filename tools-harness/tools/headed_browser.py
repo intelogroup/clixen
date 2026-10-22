@@ -233,6 +233,10 @@ def _launch_inner(headless: bool | None, url: str) -> str:
 
 
 def _goto_inner(url: str, timeout: int = 30000) -> None:
+    from tools.url_guard import navigable, refusal
+
+    if not navigable(url):
+        raise ValueError(refusal(url))
     for wait_until in ("networkidle", "load", "domcontentloaded"):
         try:
             _S.page.goto(url, timeout=timeout, wait_until=wait_until)

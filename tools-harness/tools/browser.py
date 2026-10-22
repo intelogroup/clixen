@@ -578,6 +578,10 @@ ALL_BROWSER_SCHEMAS = [
 
 @_serialised
 def browser_navigate(url: str, timeout: int = 20000) -> str:
+    from tools.url_guard import navigable, refusal
+
+    if not navigable(url):
+        return refusal(url)
     try:
         page = _get_page()
         try:
