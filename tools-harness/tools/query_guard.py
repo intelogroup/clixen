@@ -530,6 +530,11 @@ def _data_inner(query: str) -> str | None:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+# A command to drive the user's screen is not an information query: the team names or places
+# inside the text to type ("type: Barcelona Vs Psg") must not trip the sports/toponym clarifiers.
+_SCREEN_COMMAND = re.compile(r"\btype\s*:|^\s*(?:now\s+|please\s+)*(?:click|scroll|press|type)\b", re.I)
+
+
 def check_all(query: str, has_history: bool | None = None) -> str | None:
     """
     Run ALL guard checks in priority order. Returns the first clarifying
@@ -555,6 +560,9 @@ def check_all(query: str, has_history: bool | None = None) -> str | None:
     q = query.strip()
     if not q:
         return "Please enter a valid search query."
+
+    if _SCREEN_COMMAND.search(q):
+        return None
 
     # Return early for completely junk/non-alphanumeric queries.
     # \w is Unicode-aware in Python 3 (matches Chinese/Japanese/Arabic/
