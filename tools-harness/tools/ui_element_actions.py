@@ -48,6 +48,19 @@ UI_CLICK_SCHEMA = {
     },
 }
 
+UI_DRAG_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "ui_drag",
+        "description": "Drag one control onto another by the ids ui_see returned for the same app (move a file onto a folder, reorder a list). Refuses ids not from the latest ui_see.",
+        "parameters": {
+            "type": "object",
+            "properties": {"from_id": {"type": "string"}, "to_id": {"type": "string"}, "app": {"type": "string"}},
+            "required": ["from_id", "to_id"],
+        },
+    },
+}
+
 _MAX_ELEMENTS = 80
 _REFUSED = ("close", "quit", "delete", "trash", "remove", "erase", "log out", "shut down", "restart", "sleep")
 # app key ("" = frontmost) -> {element id: label}, from the latest ui_see
@@ -144,3 +157,22 @@ def ui_click(id: str, app: str = "", double: bool = False, right: bool = False) 
     if r.returncode != 0:
         return f"Error: {(r.stderr or r.stdout).strip()[:200] or 'peekaboo click failed'}"
     return f"Clicked {id} ({label})."
+
+
+def ui_drag(from_id: str, to_id: str, app: str = "") -> str:
+    centers = _last_center.get(app, {})
+    for i in (from_id, to_id):
+        if i not in centers:
+            return f"Refused: {i} was not returned by the latest ui_see{' for ' + app if app else ''}. Call ui_see first."
+    exe = _peekaboo()
+    if not exe:
+        return "Error: peekaboo not installed."
+    (fx, fy), (tx, ty) = centers[from_id], centers[to_id]
+    try:
+        r = _run([exe, "drag", "--from-coords", f"{fx},{fy}", "--to-coords", f"{tx},{ty}", *(["--app", app] if app else [])])
+    except subprocess.TimeoutExpired:
+        return "Error: peekaboo drag timed out."
+    if r.returncode != 0:
+        return f"Error: {(r.stderr or r.stdout).strip()[:200] or 'peekaboo drag failed'}"
+    labels = _last_seen.get(app, {})
+    return f"Dragged {from_id} ({labels.get(from_id, '?')}) onto {to_id} ({labels.get(to_id, '?')})."

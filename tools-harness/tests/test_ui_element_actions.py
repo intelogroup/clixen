@@ -72,3 +72,12 @@ def test_centers_reads_snapshot_frames(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     assert ua._centers("S1") == {"elem_29": (421, 302)}
     assert ua._centers("missing") == {}
+
+
+def test_drag_uses_both_centers_and_requires_see(monkeypatch):
+    calls = []
+    _setup(monkeypatch, calls)
+    assert ua.ui_drag("e1", "e3", "Finder").startswith("Refused")
+    ua.ui_see("Finder")
+    assert ua.ui_drag("e1", "e3", "Finder") == "Dragged e1 (back) onto e3 (Downloads)."
+    assert calls[-1] == ["/x/peekaboo", "drag", "--from-coords", "10,20", "--to-coords", "421,302", "--app", "Finder"]
