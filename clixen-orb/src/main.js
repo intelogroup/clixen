@@ -223,13 +223,13 @@ const CHIP_ICONS = {
 };
 function drawPixelChip(cx, cy, icon) {
   const grid = CHIP_ICONS[icon];
-  const cell = 2;                 // 8x8 icon = 16px, chip = 20px with border
-  const x0 = cx - 10, y0 = cy - 10;
+  const cell = 3;                 // 8x8 icon = 24px, chip = 28px with border
+  const x0 = cx - 14, y0 = cy - 14;
   // Chip body: black 2px border around a pale grey field, like a sprite tile.
   ctx.fillStyle = PX.K;
-  ctx.fillRect(x0, y0, 20, 20);
+  ctx.fillRect(x0, y0, 28, 28);
   ctx.fillStyle = PX.G;
-  ctx.fillRect(x0 + 2, y0 + 2, 16, 16);
+  ctx.fillRect(x0 + 2, y0 + 2, 24, 24);
   // Glyph cells.
   for (let r = 0; r < grid.length; r++) {
     for (let c = 0; c < grid[r].length; c++) {
@@ -272,7 +272,7 @@ function draw() {
       ctx.globalAlpha = hoverAlpha;
       drawPixelChip(bx, by, b.icon);
       ctx.restore();
-      hoverBtns.push({ x: bx, y: by, r: 12, action: b.action });
+      hoverBtns.push({ x: bx, y: by, r: 16, icon: b.icon, action: b.action });
     }
   }
 }
@@ -348,8 +348,8 @@ canvas.addEventListener("pointermove", (e) => {
   const y = e.clientY - rect.top;
   const cx = W / 2, cy = ORB_CY;
   hovered = Math.hypot(x - cx, y - cy) <= ORB_R + 6
-    || Math.hypot(x - (cx - 26), y - (cy - BTN_DY)) <= 12
-    || Math.hypot(x - (cx + 26), y - (cy - BTN_DY)) <= 12;
+    || Math.hypot(x - (cx - 26), y - (cy - BTN_DY)) <= 16
+    || Math.hypot(x - (cx + 26), y - (cy - BTN_DY)) <= 16;
 });
 canvas.addEventListener("pointerleave", () => { hovered = false; dragStart = null; });
 
@@ -473,7 +473,18 @@ async function startListening() {
 }
 
 function stopListening() {
-  if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  if (!mediaRecorder || mediaRecorder.state === "inactive") {
+    teardownMic();
+    return Promise.resolve();
+  }
+  // Resolve only once the recorder has fully stopped: while a mic stream is
+  // live the window server wedges programmatic moves (empirically — a drag
+  // during listening moves the window zero pixels), so callers that need to
+  // move the orb must await this before dragging.
+  return new Promise((resolve) => {
+    mediaRecorder.addEventListener("stop", resolve, { once: true });
+    mediaRecorder.stop();
+  });
 }
 
 function teardownMic() {
@@ -701,56 +712,115 @@ listen("orb-event", (ev) => {
 
 /* ---- interaction ------------------------------------------------------
  * Orb-first model: press to talk, drag to move, double-click to type.
+ *
+ * Gesture lifecycle (single pointer, primary button only):
+ *   pointerdown on chip   -> chip action; gesture ends (no tap/hold/drag armed)
+ *   pointerdown on body   -> PRESSED: arm hold timer (HOLD_MS) + drag origin
+ *   PRESSED + move > SLOP -> DRAG: window follows the cursor until release;
+ *                            if the hold already opened the mic, close it —
+ *                            the mic must never record through a reposition
+ *   PRESSED >= HOLD_MS    -> HOLD: mic opens; release closes it
+ *   release < HOLD_MS     -> TAP: inert on its own; two taps within
+ *                            DOUBLE_TAP_WINDOW during acting/speaking cancel
+ *                            the turn (and suppress the prompt dblclick);
+ *                            a clean double-click opens the typing prompt
+ *   right-click           -> closes the mic if it is open
+ * Every terminal path (pointerup / pointercancel / pointerleave / a move with
+ * the button no longer down) resets ALL gesture state, so a lost mouse-up can
+ * never wedge the orb in drag mode.
  * ------------------------------------------------------------------------ */
+
+const HOLD_MS = 200;   // press-and-hold before the mic opens
+const DRAG_SLOP = 6;   // movement that separates a drag from a hold/tap
+const DBG = true;      // gesture trace via orb_debug -> stderr (run from a shell)
+const dbg = (m) => { if (DBG) invoke("orb_debug", { msg: m }).catch(() => {}); };
 
 let pressTimer = null;
 let dragging = false;
 let dragStart = null;
 let winOrigin = null;
+let holdListening = false;     // mic was opened by the HOLD timer (drag closes it)
+let suppressPromptUntil = 0;   // a barge-in double-tap swallows its dblclick
+let micBusy = false;           // recorder teardown in flight — moves wedge then
+
+function endDrag() {
+  dragging = false;
+  dragStart = null;
+  winOrigin = null;
+}
 
 canvas.addEventListener("pointerdown", (e) => {
-  // Hover indicator clicks.
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
+  // 1) Hover chip clicks consume the gesture outright — no tap/hold/drag armed,
+  //    so releasing over a chip can never stop what the chip started.
   for (const b of hoverBtns) {
     if (Math.hypot(x - b.x, y - b.y) <= b.r) {
+      dbg(`down chip ${b.icon} @${x},${y}`);
       b.action();
       return;
     }
   }
   if (e.button !== 0) return;
+  // 2) Press on the body: arm hold + drag.
   // Capture the pointer so drag tracking keeps flowing to the canvas even when
   // the cursor momentarily slides off the orb onto the transparent margin.
   try { canvas.setPointerCapture(e.pointerId); } catch { /* older WKWebView */ }
+  dbg(`down body @${x},${y}`);
   dragStart = { x: e.screenX, y: e.screenY };
   // Logical window origin at press time; the drag is origin + cursor delta.
   winOrigin = win.outerPosition().then((p) => ({
     x: p.x / window.devicePixelRatio,
     y: p.y / window.devicePixelRatio,
   }));
+  holdListening = false;
   pressTimer = setTimeout(() => {
-    // Held: start listening.
     pressTimer = null;
+    holdListening = true;
+    dbg("hold -> listening");
     startListening();
-  }, 200);
+  }, HOLD_MS);
 });
 
-// On the WINDOW so the drag keeps tracking once the cursor leaves the 150px orb.
+// On the WINDOW so the drag keeps tracking once the cursor leaves the orb.
 // Manual set_position, not win.startDragging(): that needs NSApp.currentEvent to
 // still be the mouse event when the async IPC lands, which it isn't on the panel.
 window.addEventListener("pointermove", async (e) => {
   if (!dragStart) return;
   const dx = e.screenX - dragStart.x;
   const dy = e.screenY - dragStart.y;
-  if (!dragging && Math.hypot(dx, dy) > 6) {
+  // Lost pointerup recovery: the primary button is no longer down, so whatever
+  // gesture was in flight is over — end it instead of chasing a ghost drag.
+  if (dragging && !(e.buttons & 1)) {
+    dbg("move with button up -> end drag");
+    endDrag();
+    return;
+  }
+  if (!dragging && Math.hypot(dx, dy) > DRAG_SLOP) {
     dragging = true;
     clearTimeout(pressTimer);
     pressTimer = null;
+    if (holdListening) {
+      holdListening = false;
+      dbg("drag after hold -> stop listening");
+      // A live mic stream wedges window moves, so finish the teardown before
+      // the first setPosition and hold off further moves until it completes.
+      micBusy = true;
+      stopListening().finally(() => { micBusy = false; });
+    }
+    dbg(`drag engage d=${Math.hypot(dx, dy).toFixed(1)}`);
   }
   if (!dragging) return;
+  if (micBusy) return; // moves during mic teardown are dropped on the floor
   const o = await winOrigin;
-  win.setPosition(new LogicalPosition(o.x + dx, o.y + dy)).catch(() => {});
+  if (!dragging || !o) return; // gesture ended while awaiting the origin
+  try {
+    await win.setPosition(new LogicalPosition(o.x + dx, o.y + dy));
+    dbg(`setPosition -> ${Math.round(o.x + dx)},${Math.round(o.y + dy)}`);
+  } catch (err) {
+    dbg(`setPosition FAILED: ${err}`);
+  }
 });
 
 /**
@@ -768,9 +838,15 @@ function releasePress() {
     clearTimeout(pressTimer);
     pressTimer = null;
   }
-  // Released before the hold threshold: a plain tap, so don't record.
-  // Held past it: the 200ms timer already started listening — stop it now.
-  if (!wasTap && state.mode === "listening") stopListening();
+  dbg(`release wasTap=${wasTap} dragging=${dragging} holdListening=${holdListening} mode=${state.mode}`);
+  // Held past the threshold with no drag: the timer opened the mic — close it.
+  // Only the HOLD path may close the mic here; a mic opened via the chip (or a
+  // reply being spoken) must survive the release that follows the chip click.
+  if (!wasTap && !dragging && holdListening) {
+    holdListening = false;
+    dbg("release after hold -> stop listening");
+    stopListening();
+  }
 
   // Double-tap barge-in: track tap timing; if two taps land within
   // DOUBLE_TAP_WINDOW ms while a turn is executing, cancel it. Single taps
@@ -778,17 +854,20 @@ function releasePress() {
   if (wasTap && (state.mode === 'acting' || state.mode === 'speaking')) {
     const now = Date.now();
     if (lastTap && now - lastTap < DOUBLE_TAP_WINDOW) {
-      // Double tap detected — cancel the current turn.
+      // Double tap detected — cancel the current turn. The browser will still
+      // raise a dblclick for these two taps; swallow it so the cancel doesn't
+      // also pop the typing prompt.
       invoke('orb_cancel', { chat_id: 'orb_ui' }).catch(() => {});
+      suppressPromptUntil = now + 400;
       lastTap = null; // reset so a third tap doesn't immediately double-tap again
+      dbg("double-tap -> cancel turn");
     } else {
       lastTap = now;
       setTimeout(() => { if (lastTap === now) lastTap = null; }, DOUBLE_TAP_WINDOW);
     }
   }
 
-  dragStart = null;
-  dragging = false;
+  endDrag();
 }
 
 window.addEventListener("pointerup", releasePress);
@@ -796,6 +875,7 @@ window.addEventListener("pointercancel", releasePress);
 
 canvas.addEventListener("pointerleave", () => {
   if (dragging) return;
+  dbg("pointerleave while pressed -> cancel hold");
   dragStart = null;
   if (pressTimer) {
     clearTimeout(pressTimer);
@@ -809,6 +889,11 @@ canvas.addEventListener("contextmenu", (e) => {
 });
 
 canvas.addEventListener("dblclick", () => {
+  if (Date.now() < suppressPromptUntil) {
+    dbg("dblclick suppressed (was barge-in cancel)");
+    return;
+  }
+  dbg("dblclick -> prompt");
   // Not `window.prompt()`: the orb is a non-activating panel, so its webview
   // can never take focus and the dialog would return null instantly. The
   // caption strip is a normal window — Rust focuses that instead.

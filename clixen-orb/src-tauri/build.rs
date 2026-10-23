@@ -9,6 +9,8 @@ const COMMANDS: &[&str] = &[
     "orb_prompt",
     "orb_prompt_done",
     "orb_cursor_fly",
+    "orb_debug",
+    "orb_cancel",
     "lifecycle_info",
     "lifecycle_accept",
     "lifecycle_advance",

@@ -451,10 +451,12 @@ async fn orb_send_audio(
     audio_b64: String,
     chat_id: Option<String>,
     tts: Option<bool>,
+    turn_id: Option<String>,   // new — tags this turn for routing + queue
 ) {
     app_lifecycle::touch(&app);
     let backend = backend_url();
     let chat_id = chat_id.unwrap_or_else(|| "orb_ui".to_string());
+    let turn_id = turn_id.filter(|s| !s.is_empty()).map(|s| s.to_string());
     let Ok(bytes) = B64.decode(audio_b64) else {
         emit_error(&app, "bad audio payload".into());
         return;
@@ -467,9 +469,10 @@ async fn orb_send_audio(
 
     let form = reqwest::multipart::Form::new()
         .part("file", part)
-        .text("chat_id", chat_id)
+        .text("chat_id", chat_id.clone())
         .text("tts", if tts.unwrap_or(false) { "1" } else { "0" })
-        .text("web_search", "0");
+        .text("web_search", "0")
+        .text("turn_id", turn_id.as_deref().unwrap_or("").to_string());
 
     match post(format!("{backend}/voice/process"))
         .multipart(form)
@@ -520,6 +523,31 @@ async fn orb_speak_reply(app: AppHandle, text: String, voice: Option<String>) {
     pump_sse(&app, resp).await;
 }
 
+/// Barge-in: release the active stream for a chat_id so the user can interrupt
+/// a long-running turn. Idempotent.
+#[tauri::command]
+async fn orb_cancel(app: AppHandle, chat_id: Option<String>) {
+    let backend = backend_url();
+    let chat_id = chat_id.unwrap_or_else(|| "orb_ui".to_string());
+    match post(format!("{backend}/voice/cancel"))
+        .json(&serde_json::json!({ "chat_id": chat_id }))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            if let Some(w) = app.get_webview_window("orb") {
+                let _ = w.emit("orb-event", SseEvent {
+                    kind: "cancel".into(),
+                    text: format!("cancelled {}", chat_id),
+                    data: None,
+                });
+            }
+        }
+        Ok(resp) => emit_error(&app, format!("backend HTTP {}", resp.status())),
+        Err(e) => emit_error(&app, e.to_string()),
+    }
+}
+
 fn emit_error(app: &AppHandle, msg: String) {
     if let Some(w) = app.get_webview_window("orb") {
         let _ = w.emit(
@@ -549,6 +577,13 @@ fn urlencode(s: &str) -> String {
 // ---------------------------------------------------------------------------
 // Cursor overlay — the orb's cursor flies to wherever an action clicked
 // ---------------------------------------------------------------------------
+
+/// Frontend debug trace: the webview console isn't attached to any terminal, so
+/// gesture instrumentation logs through here (visible when run from a shell).
+#[tauri::command]
+fn orb_debug(msg: String) {
+    eprintln!("[orb:js] {msg}");
+}
 
 /// Backend tools (`tools-harness/tools/orb_cursor.py`) drop the click target here.
 fn cursor_file() -> PathBuf {
@@ -644,6 +679,15 @@ fn spawn_cursor_watcher(app: AppHandle) {
             // Scrolling: the overlay shows a two-finger swipe at the parked cursor.
             if let Some(t) = v.get("scroll") {
                 let _ = app.emit("cursor-scroll", t.clone());
+                continue;
+            }
+            // A tool errored / the chain was aborted: the bunny reacts at the parked cursor.
+            if let Some(t) = v.get("fail") {
+                let _ = app.emit("cursor-fail", t.clone());
+                continue;
+            }
+            if let Some(t) = v.get("dead") {
+                let _ = app.emit("cursor-dead", t.clone());
                 continue;
             }
             if let (Some(x), Some(y)) = (
@@ -927,6 +971,8 @@ pub fn run() {
             orb_prompt,
             orb_prompt_done,
             orb_cursor_fly,
+            orb_debug,
+            orb_cancel,
             app_lifecycle::lifecycle_info,
             app_lifecycle::lifecycle_accept,
             app_lifecycle::lifecycle_advance,

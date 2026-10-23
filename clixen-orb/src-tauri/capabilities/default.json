@@ -21,6 +21,8 @@
     "allow-orb-caption",
     "allow-orb-prompt",
     "allow-orb-prompt-done",
-    "allow-orb-cursor-fly"
+    "allow-orb-cursor-fly",
+    "allow-orb-debug",
+    "allow-orb-cancel"
   ]
 }
