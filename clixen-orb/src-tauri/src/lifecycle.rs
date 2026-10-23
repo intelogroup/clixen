@@ -215,7 +215,8 @@ impl LocalOllama {
         use std::io::{Read, Write};
         let mut s = std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], self.port).into(), Duration::from_millis(800)).ok()?;
         s.set_read_timeout(Some(Duration::from_secs(3600))).ok()?;
-        write!(s, "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).ok()?;
+        let req = format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        s.write_all(req.as_bytes()).ok()?; // one write: a fragmented request line trips simple servers
         let mut out = String::new();
         s.read_to_string(&mut out).ok()?;
         let status = out.split_whitespace().nth(1)?.parse().ok()?;
@@ -230,7 +231,9 @@ impl Ollama for LocalOllama {
 
     fn installed(&self) -> Vec<String> {
         let Some((200, body)) = self.request("GET", "/api/tags", "") else { return vec![] };
-        let v: serde_json::Value = serde_json::from_str(body.trim()).unwrap_or_default();
+        // chunked replies wrap the JSON in size lines, so cut from the first `{` to the last `}`
+        let json = body.find('{').zip(body.rfind('}')).map(|(a, b)| &body[a..=b]).unwrap_or("");
+        let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
         v["models"].as_array().map(|a| a.iter().filter_map(|m| m["name"].as_str().map(String::from)).collect()).unwrap_or_default()
     }
 
@@ -458,5 +461,90 @@ mod tests {
         assert_eq!(f.lc.vault.status(), VaultStatus::NotCreated);
         assert!(!f.dir.join("lifecycle.json").exists());
         assert_eq!(*f.lc.stage(), Stage::Onboard);
+    }
+}
+
+#[cfg(test)]
+mod live_ollama {
+    use super::*;
+
+    /// Read-only probe of the real local Ollama; skipped when none is listening.
+    #[test]
+    fn local_ollama_reports_up_and_lists_installed_models() {
+        let o = LocalOllama { port: 11434 };
+        if !o.up() {
+            eprintln!("skipped: no Ollama on :11434");
+            return;
+        }
+        let models = o.installed();
+        assert!(!models.is_empty(), "Ollama is up but /api/tags returned no models");
+        eprintln!("installed: {models:?}");
+        assert!(!LocalOllama { port: 1 }.up());
+    }
+}
+
+#[cfg(test)]
+mod fake_ollama_server {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    /// Serves /api/version, a chunked /api/tags and a chunked NDJSON /api/pull, like the real daemon.
+    fn serve(pull_lines: &'static [&'static str]) -> u16 {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in l.incoming().flatten() {
+                let mut s = s;
+                let mut buf = [0u8; 2048];
+                let mut n = 0;
+                while !buf[..n].windows(4).any(|w| w == b"\r\n\r\n") && n < buf.len() {
+                    match s.read(&mut buf[n..]) {
+                        Ok(0) | Err(_) => break,
+                        Ok(k) => n += k,
+                    }
+                }
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let chunk = |b: &str| format!("{:x}\r\n{}\r\n", b.len(), b);
+                let (status, body) = if req.starts_with("GET /api/version") {
+                    ("200 OK", "Content-Length: 2\r\n\r\n{}".to_string())
+                } else if req.starts_with("GET /api/tags") {
+                    ("200 OK", format!("Transfer-Encoding: chunked\r\n\r\n{}0\r\n\r\n", chunk("{\"models\":[{\"name\":\"gemma4:12b\"},{\"name\":\"nomic-embed-text:latest\"}]}")))
+                } else if req.starts_with("POST /api/pull") {
+                    let mut b = String::from("Transfer-Encoding: chunked\r\n\r\n");
+                    for ln in pull_lines {
+                        b += &chunk(&format!("{ln}\n"));
+                    }
+                    ("200 OK", b + "0\r\n\r\n")
+                } else {
+                    ("404 Not Found", "Content-Length: 0\r\n\r\n".into())
+                };
+                let _ = write!(s, "HTTP/1.1 {status}\r\nConnection: close\r\n{body}");
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn parses_version_and_chunked_tags() {
+        let o = LocalOllama { port: serve(&[]) };
+        assert!(o.up());
+        assert_eq!(o.installed(), vec!["gemma4:12b", "nomic-embed-text:latest"]);
+    }
+
+    #[test]
+    fn pull_reports_progress_and_success() {
+        let o = LocalOllama { port: serve(&[r#"{"status":"pulling manifest"}"#, r#"{"status":"downloading","total":200,"completed":50}"#, r#"{"status":"downloading","total":200,"completed":200}"#, r#"{"status":"success"}"#]) };
+        let mut seen = vec![];
+        o.pull("m", &mut |p| seen.push(p)).unwrap();
+        assert_eq!(seen, vec![25, 100]);
+    }
+
+    #[test]
+    fn pull_surfaces_ollama_error_and_unfinished_stream() {
+        let o = LocalOllama { port: serve(&[r#"{"error":"pull model manifest: file does not exist"}"#]) };
+        assert_eq!(o.pull("nope", &mut |_| {}), Err("pull model manifest: file does not exist".into()));
+        let o = LocalOllama { port: serve(&[r#"{"status":"pulling manifest"}"#]) };
+        assert!(o.pull("m", &mut |_| {}).is_err());
     }
 }

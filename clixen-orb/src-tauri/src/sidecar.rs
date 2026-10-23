@@ -47,7 +47,8 @@ pub fn http_status(port: u16, path: &str, token: Option<&str>, timeout: Duration
     s.set_read_timeout(Some(timeout)).ok()?;
     s.set_write_timeout(Some(timeout)).ok()?;
     let auth = token.map(|t| format!("x-clixen-token: {t}\r\n")).unwrap_or_default();
-    write!(s, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{auth}Connection: close\r\n\r\n").ok()?;
+    let req = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{auth}Connection: close\r\n\r\n");
+    s.write_all(req.as_bytes()).ok()?;
     let mut buf = [0u8; 64];
     let n = s.read(&mut buf).ok()?;
     String::from_utf8_lossy(&buf[..n]).split_whitespace().nth(1)?.parse().ok()
