@@ -32,5 +32,5 @@ def test_the_orb_cannot_send_mail_behind_the_screen():
     assert "ask_email_agent" not in orb_agent.TOOL_NAMES and "send_email" not in orb_agent.TOOL_NAMES
 
 
-def test_prompt_teaches_the_gmail_compose_link():
-    assert "view=cm" in orb_agent.PROMPT and "to=ADDRESS" in orb_agent.PROMPT
+def test_prompt_teaches_the_gmail_recipe():
+    assert "app_task" in orb_agent.PROMPT and "gmail.send" in orb_agent.PROMPT

@@ -112,6 +112,12 @@ def test_front_window_is_cached_briefly_and_reset_by_an_app_switch(monkeypatch):
     assert len(calls) == 2
 
 
+def test_key_script_knows_the_names_an_agent_reaches_for():
+    for k in ("backspace", "cmd+backspace", "escape", "home", "end", "pageup", "pagedown", "forwarddelete", "delete"):
+        assert screen_act.key_script(k) is not None, k
+    assert "key code 51" in screen_act.key_script("backspace")
+
+
 def test_click_text_prefers_native_position(monkeypatch):
     monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
     monkeypatch.setattr(screen_act, "find_element", lambda t: (10.0, 20.0))

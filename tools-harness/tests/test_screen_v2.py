@@ -299,3 +299,75 @@ def test_type_waits_for_focus_to_reach_the_field_before_typing(screen, monkeypat
     monkeypatch.setattr(v2.screen_act, "type_text", lambda text, submit=False: seen_at_type.append(v2._focused()) or "Typed.")
     r = _j(v2.act("Subject", "type", text="Hello"))
     assert r["ok"] and seen_at_type[0][0] == "TextField"  # typing started only once the field had focus
+
+
+def test_type_with_replace_selects_the_old_text_first(screen, monkeypatch):
+    order = []
+    screen.els = [_el("TextField", "Name", 5, 5)]
+    screen.focus = ("TextField", "Name")
+    monkeypatch.setattr(v2.screen_act, "press_keys", lambda keys, app="": order.append(("keys", keys)) or "Pressed.")
+    monkeypatch.setattr(v2.screen_act, "type_text", lambda text, submit=False: order.append(("type", text)) or "Typed.")
+    r = _j(v2.act("Name", "type", text="Grace Hopper", replace=True))
+    assert r["ok"] and order == [("keys", "cmd+a"), ("type", "Grace Hopper")]
+
+
+# ---- wait_for ---------------------------------------------------------------------------------------
+
+def test_wait_for_returns_as_soon_as_the_condition_is_met(screen):
+    seen = {"n": 0}
+    real = v2.ax.elements
+
+    def late(app="", query="", offscreen=False):
+        seen["n"] += 1
+        return "Google Chrome", "Inbox" if seen["n"] < 3 else "Done page", screen.els
+
+    v2.ax.elements = late
+    try:
+        r = _j(v2.wait_for({"title_has": "done"}, timeout=5))
+    finally:
+        v2.ax.elements = real
+    assert r["ok"] and r["met"] is True
+
+
+def test_wait_for_times_out_with_what_it_saw(screen):
+    screen.els = [_el("Button", "Go")]
+    r = _j(v2.wait_for({"appears": "Message sent"}, timeout=1))
+    assert not r["ok"] and r["error"]["code"] == "timeout" and "Message sent" in r["error"]["hint"]
+
+
+# ---- tabs -------------------------------------------------------------------------------------------
+
+_TABS = "1|1|Inbox - Gmail|https://mail.google.com/\n1|2|Monica - AI|https://monica.im/\n2|1|shop|http://127.0.0.1:8765/shop\n"
+
+
+def _fake_osascript(monkeypatch, out=_TABS):
+    calls = []
+
+    class R:
+        returncode, stderr = 0, ""
+        stdout = out
+
+    monkeypatch.setattr(v2.subprocess, "run", lambda args, **k: calls.append(args[-1]) or R())
+    return calls
+
+
+def test_tabs_lists_every_tab_across_windows(monkeypatch):
+    _fake_osascript(monkeypatch)
+    r = _j(v2.tabs("list"))
+    assert r["ok"] and [t["title"] for t in r["tabs"]] == ["Inbox - Gmail", "Monica - AI", "shop"]
+    assert r["tabs"][1]["window"] == 1 and r["tabs"][1]["index"] == 2
+
+
+def test_tabs_switch_and_close_need_a_match_and_use_integers_only(monkeypatch):
+    calls = _fake_osascript(monkeypatch)
+    assert _j(v2.tabs("close"))["error"]["code"] == "need_match"
+    r = _j(v2.tabs("close", match="monica"))
+    assert r["ok"] and r["closed"] == ["Monica - AI"] and "close tab 2 of window 1" in calls[-1]
+    r = _j(v2.tabs("switch", match="shop"))
+    assert r["ok"] and "set active tab index of window 2 to 1" in calls[-1]
+    assert _j(v2.tabs("switch", match="nothing like this"))["error"]["code"] == "not_found"
+
+
+def test_tabs_refuses_a_non_chrome_browser(monkeypatch):
+    _fake_osascript(monkeypatch)
+    assert _j(v2.tabs("list", app="Safari"))["error"]["code"] == "unsupported_app"

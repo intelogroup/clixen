@@ -562,7 +562,7 @@ def close_tabs(app: str = "", keep: int = 0) -> str:
     return f"Closed {closed} tab(s) in {inst[0].localizedName()} across {len(inst)} instance(s); {left} left."
 
 
-_KEYCODES = {"esc": 53, "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51, "left": 123, "right": 124, "down": 125, "up": 126}
+_KEYCODES = {"esc": 53, "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51, "backspace": 51, "escape": 53, "forwarddelete": 117, "home": 115, "end": 119, "pageup": 116, "pagedown": 121, "left": 123, "right": 124, "down": 125, "up": 126}
 _MODS = {"cmd": "command down", "command": "command down", "shift": "shift down", "alt": "option down", "option": "option down",
          "ctrl": "control down", "control": "control down"}
 

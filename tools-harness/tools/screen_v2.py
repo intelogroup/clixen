@@ -7,6 +7,7 @@ worked; the engine measured it.
 import difflib
 import json
 import re
+import subprocess
 import time
 from pathlib import Path
 from collections import Counter
@@ -180,7 +181,7 @@ def _holds(old: dict) -> bool:
         return False
 
 
-def _act(target: str, action: str, text: str, expect: dict | None, app: str, submit: bool) -> str:
+def _act(target: str, action: str, text: str, expect: dict | None, app: str, submit: bool, replace: bool = False) -> str:
     if (why := screen_act._guard(typing=action == "type")):
         return _err("refused", why)
     t = target.strip()
@@ -218,6 +219,8 @@ def _act(target: str, action: str, text: str, expect: dict | None, app: str, sub
                 if _focused()[0] in _EDITABLE:
                     break
                 time.sleep(0.08)
+            if replace:  # correcting a field: select what is there so the new text replaces it instead of piling on
+                screen_act.press_keys("cmd+a", app)
             note = screen_act.type_text(text, submit)
             if note.startswith("[screen error]"):
                 return _err("type_failed", note)
@@ -269,13 +272,13 @@ def _act(target: str, action: str, text: str, expect: dict | None, app: str, sub
 
 
 def act(target: str = "", action: str = "click", text: str = "", expect: dict | None = None, app: str = "", submit: bool = False,
-        steps: list | None = None) -> str:
+        steps: list | None = None, replace: bool = False) -> str:
     """One action, or `steps`: several actions run in order in one call, stopping at the first failure."""
     if steps:
         results = []
         for st in steps[:12]:
             r = json.loads(_act(str(st.get("target", "")), st.get("action", "click"), str(st.get("text", "")),
-                                st.get("expect") if isinstance(st.get("expect"), dict) else None, app, bool(st.get("submit"))))
+                                st.get("expect") if isinstance(st.get("expect"), dict) else None, app, bool(st.get("submit")), bool(st.get("replace"))))
             results.append(r)
             if not r.get("ok"):
                 break
@@ -283,7 +286,89 @@ def act(target: str = "", action: str = "click", text: str = "", expect: dict | 
                     "rev": _state["rev"], "results": results})
         return _trace("act", {"steps": steps[:12], "app": app}, out)
     args = {"target": target, "action": action, "text": text[:200], "expect": expect, "submit": submit}
-    return _trace("act", args, _act(target, action, text, expect, app, submit))
+    return _trace("act", args, _act(target, action, text, expect, app, submit, replace))
+
+
+def wait_for(expect: dict | None = None, timeout: float = 8.0, app: str = "") -> str:
+    """Poll the screen until `expect` holds (same conditions as act's expect) or `timeout` seconds pass."""
+    expect = expect or {}
+    start = time.monotonic()
+    deadline = start + max(0.5, min(float(timeout), 30.0))
+    while True:
+        title, _, items = _snapshot(app)
+        met, why = _met(expect, title, items)
+        if met:
+            return _out({"ok": True, "met": True, "waited": round(time.monotonic() - start, 1), "title": title})
+        if time.monotonic() >= deadline:
+            return _out({"ok": False, "error": {"code": "timeout", "hint": f"{why} after {round(time.monotonic() - start, 1)}s. Page title: '{title}'."}})
+        time.sleep(0.3)
+
+
+_CHROMES = {"google chrome", "chromium", "brave browser", "microsoft edge"}
+
+
+def tabs(action: str = "list", match: str = "", app: str = "Google Chrome") -> str:
+    """List, switch to, or close browser tabs by a title or URL fragment. Chrome-family browsers only."""
+    if app.lower() not in _CHROMES:
+        return _err("unsupported_app", f"tabs works with {sorted(_CHROMES)}, not '{app}'.")
+    script = (f'tell application "{app}"\nset out to ""\nrepeat with wi from 1 to (count of windows)\nrepeat with ti from 1 to (count of tabs of window wi)\n'
+              'set out to out & wi & "|" & ti & "|" & (title of tab ti of window wi) & "|" & (URL of tab ti of window wi) & linefeed\n'
+              "end repeat\nend repeat\nreturn out\nend tell")
+    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=15)
+    rows = []
+    for line in r.stdout.splitlines():
+        parts = line.split("|", 2)
+        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
+            title, _, url = parts[2].rpartition("|")
+            rows.append({"window": int(parts[0]), "index": int(parts[1]), "title": title, "url": url})
+    if action == "list":
+        return _out({"ok": True, "tabs": rows})
+    if action not in ("switch", "close"):
+        return _err("bad_action", "action must be list, switch or close.")
+    if not match.strip():
+        return _err("need_match", f"{action} needs match: part of a tab's title or URL.")
+    hits = [t for t in rows if match.lower() in t["title"].lower() or match.lower() in t["url"].lower()]
+    if not hits:
+        return _err("not_found", f"no open tab matches '{match}'.", candidates=[t["title"][:50] for t in rows][:8])
+    if action == "switch":
+        t = hits[0]
+        subprocess.run(["osascript", "-e", f'tell application "{app}"\nset active tab index of window {t["window"]} to {t["index"]}\n'
+                        f'set index of window {t["window"]} to 1\nactivate\nend tell'], capture_output=True, text=True, timeout=15)
+        return _out({"ok": True, "switched_to": t["title"], "url": t["url"]})
+    if len(hits) > 8:
+        return _err("too_many", f"'{match}' matches {len(hits)} tabs; use a more specific match.")
+    for t in sorted(hits, key=lambda t: (t["window"], t["index"]), reverse=True):  # last first, so the indexes of the rest stay valid
+        subprocess.run(["osascript", "-e", f'tell application "{app}" to close tab {t["index"]} of window {t["window"]}'], capture_output=True, text=True, timeout=15)
+    return _out({"ok": True, "closed": [t["title"] for t in sorted(hits, key=lambda t: (t["window"], t["index"]))]})
+
+
+WAIT_FOR_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "wait_for",
+        "description": (
+            "Waits until the screen shows something, then returns. expect uses the same conditions as act: {\"appears\": \"text\"}, "
+            "{\"gone\": \"text\"}, {\"title_has\": \"text\"}, {\"focus_role\": \"TextField\"}, {\"value_contains\": \"text\"}. "
+            "Use it after opening a page or starting something slow, instead of polling observe. timeout is seconds (default 8, max 30)."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "expect": {"type": "object"}, "timeout": {"type": "number"}, "app": {"type": "string"}}, "required": ["expect"]},
+    },
+}
+
+TABS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "tabs",
+        "description": (
+            "Lists, switches to, or closes the user's browser tabs by part of a title or URL (Chrome-family browsers). "
+            "list shows every tab in every window. switch brings the first match to the front. close closes every matching tab "
+            "(match is required; use close_tabs to close all). Use it when an extension or link opened a stray tab in front of the page you need."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["list", "switch", "close"]}, "match": {"type": "string"}, "app": {"type": "string"}}, "required": ["action"]},
+    },
+}
 
 
 OBSERVE_SCHEMA = {
@@ -325,6 +410,7 @@ ACT_SCHEMA = {
                 "action": {"type": "string", "enum": ["click", "type", "key", "scroll"]},
                 "text": {"type": "string", "description": "Text to type, shortcut to press, or scroll direction."},
                 "submit": {"type": "boolean", "description": "With action 'type': press Return after typing."},
+                "replace": {"type": "boolean", "description": "With action 'type': select the field's current text first, so the typed text replaces it. Use when correcting a field."},
                 "expect": {"type": "object", "description": "Condition to wait for after the action."},
                 "app": {"type": "string", "description": "App name; omit for the front app."},
                 "steps": {
