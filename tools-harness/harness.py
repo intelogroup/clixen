@@ -36,6 +36,7 @@ _load_env()
 from tools.registry import ALL_TOOLS, PLAN_TOOLS, tools_with_tags, CURRENT_CHAT_ID
 from tools.forge_principles import FORGE_PRINCIPLES_BLOCK
 from clients import ollama_client, cloud_client
+import orb_agent
 from clients.router import classify_message, model_for_intent, reasoning_effort_for_intent, _SPORTS_RE
 
 
@@ -985,6 +986,10 @@ def _run_impl(
         if _is_simple_query:
             orchestrator_tools = [t for t in orchestrator_tools
                                   if t["function"]["name"] != "ask_deep_research"]
+
+        if orb_agent.is_orb_chat(chat_id):  # the orb drives the user's screen: lean tools and prompt, not the chat coordinator's
+            orchestrator_tools = orb_agent.lean_tools(orchestrator_tools)
+            orchestrator_system_prompt = orb_agent.system_prompt(_orch_plan_block, _orch_mem_block, _dt_line)
 
         # Model-driven callers (orb, web UI: no intent passed) get no classifier, no forced tool, no
         # pre-guard and no verify retries: the model picks its tools from the full list. Telegram and
