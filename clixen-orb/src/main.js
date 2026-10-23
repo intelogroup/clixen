@@ -207,20 +207,15 @@ function draw() {
     for (const b of btns) {
       const bx = cx + b.dx, by = cy - ORB_R - 18;
       ctx.save();
-      ctx.fillStyle = "rgba(20,24,40,0.85)";
+      ctx.fillStyle = "rgba(20,24,40,0.5)";
       ctx.beginPath();
-      ctx.arc(bx, by, 12, 0, Math.PI * 2);
+      ctx.arc(bx, by, 6, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(186,210,255,0.6)";
+      ctx.strokeStyle = "rgba(186,210,255,0.5)";
       ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.fillStyle = "#fff";
-      ctx.font = "12px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(b.label === "mic" ? "🎤" : "💬", bx, by);
       ctx.restore();
-      hoverBtns.push({ x: bx, y: by, r: 12, action: b.action });
+      hoverBtns.push({ x: bx, y: by, r: 6, action: b.action });
     }
   }
 }
