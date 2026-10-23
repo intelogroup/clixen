@@ -942,7 +942,7 @@ def _run_impl(
             # SKILLS_MATCH_SCHEMA above.
             *[t for t in ALL_TOOLS if t["function"]["name"] == "promote_task_to_skill"],
             *[t for t in ALL_TOOLS if t["function"]["name"] == "get_preview_current_page"],
-            *[t for t in ALL_TOOLS if t["function"]["name"] in ("get_screen_context", "set_screen_watch", "open_url", "open_app", "finder", "window", "menu", "ui_see", "ui_click", "ui_drag", "app", "dock", "space", "dialog", "system", "click_text", "type_text", "scroll_page", "close_tabs", "close_extension_panels", "press_keys", "read_page_text", "get_window_context", "get_current_time")],
+            *[t for t in ALL_TOOLS if t["function"]["name"] in ("get_screen_context", "set_screen_watch", "observe", "act", "open_url", "open_app", "finder", "window", "menu", "ui_see", "ui_click", "ui_drag", "app", "dock", "space", "dialog", "system", "click_text", "type_text", "scroll_page", "close_tabs", "close_extension_panels", "press_keys", "read_page_text", "get_window_context", "get_current_time")],
         ]
 
         # WhatsApp is a messaging surface, not a second full web UI. Keep the

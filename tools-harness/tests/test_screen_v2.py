@@ -221,3 +221,12 @@ def test_many_acts_do_not_age_out_the_ids_from_one_observe(screen, monkeypatch):
     monkeypatch.setattr(v2.ax, "labels_at", lambda x, y: [])  # force the slow path every time: pre-walk and after-walk
     for i in ids:
         assert _j(v2.act(i, "click"))["ok"]  # eight acts in a row on ids from the same observe
+
+
+def test_the_orchestrator_tool_list_in_harness_offers_observe_and_act():
+    # harness.py builds the orchestrator's tools from a hand-curated name list; a tool missing there never reaches the model
+    import harness
+
+    src = open(harness.__file__).read()
+    line = next(l for l in src.splitlines() if '"get_screen_context", "set_screen_watch"' in l)
+    assert '"observe"' in line and '"act"' in line
