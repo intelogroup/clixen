@@ -289,3 +289,13 @@ def test_extension_panel_elements_rank_after_the_page(screen):
     screen.els = [panel, _el("TextField", "Name", 9, 9), _el("Button", "Chrome menu", 1, 1, web=False)]
     labels = [e["label"] for e in _j(v2.observe())["elements"]]
     assert labels == ["Name", "Chrome menu", "Chat"]
+
+
+def test_type_waits_for_focus_to_reach_the_field_before_typing(screen, monkeypatch):
+    screen.els = [_el("TextField", "Subject", 5, 5)]
+    seq = iter([("WebArea", ""), ("WebArea", ""), ("TextField", "Subject")])
+    monkeypatch.setattr(v2, "_focused", lambda: next(seq, ("TextField", "Subject")))
+    seen_at_type = []
+    monkeypatch.setattr(v2.screen_act, "type_text", lambda text, submit=False: seen_at_type.append(v2._focused()) or "Typed.")
+    r = _j(v2.act("Subject", "type", text="Hello"))
+    assert r["ok"] and seen_at_type[0][0] == "TextField"  # typing started only once the field had focus

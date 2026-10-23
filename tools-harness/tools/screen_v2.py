@@ -214,6 +214,10 @@ def _act(target: str, action: str, text: str, expect: dict | None, app: str, sub
     if action in ("click", "type"):
         screen_act._click(cx, cy)
         if action == "type":
+            for _ in range(10):  # the click returns before the browser moves focus into the field: typing early reads the page as focused
+                if _focused()[0] in _EDITABLE:
+                    break
+                time.sleep(0.08)
             note = screen_act.type_text(text, submit)
             if note.startswith("[screen error]"):
                 return _err("type_failed", note)
