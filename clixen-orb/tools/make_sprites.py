@@ -1,0 +1,99 @@
+"""Build the orb's pixel sprite strips from the Mascot Bunny pack (CC0, Sunardin/Segel, opengameart.org).
+
+    .venv/bin/python clixen-orb/tools/make_sprites.py <dir containing Bunny1/> [--preview out.png]
+
+Each animation becomes one horizontal strip `public/sprites/<state>.png` (frames side by side, all
+cells the same size, feet on one baseline) plus `manifest.json`. The source art is 669px smooth
+cartoon, so frames are shrunk to CELL_H, snapped to a small palette and a hard alpha edge, and the
+blue shirt is shifted to the orb's amber. Facing: the source faces right; the cursor flips at runtime.
+"""
+import colorsys
+import glob
+import json
+import os
+import sys
+
+from PIL import Image
+
+CELL_H = 40        # native pixel height of a frame; the page draws it at an integer multiple
+PALETTE = 32       # colours shared by all strips, so shading never flickers between frames
+# state -> (source folder, fps, loop)
+STATES = {
+    "idle": ("01-Idle", 8, True),
+    "move": ("02-Run", 14, True),
+    "click": ("04-Throw", 14, False),
+}
+OUT = os.path.join(os.path.dirname(__file__), "..", "public", "sprites")
+
+
+def amber(im):
+    """Blue shirt -> amber (same saturation and value, so shading survives)."""
+    px = im.load()
+    for y in range(im.height):
+        for x in range(im.width):
+            r, g, b, a = px[x, y]
+            if a and b > r + 40 and b > g + 20:
+                h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+                r, g, b = (round(c * 255) for c in colorsys.hsv_to_rgb(0.105, min(1, s * 1.05), v))
+                px[x, y] = (r, g, b, a)
+    return im
+
+
+def shrink(im, box, scale):
+    im = im.crop(box)
+    im = im.resize((max(1, round(im.width * scale)), CELL_H), Image.LANCZOS)
+    im.putalpha(im.getchannel("A").point(lambda v: 255 if v >= 128 else 0))  # hard edge: no blurry halo
+    return amber(im)
+
+
+def snap(cells):
+    """Quantise every cell against one palette built from all of them."""
+    w, n = cells[0].width, len(cells)
+    mont = Image.new("RGB", (w, CELL_H * n))
+    for i, c in enumerate(cells):
+        mont.paste(c.convert("RGB"), (0, i * CELL_H))
+    pal = mont.quantize(PALETTE, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    out = []
+    for c in cells:
+        q = c.convert("RGB").quantize(palette=pal, dither=Image.Dither.NONE).convert("RGB")
+        q.putalpha(c.getchannel("A"))
+        out.append(q)
+    return out
+
+
+def main(src, preview=None):
+    frames = {s: [Image.open(f).convert("RGBA") for f in sorted(glob.glob(os.path.join(src, "Bunny1", d, "*.png")))]
+              for s, (d, _, _) in STATES.items()}
+    assert all(frames.values()), "missing source frames under Bunny1/"
+    boxes = [im.getbbox() for fs in frames.values() for im in fs]
+    box = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+    scale = CELL_H / (box[3] - box[1])  # one scale for every state, so the bunny never changes size
+    os.makedirs(OUT, exist_ok=True)
+    manifest, sheets = {}, []
+    cells_by = {s: [shrink(im, box, scale) for im in frames[s]] for s in STATES}
+    flat = snap([c for cs in cells_by.values() for c in cs])
+    k = 0
+    for s, (_, fps, loop) in STATES.items():
+        cells = flat[k:k + len(cells_by[s])]
+        k += len(cells)
+        w = cells[0].width
+        strip = Image.new("RGBA", (w * len(cells), CELL_H), (0, 0, 0, 0))
+        for i, c in enumerate(cells):
+            strip.paste(c, (i * w, 0))
+        strip.save(os.path.join(OUT, f"{s}.png"), optimize=True)
+        manifest[s] = {"file": f"{s}.png", "frames": len(cells), "w": w, "h": CELL_H, "fps": fps, "loop": loop}
+        sheets.append(strip)
+    with open(os.path.join(OUT, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=2)
+    print(json.dumps(manifest))
+    if preview:  # 4x nearest, dark backdrop
+        k = 4
+        W = max(s.width for s in sheets) * k
+        sheet = Image.new("RGBA", (W, CELL_H * k * len(sheets)), (40, 40, 48, 255))
+        for i, s in enumerate(sheets):
+            sheet.alpha_composite(s.resize((s.width * k, s.height * k), Image.NEAREST), (0, i * CELL_H * k))
+        sheet.save(preview)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[sys.argv.index("--preview") + 1] if "--preview" in sys.argv else None)

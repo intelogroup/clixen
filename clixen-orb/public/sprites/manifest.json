@@ -1,0 +1,26 @@
+{
+  "idle": {
+    "file": "idle.png",
+    "frames": 10,
+    "w": 28,
+    "h": 40,
+    "fps": 8,
+    "loop": true
+  },
+  "move": {
+    "file": "move.png",
+    "frames": 8,
+    "w": 28,
+    "h": 40,
+    "fps": 14,
+    "loop": true
+  },
+  "click": {
+    "file": "click.png",
+    "frames": 8,
+    "w": 28,
+    "h": 40,
+    "fps": 14,
+    "loop": false
+  }
+}
