@@ -90,3 +90,11 @@ def test_point_cursor_converts_to_screen_points_and_skips_headless(monkeypatch):
     monkeypatch.setattr(hb._S, "mode", "headless (chrome)", raising=False)
     hb._point_cursor(Loc())
     assert len(got) == 1
+
+
+def test_network_list_waits_for_late_fetches(monkeypatch):
+    page = Page()
+    _session(monkeypatch, [page])
+    page.wait_for_load_state = lambda state, timeout: hb._S.net.append(row("https://a.test/late", "fetch"))
+    assert hb._network_inner("", "xhr,fetch", 20, 0) == "#1 GET 200 fetch https://a.test/late"
+

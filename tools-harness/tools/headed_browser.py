@@ -424,7 +424,7 @@ def _on_response(resp) -> None:
 
 
 def _network_inner(filter_text: str, types: str, limit: int, body_of: int) -> str:
-    _require_page()
+    page = _require_page()
     rows = list(_S.net or [])
     if body_of:
         if not 1 <= body_of <= len(rows):
@@ -435,6 +435,11 @@ def _network_inner(filter_text: str, types: str, limit: int, body_of: int) -> st
         except Exception as exc:
             return f"Could not read the body of #{body_of} (bodies are only kept while the page that made the request is still open): {exc}"
         return f"#{body_of} {r['method']} {r['url']} -> {r['status']}\n" + (text if len(text) <= 3000 else text[:3000] + "... (body truncated)")
+    try:
+        page.wait_for_load_state("networkidle", timeout=2500)  # late fetches (counts, funding links) land after load
+    except Exception:
+        pass
+    rows = list(_S.net or [])
     want = {t.strip() for t in types.split(",") if t.strip()}
     out = [f"#{i} {r['method']} {r['status']} {r['type']} {r['url'][:160]}" for i, r in enumerate(rows, 1)
            if (not want or r["type"] in want) and filter_text.lower() in r["url"].lower()]
