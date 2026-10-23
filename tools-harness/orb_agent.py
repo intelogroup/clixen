@@ -11,7 +11,7 @@ TOOL_NAMES = frozenset({
     # the user's screen (same set harness.py offers the orchestrator)
     "get_screen_context", "get_window_context", "read_page_text", "open_url", "open_app", "finder", "window",
     "menu", "ui_see", "ui_click", "ui_drag", "app", "dock", "space", "dialog", "system", "click_text",
-    "type_text", "scroll_page", "close_tabs", "press_keys", "get_current_time",
+    "type_text", "scroll_page", "close_tabs", "close_extension_panels", "press_keys", "get_current_time",
     # lookups an on-screen task needs
     "ask_web_search", "ask_fetch_url", "ask_research_agent", "ask_calendar_agent",
     "ask_vision_agent", "ask_browser_agent", "contacts_resolve",
@@ -26,8 +26,8 @@ When the user names an app or site (Gmail, Chrome, a form, a page), do the task 
 
 HOW YOU WORK
 1. Any task with 3+ steps: call update_task_plan(steps=[...]) first, then update_task_plan(mark_done=[i]) as each step is verified. Read the plan again before you stop.
-2. Look before you act: get_screen_context (or get_window_context) first. Re-read it after any action that may have changed the page.
-3. Read every tool result. A result starting `[screen error]` FAILED: do not repeat it unchanged. Use the exact label it lists, close a popover or side panel (click_text 'Close Side Panel'), or try another route. `Focus now: ...` tells you what the click left focused; check it is the field you meant.
+2. Look before you act: get_screen_context (or get_window_context) first. If it reports SIDE PANEL OPEN or an extension popup (Thunderbit, Monica), call close_extension_panels before anything else. Re-read it after any action that may have changed the page.
+3. Read every tool result. A result starting `[screen error]` FAILED: do not repeat it unchanged. Use the exact label it lists, close an extension side panel or popover with close_extension_panels (it clicks the X), or try another route. `Focus now: ...` tells you what the click left focused; check it is the field you meant.
 4. Never say a step is done unless a tool result or a fresh screen read shows it. Never say a window closed or a field is missing without a fresh read.
 5. Do not stop after one failure. Try at least two different approaches before telling the user you are blocked, and say exactly what blocked you.
 6. In a Gmail compose window the box 'Describe your message' is an AI prompt box, never the body. The body field is 'Message Body'; click that, press_keys cmd+up so the text goes above the signature, then type the email text. A type_text warning "check it landed" may just be lag: re-read the screen once before assuming it failed.

@@ -77,6 +77,29 @@ def test_type_text_refuses_gmails_ai_write_box(monkeypatch):
     assert is_error_result(out) and "AI" in out and "Message Body" in out
 
 
+def test_close_extension_panels_clicks_the_x_then_clears_popovers(monkeypatch):
+    clicked = []
+    monkeypatch.setattr(screen_act, "close_side_panel", lambda app="": clicked.append("x") or True)
+    monkeypatch.setattr(screen_act, "dismiss_popovers", lambda app="": ["Monica sign in"])
+    out = screen_act.close_extension_panels("Google Chrome")
+    assert clicked == ["x"] and "side panel" in out and "Monica sign in" in out
+
+
+def test_close_extension_panels_says_so_when_nothing_is_open(monkeypatch):
+    monkeypatch.setattr(screen_act, "close_side_panel", lambda app="": False)
+    monkeypatch.setattr(screen_act, "dismiss_popovers", lambda app="": [])
+    assert "Nothing to close" in screen_act.close_extension_panels()
+
+
+def test_close_extension_panels_is_wired_for_the_agent():
+    from tools.registry import EXECUTORS, ALL_TOOLS
+    import orb_agent
+
+    assert "close_extension_panels" in EXECUTORS
+    assert any(t["function"]["name"] == "close_extension_panels" for t in ALL_TOOLS)
+    assert "close_extension_panels" in orb_agent.TOOL_NAMES
+
+
 def test_click_text_prefers_native_position(monkeypatch):
     monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
     monkeypatch.setattr(screen_act, "find_element", lambda t: (10.0, 20.0))

@@ -445,7 +445,7 @@ def get_window_context(query: str = "", app: str = "") -> str:
         lines.append(f"POPOVER OPEN: {', '.join(pops)} (floats over the page; elements below are its own. Close it with press_keys('esc') or click_text on its button.)")
     if side_panel_open(els):
         lines.append("SIDE PANEL OPEN (an extension such as Thunderbit/Monica, or a Chrome panel) beside the page; it can cover or confuse clicks. "
-                     "Close it with click_text('Close Side Panel').")
+                     "Close it with close_extension_panels (it clicks the panel's X).")
     if ext := toolbar_extensions(els):
         lines.append(f"Browser extensions in the toolbar (click_text its name to open): {', '.join(ext)}")
     lines.append("Windows:")

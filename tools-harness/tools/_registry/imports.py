@@ -342,11 +342,13 @@ from tools.ax_context import GET_WINDOW_CONTEXT_SCHEMA, get_window_context
 from tools.page_text import READ_PAGE_TEXT_SCHEMA, read_page_text
 from tools.screen_act import (
     CLICK_TEXT_SCHEMA,
+    CLOSE_EXTENSION_PANELS_SCHEMA,
     CLOSE_TABS_SCHEMA,
     PRESS_KEYS_SCHEMA,
     SCROLL_PAGE_SCHEMA,
     TYPE_TEXT_SCHEMA,
     click_text,
+    close_extension_panels,
     close_tabs,
     press_keys,
     scroll_page,

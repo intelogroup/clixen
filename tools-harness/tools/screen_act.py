@@ -105,6 +105,22 @@ CLOSE_TABS_SCHEMA = {
     },
 }
 
+CLOSE_EXTENSION_PANELS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "close_extension_panels",
+        "description": (
+            "Closes browser-extension UI that covers the page (Thunderbit, Monica and similar side panels, and the popup they "
+            "leave behind) by clicking the panel's X, so the user watches it happen. Call it first whenever get_screen_context or "
+            "get_window_context says SIDE PANEL OPEN or an extension popover is in the way, before clicking anything on the page."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"app": {"type": "string", "description": "Browser name, e.g. 'Google Chrome'; omit for the front app."}},
+        },
+    },
+}
+
 PRESS_KEYS_SCHEMA = {
     "type": "function",
     "function": {
@@ -249,6 +265,16 @@ def close_side_panel(app: str = "") -> bool:
     _click(*pt)
     time.sleep(0.8)
     return True
+
+
+def close_extension_panels(app: str = "") -> str:
+    """Click the X on an open extension side panel (Thunderbit, Monica, ...), then Esc any popover left over it."""
+    closed = []
+    if close_side_panel(app):
+        closed.append("side panel")
+    if (pops := dismiss_popovers(app)):
+        closed.append(f"popover '{pops[0]}'")
+    return f"Closed the {' and '.join(closed)}." if closed else "Nothing to close: no extension side panel or popover is open."
 
 
 def _through_folded_menu(app: str, text: str):
