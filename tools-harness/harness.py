@@ -1054,7 +1054,7 @@ def _run_impl(
                 _log.warning("agent inbox poll failed", exc_info=True)
 
         _round_timeout = round_timeout or (28.0 if chat_id == "brabble_voice" else None)
-        _max_orchestrator_rounds = 2 if context_only else 12
+        _max_orchestrator_rounds = 2 if context_only else 30  # a Gmail compose-and-send by screen takes ~25 calls; 12 cut every run off mid-task
         result = local_chat(
             user_message=query,
             tools=orchestrator_tools,
