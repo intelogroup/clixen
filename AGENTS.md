@@ -58,6 +58,7 @@ deliverable wasn't produced — check the last Report before treating it as new 
 
 <!-- forge-learnings:start -->
 ## Learnings (auto-maintained by /um — human edits go ABOVE this block)
+- Browser principle (2026-10-23): when a task means acting as the user (logins, account-scoped flows), always attach CDP to the real logged-in Chrome (`CLIXEN_BROWSER_CDP_URL=http://localhost:9222`, which the user's Chrome already serves) and drive through `headed_browser` — a clean Playwright profile has no sessions, so "sign in with Google" dead-ends immediately; it's also the only path that keeps orb bunny visuals, since `_point_cursor` emits for every click. See docs/agents/browser-automation.md.
 - Repo dir renamed gemma4llama→clixen; package name, README, launchd label prefix `com.clixen.*` (renamed 2026-08-03). Watch for hardcoded `/gemma4llama` paths (`tools/path_policy.py` WORKSPACE_ROOT must derive from `__file__`).
 - Messaging is ONE launchd job `com.clixen.messaging.plist` → `messaging_supervisor.sh` (telegram_bot + whatsapp_bot:9236 + whatsapp_bridge:9235). Logs: `tools-harness/messaging_std{err,out}.log`. Restart via `launchctl unload/load` (KeepAlive=true).
 - `tools/websearch.py`'s `_rewrite_query` and `tools/followup.py`'s `_rewrite_standalone` are both cloud-primary (DeepSeek) with local qwen3.5:4b as fallback only — don't add a new local-only Ollama rewrite call, this env doesn't reliably have local models loaded (qwen3.5:4b 404'd in tests 2026-07-30). Any similar rewrite/query-processing helper should follow the same pattern.

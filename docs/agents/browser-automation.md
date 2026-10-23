@@ -1,5 +1,12 @@
 # Browser Automation
 
+**Principle: act in the user's authenticated browser, never a clean profile.** When driving
+the web "as the user" (login flows, connectors, any account-scoped action), attach CDP to the
+user's real, already-signed-in Chrome (`CLIXEN_BROWSER_CDP_URL` / `agent-browser --auto-connect`).
+Spawning a fresh Playwright profile has no sessions, so every "login as me" dead-ends at OAuth —
+and even the plain crawl loses the user's cookies. A clean profile is only for tests or public,
+logged-out surfaces.
+
 **BrowserOS is fully removed** (was the primary approach through mid-2026; replaced by `agent-browser`). If you see another doc/comment referencing `browseros-cli`, `_browseros.py`, hidden-tab `--hidden` mode, or `__reactProps` clicking — that's stale, this file is current.
 
 ## Current approach: agent-browser CDP (`tools/_agent_browser.py`)
