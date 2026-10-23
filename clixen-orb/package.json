@@ -7,7 +7,8 @@
     "dev:web": "vite",
     "build:web": "vite build",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "test:web": "node --test test/*.test.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
