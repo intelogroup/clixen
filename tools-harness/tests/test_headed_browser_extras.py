@@ -98,3 +98,12 @@ def test_network_list_waits_for_late_fetches(monkeypatch):
     page.wait_for_load_state = lambda state, timeout: hb._S.net.append(row("https://a.test/late", "fetch"))
     assert hb._network_inner("", "xhr,fetch", 20, 0) == "#1 GET 200 fetch https://a.test/late"
 
+
+def test_closing_another_tab_keeps_current_tab(monkeypatch):
+    a, b, c = Page("https://a.test/"), Page("https://b.test/"), Page("https://c.test/")
+    _session(monkeypatch, [a, b, c])
+    hb._S.page = b
+    hb._tabs_inner("close", 3, "")
+    assert hb._S.page is b
+    hb._tabs_inner("close", 2, "")
+    assert hb._S.page is a

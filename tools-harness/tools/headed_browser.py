@@ -478,7 +478,8 @@ def _tabs_inner(action: str, index: int, url: str) -> str:
         if len(pages) == 1:
             return "Refused: that is the only tab; use browser_quit to end the session."
         pg.close()
-        _S.page = next(p for p in pages if not p.is_closed())
+        if pg is cur:  # closing another tab must not move the current one
+            _S.page = next(p for p in pages if not p.is_closed())
         return f"Closed tab {index}. {_status_line()}"
     return f"Unknown tabs action: {action}."
 
