@@ -10,7 +10,7 @@ def _el(role, label, x=10, y=10, web=True):
 
 
 @pytest.fixture
-def screen(monkeypatch):
+def screen(monkeypatch, tmp_path):
     """A fake screen: tests set `s.els` (what the accessibility tree shows now) and read `s.clicks`."""
     class S:
         els = []
@@ -32,7 +32,8 @@ def screen(monkeypatch):
     monkeypatch.setattr(v2.screen_act, "type_text", lambda text, submit=False: s.typed.append(text) or f"Typed {len(text)} chars.")
     monkeypatch.setattr(v2.screen_act, "close_side_panel", lambda app="": setattr(s, "panel_closed", s.panel_closed + 1) or True)
     monkeypatch.setattr(v2.time, "sleep", lambda t: None)
-    v2._state.update(rev=0, items={})
+    monkeypatch.setattr(v2, "TRACE_FILE", tmp_path / "trace.jsonl")  # tests must not write the real trace
+    v2._state.update(rev=0, hist={})
     return s
 
 
@@ -253,3 +254,12 @@ def test_an_unmet_expect_says_the_action_already_ran(screen):
     screen.els = [_el("Button", "Send")]
     r = _j(v2.act("Send", "click", expect={"appears": "Message sent"}))
     assert not r["ok"] and r["performed"] is True and "do not repeat" in r["error"]["hint"].lower()
+
+
+def test_every_act_is_traced_in_full(screen, monkeypatch, tmp_path):
+    f = tmp_path / "screen_v2.jsonl"
+    monkeypatch.setattr(v2, "TRACE_FILE", f)
+    screen.els = [_el("Button", "Send")]
+    v2.act("Send", "click", expect={"appears": "Message sent"})
+    row = json.loads(f.read_text().splitlines()[-1])
+    assert row["tool"] == "act" and row["args"]["expect"] == {"appears": "Message sent"} and "expect_failed" in row["result"]

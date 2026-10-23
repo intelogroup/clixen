@@ -8,12 +8,15 @@ import difflib
 import json
 import re
 import time
+from pathlib import Path
 from collections import Counter
 
 from tools import ax_context as ax
 from tools import screen_act
 
 MAX_ITEMS = 40
+TRACE_FILE = Path.home() / ".config" / "g4l" / "data" / "screen_v2.jsonl"  # full args and results: the run traces keep only 120 characters
+_TRACE_MAX = 2_000_000
 _LABEL_MAX = 80
 _EDITABLE = {"TextField", "TextArea", "SearchField", "ComboBox"}
 _EXPECT_TRIES = 10  # x 0.4s: how long `expect` waits for the screen to show the result
@@ -68,6 +71,18 @@ def _id(i: int) -> str:
     return f"e{i + 1}.{_state['rev']}"
 
 
+def _trace(tool: str, args: dict, result: str) -> str:
+    try:
+        TRACE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if TRACE_FILE.exists() and TRACE_FILE.stat().st_size > _TRACE_MAX:
+            TRACE_FILE.write_text("")
+        with TRACE_FILE.open("a") as f:
+            f.write(json.dumps({"t": round(time.time(), 1), "tool": tool, "args": args, "result": result}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    return result
+
+
 def _out(d: dict) -> str:
     return json.dumps(d, ensure_ascii=False)
 
@@ -82,6 +97,10 @@ def _overlays(els: list, app: str) -> list[str]:
 
 
 def observe(app: str = "", query: str = "") -> str:
+    return _trace("observe", {"app": app, "query": query}, _observe(app, query))
+
+
+def _observe(app: str, query: str) -> str:
     title, els, items = _snapshot(app, query)
     rev = _register(items, title)
     role, label = _focused()
@@ -161,7 +180,7 @@ def _holds(old: dict) -> bool:
         return False
 
 
-def act(target: str = "", action: str = "click", text: str = "", expect: dict | None = None, app: str = "", submit: bool = False) -> str:
+def _act(target: str, action: str, text: str, expect: dict | None, app: str, submit: bool) -> str:
     if (why := screen_act._guard(typing=action == "type")):
         return _err("refused", why)
     t = target.strip()
@@ -243,6 +262,11 @@ def act(target: str = "", action: str = "click", text: str = "", expect: dict | 
     if action == "click" and not (appeared or gone or effect["title"] or focus_after != focus_before):
         out["warning"] = "no_effect"
     return _out(out)
+
+
+def act(target: str = "", action: str = "click", text: str = "", expect: dict | None = None, app: str = "", submit: bool = False) -> str:
+    args = {"target": target, "action": action, "text": text[:200], "expect": expect, "submit": submit}
+    return _trace("act", args, _act(target, action, text, expect, app, submit))
 
 
 OBSERVE_SCHEMA = {
