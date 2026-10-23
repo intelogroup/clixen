@@ -78,6 +78,16 @@ def test_find_element_still_reaches_browser_chrome_when_the_page_has_no_match(mo
     assert ax.find_element("Gmail") == ("tab", 0)
 
 
+def test_ambiguous_target_lists_short_control_labels_before_long_inbox_rows(monkeypatch):
+    import pytest
+
+    rows = [{"role": "Row", "label": f"{i} new notifications since 5:06 am - long inbox row subject text", "el": i, "web": True} for i in range(12)]
+    ax = _stub_ax(monkeypatch, rows + [{"role": "TextField", "label": "To recipients", "el": "to", "web": True}])
+    with pytest.raises(ax.AmbiguousTarget) as e:
+        ax.find_element("To")
+    assert e.value.args[0][0] == "To recipients"  # click_text shows only the first 8 names to the agent
+
+
 def test_click_text_opens_a_folded_menu_to_reach_the_target(monkeypatch):
     clicks = []
     state = {"open": False}

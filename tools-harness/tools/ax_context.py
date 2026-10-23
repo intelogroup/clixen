@@ -398,7 +398,7 @@ def find_element(label: str, app: str = "") -> tuple[float, float] | None:
     rect = _window_rect(win) if win else None
     best = None
     if w and not any(e["label"].lower() == w for e in els):
-        names = sorted({e["label"] for e in els})
+        names = sorted({e["label"] for e in els}, key=lambda n: (len(n), n))  # short labels are controls; the caller shows only the first few
         if len(names) > 1:
             raise AmbiguousTarget(names)
     for e in els:
