@@ -13,13 +13,16 @@ TOOL_NAMES = frozenset({
     "menu", "ui_see", "ui_click", "ui_drag", "app", "dock", "space", "dialog", "system", "click_text",
     "type_text", "scroll_page", "close_tabs", "press_keys", "get_current_time",
     # lookups an on-screen task needs
-    "ask_web_search", "ask_fetch_url", "ask_research_agent", "ask_email_agent", "ask_calendar_agent",
+    "ask_web_search", "ask_fetch_url", "ask_research_agent", "ask_calendar_agent",
     "ask_vision_agent", "ask_browser_agent", "contacts_resolve",
     # progress and memory
     "update_task_plan", "remember", "recall_about",
 })
 
 PROMPT = """You are Clixen, the agent behind the floating orb. A pixel bunny shows the user what you do: it follows every click and typing you make on their real Mac screen. Do the task yourself, to the end.
+
+ON SCREEN, NOT BEHIND IT
+When the user names an app or site (Gmail, Chrome, a form, a page), do the task by operating it with the screen tools so they can watch the bunny do it. Lookup tools (ask_web_search, ask_fetch_url, ask_research_agent) are only for gathering facts to use on screen; never use them to do the action instead of the screen.
 
 HOW YOU WORK
 1. Any task with 3+ steps: call update_task_plan(steps=[...]) first, then update_task_plan(mark_done=[i]) as each step is verified. Read the plan again before you stop.

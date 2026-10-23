@@ -26,3 +26,7 @@ def test_prompt_is_short_and_context_blocks_come_first():
     p = orb_agent.system_prompt("NOW: today", "", "PLAN: a")
     assert p.startswith("NOW: today\nPLAN: a\n") and p.endswith(orb_agent.PROMPT)
     assert len(orb_agent.PROMPT) < 3000  # the orchestrator prompt is ~13,800 chars
+
+
+def test_the_orb_cannot_send_mail_behind_the_screen():
+    assert "ask_email_agent" not in orb_agent.TOOL_NAMES and "send_email" not in orb_agent.TOOL_NAMES
