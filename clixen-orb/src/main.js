@@ -183,6 +183,13 @@ const mix = (a, b, k) => [
 ];
 const rgb = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
 
+// Rounded-rect path helper (ctx.roundRect is Safari 16+/newer WKWebView only).
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+}
+
 function draw() {
   const cx = W / 2, cy = ORB_CY;
   ctx.clearRect(0, 0, W, H);
@@ -197,25 +204,54 @@ function draw() {
   ctx.restore();
   drawCursor(cx, cy);
 
-  // Hover indicators: mic (listen) and chat (open input).
+  // Hover indicators: mic (listen) and chat (open input), shown only while the
+  // pointer is over the bunny itself and faded in/out smoothly.
   hoverBtns = [];
-  if (hovered) {
+  hoverAlpha += ((hovered ? 1 : 0) - hoverAlpha) * 0.25; // ease toward target
+  if (hoverAlpha > 0.02) {
     const btns = [
-      { dx: -28, label: "mic", action: () => { if (state.mode === "listening") stopListening(); else startListening(); } },
-      { dx: 28, label: "chat", action: () => invoke("orb_prompt").catch(() => {}) },
+      { dx: -26, icon: "mic", action: () => { if (state.mode === "listening") stopListening(); else startListening(); } },
+      { dx: 26, icon: "chat", action: () => invoke("orb_prompt").catch(() => {}) },
     ];
     for (const b of btns) {
-      const bx = cx + b.dx, by = cy - ORB_R - 18;
+      const bx = cx + b.dx, by = cy - ORB_R - 14;
       ctx.save();
-      ctx.fillStyle = "rgba(20,24,40,0.5)";
+      ctx.globalAlpha = hoverAlpha;
+      ctx.fillStyle = "rgba(20,24,40,0.55)";
       ctx.beginPath();
-      ctx.arc(bx, by, 6, 0, Math.PI * 2);
+      ctx.arc(bx, by, 8, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(186,210,255,0.5)";
+      ctx.strokeStyle = "rgba(186,210,255,0.55)";
       ctx.lineWidth = 1;
       ctx.stroke();
+      // Tiny glyph drawn with strokes so it stays minimal.
+      ctx.strokeStyle = "rgba(235,242,255,0.9)";
+      ctx.fillStyle = "rgba(235,242,255,0.9)";
+      ctx.lineWidth = 1.2;
+      ctx.lineCap = "round";
+      if (b.icon === "mic") {
+        // Capsule mic + stand.
+        rr(bx - 1.8, by - 5, 3.6, 6, 1.8);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(bx, by + 1, 3.2, 0, Math.PI);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(bx, by + 4.2);
+        ctx.lineTo(bx, by + 5.5);
+        ctx.stroke();
+      } else {
+        // Speech bubble.
+        rr(bx - 4, by - 4.5, 8, 6, 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(bx - 1.5, by + 1.5);
+        ctx.lineTo(bx - 2.5, by + 4.5);
+        ctx.lineTo(bx + 1, by + 1.5);
+        ctx.stroke();
+      }
       ctx.restore();
-      hoverBtns.push({ x: bx, y: by, r: 6, action: b.action });
+      hoverBtns.push({ x: bx, y: by, r: 8, action: b.action });
     }
   }
 }
@@ -276,10 +312,18 @@ function drawOrb(cx, cy) {
 }
 
 let hovered = false;
+let hoverAlpha = 0; // eased 0..1 visibility of the hover buttons
 let hoverBtns = []; // {x,y,r,action}
 
-canvas.addEventListener("mouseenter", () => { hovered = true; });
-canvas.addEventListener("mouseleave", () => { hovered = false; dragStart = null; });
+// Show the mic/chat buttons only when the pointer is over the bunny itself
+// (within its radius), not merely anywhere in the transparent window.
+canvas.addEventListener("pointermove", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  hovered = Math.hypot(x - W / 2, y - ORB_CY) <= ORB_R + 6;
+});
+canvas.addEventListener("pointerleave", () => { hovered = false; dragStart = null; });
 
 // Draw hover indicators inside draw() after orb
 const origDraw = draw;
