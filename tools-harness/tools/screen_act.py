@@ -19,7 +19,7 @@ import tempfile
 import time
 
 from tools import orb_cursor
-from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, activate_app, elements, find_element, focused_field, front_url, labels_at, popovers, settle_title, tab_count, window_title
+from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, activate_app, elements, find_element, focused_field, focused_label, front_url, labels_at, popovers, settle_title, tab_count, window_title
 from tools.screen_watch import _ensure_ocr_bin, _front_window, _screen_locked, is_blocked
 
 CLICK_TEXT_SCHEMA = {
@@ -355,9 +355,21 @@ def _focus() -> tuple[str, str] | None:
         return None  # accessibility unreadable: type anyway, report unverified
 
 
+_AI_WRITE_BOXES = ("describe your message", "help me write")  # Gmail's Gemini prompt box: typing there asks an AI to write, it never fills the body
+
+
+def _focus_label() -> str:
+    try:
+        return focused_label()
+    except Exception:
+        return ""
+
+
 def type_text(text: str, submit: bool = False) -> str:
     if (why := _guard(typing=True)):
         return why
+    if any(b in _focus_label().lower() for b in _AI_WRITE_BOXES):
+        return _ERR + "Nothing typed: the focus is the AI 'Describe your message' box, which asks Gemini to write; it is not the email body. Click the 'Message Body' field and retry."
     f = _focus()
     if f and f[0] in _NOT_EDITABLE:
         # A click that landed on a button or link leaves nothing to type into; saying so beats typing into the void.

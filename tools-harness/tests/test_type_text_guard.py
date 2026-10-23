@@ -10,6 +10,7 @@ def _run(focus, osa_calls):
     with (
         patch.object(screen_act, "_guard", return_value=None),
         patch.object(screen_act, "_focus", side_effect=focus),
+        patch.object(screen_act, "_focus_label", return_value=""),
         patch.object(screen_act.orb_cursor, "typing"),
         patch.object(screen_act.subprocess, "run", side_effect=lambda *a, **k: osa_calls.append(a) or R()),
     ):

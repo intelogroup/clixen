@@ -67,6 +67,16 @@ def test_click_reports_what_has_focus_afterwards(monkeypatch):
     assert "Focus now: AXTextField" in screen_act.click_text("To recipients")
 
 
+def test_type_text_refuses_gmails_ai_write_box(monkeypatch):
+    from tools.registry import is_error_result
+
+    monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
+    monkeypatch.setattr(screen_act, "_focus", lambda: ("AXTextArea", ""))
+    monkeypatch.setattr(screen_act, "_focus_label", lambda: "Describe your message")
+    out = screen_act.type_text("Hi Jim, here are the headlines")
+    assert is_error_result(out) and "AI" in out and "Message Body" in out
+
+
 def test_click_text_prefers_native_position(monkeypatch):
     monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
     monkeypatch.setattr(screen_act, "find_element", lambda t: (10.0, 20.0))

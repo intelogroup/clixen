@@ -226,6 +226,13 @@ def focused_field(app: str = "") -> tuple[str, str] | None:
     return str(_get(el, "AXRole") or ""), v if isinstance(v, str) else ""
 
 
+def focused_label(app: str = "") -> str:
+    """Accessibility label of the keyboard-focused element ('' when unreadable)."""
+    pid, _ = _target_app(app)
+    el = _get(_ax_app(pid), "AXFocusedUIElement") if pid is not None else None
+    return _label(el) if el is not None else ""
+
+
 def front_url(app: str = "") -> str:
     """URL of the page in the target app's front window ('' when it is not a web page)."""
     pid, _ = _target_app(app)
