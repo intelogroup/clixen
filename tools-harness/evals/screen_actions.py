@@ -465,6 +465,48 @@ CASES: list[Case] = [
 ]
 
 
+# ---- v2 baseline tasks: multi-step, judged on real state ---------------------------------------------
+
+_gmail_started = [0.0]
+
+
+def gmail_start() -> None:
+    _gmail_started[0] = time.time()
+    open_page("https://mail.google.com/mail/u/0/#inbox", 5.0)()
+
+
+def gmail_sent_to_self(s: State) -> str | None:
+    """Independent oracle: the Gmail API, not the agent's reply, says whether a new self-addressed mail exists."""
+    from tools.gmail import list_emails
+
+    out = list_emails(f"from:me to:me after:{int(_gmail_started[0])}", 5)
+    return None if "ID:" in out else f"no email from me to me after the run started (API said: {out[:120]!r})"
+
+
+def side_panel_open_on(path: str) -> Callable[[], None]:
+    def go() -> None:
+        fixture(path)()
+        extension_popup_open()
+
+    return go
+
+
+CASES += [
+    Case("v2-form-fill", "fill the contact form with name Ada Lovelace and email ada@example.com, tick the newsletter box, then submit",
+         fixture("/form"), title_has("submitted|Ada Lovelace|ada@example.com|sub"), 120, tags=["v2", "chain", "type"]),
+    Case("v2-shop-cheapest", "add the cheapest item on this page to the cart",
+         fixture("/shop"), title_has("cart|Mug"), 90, tags=["v2", "chain", "read"]),
+    Case("v2-form-with-panel", "fill the contact form with name Grace Hopper and email grace@example.com, then submit",
+         side_panel_open_on("/form"), title_has("submitted|Grace Hopper|grace@example.com|nosub"), 120, tags=["v2", "chain", "interference"]),
+    Case("v2-hn-second-comments", "open the comments of the second story",
+         open_page("https://news.ycombinator.com", 3.5), url_has("item?id="), 90, tags=["v2", "click", "url"]),
+    Case("v2-wiki-search-fact", "search wikipedia for Grace Hopper and tell me what year she was born",
+         open_page("https://en.wikipedia.org", 3.5), all_of(title_has("grace hopper"), reply_matches(r"1906")), 120, tags=["v2", "chain", "type", "read"]),
+    Case("v2-gmail-send", "Go on Gmail, write an email about this week's AI headlines and send it to jimkalinov@gmail.com.",
+         gmail_start, gmail_sent_to_self, 300, tags=["v2", "account", "send"]),
+]
+
+
 # ---- runner ------------------------------------------------------------------------------------
 
 def _probe_title() -> str:
@@ -502,6 +544,42 @@ def _settle_page(limit: float = 5.0, quiet: float = 1.0) -> None:
             last, since = cur, time.time()
 
 
+ORB = False  # --orb: drive the live core over HTTP exactly as the orb does (chat_id "orb-eval-…"), instead of calling harness.run in-process
+
+
+def _drive_http(prompt: str, chat_id: str, timeout: float) -> tuple[str, list[str]]:
+    """(reply, tools called) from one /chat/stream turn. Tools come from the '⚙️ Running <name>…' progress tokens."""
+    import urllib.parse
+    import urllib.request
+
+    raw = subprocess.run(["security", "find-generic-password", "-s", "clixen.localhost.token", "-w"], capture_output=True, text=True).stdout.strip()
+    try:
+        tok = json.loads(raw)["value"]
+    except (ValueError, KeyError):
+        tok = raw
+    url = "http://localhost:9234/chat/stream?" + urllib.parse.urlencode({"message": prompt, "chat_id": chat_id})
+    tools: list[str] = []
+    text: list[str] = []
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"x-clixen-token": tok}), timeout=timeout) as r:
+        for line in r:
+            line = line.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            try:
+                t = json.loads(line[5:]).get("token")
+            except ValueError:
+                continue
+            if not t:
+                continue
+            if (m := re.search(r"Running (\w+)", t)):
+                tools.append(m.group(1))
+            elif "Searching the web" in t:
+                tools.append("ask_web_search")
+            else:
+                text.append(t)
+    return "".join(text).strip(), tools
+
+
 def run_case(case: Case) -> dict:
     import harness
     from tools import screen_act
@@ -511,11 +589,14 @@ def run_case(case: Case) -> dict:
     before = _thumb() if case.measure_motion else None
     buf = io.StringIO()
     t0 = time.time()
-    reply, err = "", None
+    reply, err, tools_http = "", None, []
     try:
-        with contextlib.redirect_stdout(buf):
-            r = harness.run(case.prompt, chat_id=f"eval-{case.id}-{int(t0)}", orchestrated=True)
-        reply = str(r[0] if isinstance(r, tuple) else r)
+        if ORB:
+            reply, tools_http = _drive_http(case.prompt, f"orb-eval-{case.id}-{int(t0)}", max(180.0, case.max_s * 3))
+        else:
+            with contextlib.redirect_stdout(buf):
+                r = harness.run(case.prompt, chat_id=f"eval-{case.id}-{int(t0)}", orchestrated=True)
+            reply = str(r[0] if isinstance(r, tuple) else r)
     except Exception as e:
         err = repr(e)
     secs = round(time.time() - t0, 1)
@@ -524,7 +605,7 @@ def run_case(case: Case) -> dict:
     if before is not None:
         after = _thumb()
         moved = bool(after) and not screen_act._same_view(before, after)
-    st = State(_probe_title(), _front_window()[0], reply, re.findall(r"^\[tool\] (\w+)\(", buf.getvalue(), re.M), secs, moved)
+    st = State(_probe_title(), _front_window()[0], reply, tools_http if ORB else re.findall(r"^\[tool\] (\w+)\(", buf.getvalue(), re.M), secs, moved)
     case.teardown()
     why = f"exception {err}" if err else case.check(st)
     if why is None and secs > case.max_s:
@@ -534,21 +615,31 @@ def run_case(case: Case) -> dict:
 
 
 def main(argv: list[str]) -> int:
+    global ORB
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     if "--list" in argv:
         for c in CASES:
             print(f"{c.id:22} {','.join(c.tags):22} {c.prompt}")
         return 0
+    ORB = "--orb" in argv
+    runs = next((int(a.split("=", 1)[1]) for a in argv if a.startswith("--runs=")), 1)
+    tag = next((a.split("=", 1)[1] for a in argv if a.startswith("--tag=")), "")
     want = [a for a in argv if not a.startswith("--")]
-    cases = [c for c in CASES if not want or c.id in want]
+    cases = [c for c in CASES if (not want or c.id in want) and (not tag or tag in c.tags)]
     results = []
     for c in cases:
-        res = run_case(c)
-        results.append(res)
-        print(f"{'PASS' if res['pass'] else 'FAIL'}  {c['id'] if False else res['id']:22} {res['seconds']:>5}s  {res['why'] or ''}", flush=True)
+        for _ in range(runs):
+            res = run_case(c)
+            results.append(res)
+            print(f"{'PASS' if res['pass'] else 'FAIL'}  {res['id']:22} {res['seconds']:>5}s  {len(res['tools']):>3} calls  {res['why'] or ''}", flush=True)
     out = Path(__file__).parent / "results"
     out.mkdir(exist_ok=True)
     (out / f"screen_actions-{int(time.time())}.json").write_text(json.dumps(results, indent=1))
+    if runs > 1:
+        print("\ncase                    pass   avg_s  avg_calls")
+        for c in cases:
+            rs = [r for r in results if r["id"] == c.id]
+            print(f"{c.id:22} {sum(r['pass'] for r in rs)}/{len(rs)}   {sum(r['seconds'] for r in rs) / len(rs):>6.1f}  {sum(len(r['tools']) for r in rs) / len(rs):>6.1f}")
     failed = [r for r in results if not r["pass"]]
     print(f"\n{len(results) - len(failed)}/{len(results)} passed")
     return 1 if failed else 0
