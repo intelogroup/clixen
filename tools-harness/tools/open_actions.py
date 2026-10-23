@@ -6,6 +6,7 @@ ask_browser_agent's job). Fence: http/https URLs only; apps must be installed.
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 
 from tools.orb_cursor import point_at_app
@@ -15,8 +16,8 @@ _APP_DIRS = (
     Path("/Applications"),
     Path("/System/Applications"),
     Path("/System/Applications/Utilities"),
-    Path("/Applications/Utilities"),
     Path("/System/Library/CoreServices"),  # Finder lives here
+    Path("/Applications/Utilities"),
     Path.home() / "Applications",
 )
 
@@ -106,6 +107,73 @@ def _front_url(app: str) -> str:
         return ""
 
 
+# (pid, site) -> the tab-strip element of the tab we last opened a page of that site in. `open -a` always
+# makes a new tab, so without this every open_url piles one up; keyed by site so YouTube and Wikipedia
+# each keep their own tab. In-memory on purpose: core.py is one long-lived process, and a tab we cannot
+# vouch for (after a restart) is simply not reused.
+_work_tab: dict[tuple[int, str], object] = {}
+
+
+def site_of(url: str) -> str:
+    """'en.wikipedia.org/wiki/X' -> 'wikipedia.org'. shortcut: last two labels, so co.uk-style suffixes share a site; upgrade with the public-suffix list if that bites."""
+    host = norm_url(url).split("/", 1)[0].split("?", 1)[0].split(":", 1)[0]
+    return ".".join(host.split(".")[-2:])
+
+
+def _tab_list(app: str) -> list:
+    try:
+        from tools.ax_context import tab_elements
+
+        return tab_elements(app)
+    except Exception:
+        return []
+
+
+def _pid(app: str):
+    try:
+        from tools.ax_context import _target_app
+
+        return _target_app(app)[0]
+    except Exception:
+        return None
+
+
+def _remember_working_tab(app: str, before: list, url: str) -> None:
+    """The tab that appeared because of our `open` becomes the one to reuse."""
+    pid = _pid(app)
+    if pid is None:
+        return
+    time.sleep(1.0)
+    new = [t for t in _tab_list(app) if not any(t == b for b in before)]
+    if len(new) == 1:
+        _work_tab[(pid, site_of(url))] = new[0]
+
+
+def _reuse_working_tab(app: str, url: str) -> bool:
+    """Navigate the tab we opened earlier instead of opening another. False when there is none (closed, or never opened)."""
+    pid = _pid(app)
+    key = (pid, site_of(url))
+    tab = _work_tab.get(key)
+    if tab is None:
+        return False
+    if not any(tab == t for t in _tab_list(app)):  # the user closed it
+        _work_tab.pop(key, None)
+        return False
+    from tools.ax_context import activate_app, select_tab
+
+    if not select_tab(tab) or not activate_app(app):
+        return False
+    time.sleep(0.3)
+    typed = url.replace("\\", "\\\\").replace('"', '\\"')
+    script = (f'tell application "System Events" to tell (first process whose unix id is {pid})\n'
+              f'keystroke "l" using {{command down}}\ndelay 0.2\nkeystroke "{typed}"\ndelay 0.1\nkey code 36\nend tell')
+    try:
+        r = subprocess.run(["/usr/bin/osascript", "-e", script], capture_output=True, text=True, timeout=15)
+    except Exception:
+        return False
+    return r.returncode == 0
+
+
 def open_url(url: str, app: str = "Google Chrome") -> str:
     url = url.strip()
     if not valid_url(url):
@@ -115,9 +183,14 @@ def open_url(url: str, app: str = "Google Chrome") -> str:
     if same_page(_front_url(app), url):
         point_at_app(app)
         return f"{url} is already showing in {app}: not opened again."
+    if _reuse_working_tab(app, url):
+        point_at_app(app)
+        return f"Opened {url} in {app}, reusing the tab it opened earlier for this site (no new tab)."
+    before = _tab_list(app)
     err = _open(["-a", app, url])
     if err:
         return f"Error opening {url} in {app}: {err}"
+    _remember_working_tab(app, before, url)
     point_at_app(app)  # the orb's cursor flies to the window we just raised
     return f"Opened {url} in {app}."
 

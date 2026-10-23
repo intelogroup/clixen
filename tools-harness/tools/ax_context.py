@@ -256,6 +256,31 @@ def tab_count(pid: int) -> int:
 
 
 def settle_title(before: str, app: str = "", limit: float = 3.0, quiet: float = 0.4) -> str:
+def tab_elements(app: str = "") -> list:
+    """Tab-strip entries (AX elements) of the target app's focused window, left to right."""
+    pid, _ = _target_app(app)
+    if pid is None:
+        return []
+    el = _ax_app(pid)
+    win = _get(el, "AXFocusedWindow") or _get(el, "AXMainWindow")
+    stack = [win] if win is not None else []
+    for _ in range(600):  # the tab strip sits near the top of the tree
+        if not stack:
+            break
+        e = stack.pop()
+        if _get(e, "AXRole") == "AXTabGroup":
+            return list(_get(e, "AXChildren") or ())
+        stack.extend(_get(e, "AXChildren") or ())
+    return []
+
+
+def select_tab(tab) -> bool:
+    """Bring a tab-strip entry to the front (press it)."""
+    from ApplicationServices import AXUIElementPerformAction
+
+    return AXUIElementPerformAction(tab, "AXPress") == 0
+
+
     """Poll the window title until it differs from `before` and holds still for `quiet`
     seconds, or `limit` runs out. Returns the last title seen."""
     end = time.monotonic() + limit
