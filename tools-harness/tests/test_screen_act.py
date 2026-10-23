@@ -97,7 +97,7 @@ def test_close_extension_panels_is_wired_for_the_agent():
 
     assert "close_extension_panels" in EXECUTORS
     assert any(t["function"]["name"] == "close_extension_panels" for t in ALL_TOOLS)
-    assert "close_extension_panels" in orb_agent.TOOL_NAMES
+    assert "close_extension_panels" not in orb_agent.TOOL_NAMES  # act() closes extension panels itself
 
 
 def test_click_text_prefers_native_position(monkeypatch):

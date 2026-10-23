@@ -11,14 +11,14 @@ def test_only_orb_chats_get_the_lean_mode():
 
 
 def test_lean_tools_keep_the_screen_and_drop_the_rest():
-    full = [_tool(n) for n in ("click_text", "type_text", "update_task_plan", "ask_web_search",
+    full = [_tool(n) for n in ("act", "observe", "update_task_plan", "ask_web_search",
                                "ask_automation_agent", "ask_verse_agent", "send_telegram", "ask_deep_research")]
-    assert [t["function"]["name"] for t in orb_agent.lean_tools(full)] == ["click_text", "type_text", "update_task_plan", "ask_web_search"]
+    assert [t["function"]["name"] for t in orb_agent.lean_tools(full)] == ["act", "observe", "update_task_plan", "ask_web_search"]
 
 
 def test_every_screen_tool_is_in_the_allowlist():
     # the names harness.py offers the orchestrator for the user's screen
-    for n in ("get_screen_context", "click_text", "type_text", "press_keys", "scroll_page", "open_url", "read_page_text"):
+    for n in ("observe", "act", "open_url", "read_page_text"):
         assert n in orb_agent.TOOL_NAMES
 
 
