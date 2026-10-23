@@ -518,6 +518,14 @@ def _probe_title() -> str:
         return f"?{e!r}"
 
 
+def _fixture_title() -> str:
+    """Title of the Chrome tab showing a local fixture page ('' when none). An extension that opens its own tab in front must not decide a fixture task."""
+    script = ('tell application "Google Chrome" to repeat with w in windows\nrepeat with t in tabs of w\n'
+              'if URL of t starts with "http://127.0.0.1:%d" then return title of t\nend repeat\nend repeat\nreturn ""' % _PORT)
+    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=15)
+    return r.stdout.strip()
+
+
 def _thumb():
     from tools import screen_act
 
@@ -585,6 +593,9 @@ def run_case(case: Case) -> dict:
     from tools import screen_act
     from tools.screen_watch import _front_window
 
+    if "interference" not in case.tags:
+        with contextlib.suppress(Exception):
+            screen_act.close_extension_panels(CHROME)  # a panel left open by an earlier case is not part of this one
     case.setup()
     before = _thumb() if case.measure_motion else None
     buf = io.StringIO()
@@ -605,7 +616,7 @@ def run_case(case: Case) -> dict:
     if before is not None:
         after = _thumb()
         moved = bool(after) and not screen_act._same_view(before, after)
-    st = State(_probe_title(), _front_window()[0], reply, tools_http if ORB else re.findall(r"^\[tool\] (\w+)\(", buf.getvalue(), re.M), secs, moved)
+    st = State(_fixture_title() or _probe_title(), _front_window()[0], reply, tools_http if ORB else re.findall(r"^\[tool\] (\w+)\(", buf.getvalue(), re.M), secs, moved)
     case.teardown()
     why = f"exception {err}" if err else case.check(st)
     if why is None and secs > case.max_s:
