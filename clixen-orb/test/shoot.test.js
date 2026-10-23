@@ -22,3 +22,14 @@ test("phases follow draw, aim, rocket, boom and impact is the sum of the first t
   assert.equal(phaseAt(T_END + 5).u, 1);
   assert.ok(Math.abs(T_IMPACT - (0.30 + 0.12 + 0.25)) < 1e-9);
 });
+
+test("standoff stays on screen: far side of the target, or clamped", () => {
+  // target at the left edge, bunny coming from the left: the near spot is off-screen, so stand on the far side
+  const s = standoff([300, 500], [35, 500], [1470, 956]);
+  assert.ok(s[0] >= 40 && s[0] > 35);
+  // nowhere fits: clamped inside the margin
+  const c = standoff([100, 100], [20, 20], [200, 200]);
+  assert.ok(c[0] >= 40 && c[1] >= 40 && c[0] <= 160 && c[1] <= 160);
+  // plenty of room: unchanged
+  assert.deepEqual(standoff([0, 500], [600, 500], [1470, 956]), [600 - STANDOFF, 500]);
+});

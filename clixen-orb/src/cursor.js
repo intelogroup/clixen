@@ -343,7 +343,7 @@ listen("cursor-fly", (ev) => {
   fly = { from: park || from, to, click: click !== false, t0: performance.now() / 1000 };
   // Bazooka click: the bunny stops short, shoots, and the click lands where the rocket explodes.
   fly.shoot = fly.click && style === "bazooka" && !!sprites;
-  fly.dest = fly.shoot ? standoff(fly.from, to) : to;
+  fly.dest = fly.shoot ? standoff(fly.from, to, [W, H]) : to;
   lastSmoke = 0;
   fly.travel = TRAVEL.includes(travel) ? travel : pickTravel(Math.hypot(fly.dest[0] - fly.from[0], fly.dest[1] - fly.from[1]));
   fly.ride = null;
@@ -471,7 +471,8 @@ function tick() {
     pos = [fly.dest[0] - Math.cos(ang) * 5 * recoil, fly.dest[1] - Math.sin(ang) * 5 * recoil];
     motion.lift = 0; motion.lean = 0;
     motion.sy = ts < 0.12 ? 0.88 : 1;
-    setPose(ts >= T_FIRE ? "click" : "idle");
+    // face the target (the bunny may stand on the far side of it when the near side is off-screen)
+    setPose(ts >= T_FIRE ? "click" : "idle", Math.abs(fly.to[0] - fly.dest[0]) < 8 ? pose.flip : fly.to[0] > fly.dest[0]);
     const muzzle = [pos[0] + Math.cos(ang) * (MUZZLE_PX - 6) * k, pos[1] + Math.sin(ang) * (MUZZLE_PX - 6) * k];
     after = () => {
       const gone = ph.name === "boom" ? clamp01((ph.u - 0.25) / 0.35) : 0; // bazooka slips away once it has fired

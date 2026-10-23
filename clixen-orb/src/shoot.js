@@ -12,11 +12,20 @@ export const T_FIRE = B_DRAW + B_AIM;
 export const T_IMPACT = T_FIRE + B_BULLET;
 export const T_END = T_IMPACT + B_TAIL;
 
-/** Where the bunny stands: STANDOFF px before the target on the line from where it started. */
-export function standoff(from, to) {
+/** Where the bunny stands: STANDOFF px before the target on the line from where it started. With
+ * `bounds` [w, h] it stays on screen: if that spot is off the edge it tries the far side of the
+ * target, and failing that clamps (the bazooka still aims at the target from wherever it stands). */
+export function standoff(from, to, bounds = null, margin = 40) {
   const dx = to[0] - from[0], dy = to[1] - from[1], len = Math.hypot(dx, dy) || 1;
   const d = Math.min(STANDOFF, len * 0.8);
-  return [to[0] - (dx / len) * d, to[1] - (dy / len) * d];
+  const near = [to[0] - (dx / len) * d, to[1] - (dy / len) * d];
+  if (!bounds) return near;
+  const inside = (p) => p[0] >= margin && p[0] <= bounds[0] - margin && p[1] >= margin && p[1] <= bounds[1] - margin;
+  if (inside(near)) return near;
+  const far = [to[0] + (dx / len) * STANDOFF, to[1] + (dy / len) * STANDOFF];
+  if (inside(far)) return far;
+  const c = (v, hi) => Math.min(Math.max(v, margin), hi - margin);
+  return [c(near[0], bounds[0]), c(near[1], bounds[1])];
 }
 
 /** Phase of the shot `t` seconds after landing at the standoff point. */
