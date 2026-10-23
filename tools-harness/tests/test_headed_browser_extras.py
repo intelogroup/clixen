@@ -92,6 +92,31 @@ def test_point_cursor_converts_to_screen_points_and_skips_headless(monkeypatch):
     assert len(got) == 1
 
 
+def test_click_waits_for_the_bazooka_impact_then_clicks(monkeypatch):
+    from tools import orb_cursor
+
+    events = []
+    monkeypatch.setattr(orb_cursor, "point", lambda x, y, click=True, style=None: events.append(("point", style)))
+    monkeypatch.setattr(hb.time, "sleep", lambda s: events.append(("sleep", round(s, 2))))
+    monkeypatch.delenv("CLIXEN_ORB_CLICK_STYLE", raising=False)
+
+    class Loc:
+        def scroll_into_view_if_needed(self, timeout=0): pass
+        def bounding_box(self): return {"x": 0, "y": 0, "width": 10, "height": 10}
+        def click(self, force=False): events.append(("click",))
+
+    class P:
+        def evaluate(self, js): return [0, 0]
+
+    monkeypatch.setattr(hb, "_locator_for", lambda ref: (Loc(), ref))
+    monkeypatch.setattr(hb, "_settle", lambda: None)
+    monkeypatch.setattr(hb, "_status_line", lambda: "ok")
+    monkeypatch.setattr(hb._S, "page", P(), raising=False)
+    monkeypatch.setattr(hb._S, "mode", "headed (chrome)", raising=False)
+    assert hb._click_inner("e1", False).startswith("Clicked @e1")
+    assert events == [("point", "bazooka"), ("sleep", 1.6), ("click",)]  # click only after the wait
+
+
 def test_network_list_waits_for_late_fetches(monkeypatch):
     page = Page()
     _session(monkeypatch, [page])

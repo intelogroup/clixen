@@ -43,6 +43,7 @@ import logging
 import os
 import queue
 import threading
+import time
 from pathlib import Path
 
 log = logging.getLogger("headed_browser")
@@ -393,20 +394,28 @@ def _status_line() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _point_cursor(loc, click: bool = True) -> None:
-    """Best effort, never blocks the action. Screen point = window origin + chrome offset + element centre."""
+def _point_cursor(loc, click: bool = True, shoot: bool = False) -> float:
+    """Best effort, never blocks the action. Screen point = window origin + chrome offset + element centre.
+    Returns the seconds the caller should wait so a real click lands when the animation's does (0 when
+    nothing was shown). `shoot` is for real clicks: the bunny fires its bazooka at the element."""
     if "headless" in _S.mode:
-        return
+        return 0.0
     try:
         from tools import orb_cursor
 
         box = loc.bounding_box()
         if not box:
-            return
+            return 0.0
         ox, oy = _S.page.evaluate("[window.screenX, window.screenY + (window.outerHeight - window.innerHeight)]")
-        orb_cursor.point(ox + box["x"] + box["width"] / 2, oy + box["y"] + box["height"] / 2, click)
+        cx, cy = ox + box["x"] + box["width"] / 2, oy + box["y"] + box["height"] / 2
+        if not shoot:
+            orb_cursor.point(cx, cy, click)
+            return 0.0
+        style = orb_cursor.click_style()
+        orb_cursor.point(cx, cy, click, style=style)
+        return orb_cursor.IMPACT_S[style] + 0.04
     except Exception:
-        pass
+        return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +496,7 @@ def _tabs_inner(action: str, index: int, url: str) -> str:
 def _click_inner(ref: str, force: bool) -> str:
     loc, ref = _locator_for(ref)
     loc.scroll_into_view_if_needed(timeout=3000)
-    _point_cursor(loc)
+    time.sleep(_point_cursor(loc, shoot=True))  # the click lands with the explosion
     loc.click(force=force)
     _settle()
     return f"Clicked @{ref}. {_status_line()}"

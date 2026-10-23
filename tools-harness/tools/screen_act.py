@@ -214,8 +214,9 @@ def find_text(lines, want: str):
 def _click(x: float, y: float) -> None:
     import Quartz
 
-    orb_cursor.point(x, y, click=True)
-    time.sleep(_FLY_S)  # let the visible cursor land first
+    style = orb_cursor.click_style()
+    orb_cursor.point(x, y, click=True, style=style)
+    time.sleep(orb_cursor.IMPACT_S[style] + 0.04)  # let the visible click land first (the bazooka shot takes longer than a press)
     pt = (x, y)
     for ev in (Quartz.kCGEventMouseMoved, Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
         e = Quartz.CGEventCreateMouseEvent(None, ev, pt, Quartz.kCGMouseButtonLeft)

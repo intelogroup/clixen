@@ -10,16 +10,33 @@ origin — what Quartz window bounds and Tauri positions both use.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
 _FILE = Path.home() / ".config" / "g4l" / "data" / "orb_cursor.json"
 
 
-def point(x: float, y: float, click: bool = True) -> None:
+# Seconds from the orb receiving a target to the visible click landing. The real click waits this
+# long so it happens where the animation says it does. "press" = fly + press; "bazooka" = crouch
+# 0.14 + fly 0.75 + draw 0.30 + aim 0.12 + rocket 0.25 (clixen-orb/src/cursor.js and shoot.js;
+# tests/test_orb_cursor_style.py keeps the numbers in step).
+IMPACT_S = {"press": 0.85, "bazooka": 1.56}
+
+
+def click_style() -> str:
+    """How the bunny clicks. CLIXEN_ORB_CLICK_STYLE=press turns the bazooka off."""
+    v = os.environ.get("CLIXEN_ORB_CLICK_STYLE", "bazooka").strip().lower()
+    return v if v in IMPACT_S else "bazooka"
+
+
+def point(x: float, y: float, click: bool = True, style: str | None = None) -> None:
     _FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = _FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "x": x, "y": y, "click": click}))
+    payload = {"seq": time.time_ns(), "ts": time.time(), "x": x, "y": y, "click": click}
+    if style:
+        payload["style"] = style
+    tmp.write_text(json.dumps(payload))
     tmp.replace(_FILE)
 
 
