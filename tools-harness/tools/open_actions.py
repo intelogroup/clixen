@@ -16,6 +16,7 @@ _APP_DIRS = (
     Path("/System/Applications"),
     Path("/System/Applications/Utilities"),
     Path("/Applications/Utilities"),
+    Path("/System/Library/CoreServices"),  # Finder lives here
     Path.home() / "Applications",
 )
 
