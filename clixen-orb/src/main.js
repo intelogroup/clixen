@@ -316,12 +316,19 @@ let hoverAlpha = 0; // eased 0..1 visibility of the hover buttons
 let hoverBtns = []; // {x,y,r,action}
 
 // Show the mic/chat buttons only when the pointer is over the bunny itself
-// (within its radius), not merely anywhere in the transparent window.
+// (within its radius) or over one of the buttons, not merely anywhere in the
+// transparent window. Without the button check the icons would fade out while
+// the pointer travels from the bunny up to a button (they sit ~67px from the
+// orb centre, beyond the ORB_R+6 bunny zone).
+const BTN_DY = ORB_R + 14; // matches the draw() offset (cy - by)
 canvas.addEventListener("pointermove", (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
-  hovered = Math.hypot(x - W / 2, y - ORB_CY) <= ORB_R + 6;
+  const cx = W / 2, cy = ORB_CY;
+  hovered = Math.hypot(x - cx, y - cy) <= ORB_R + 6
+    || Math.hypot(x - (cx - 26), y - (cy - BTN_DY)) <= 10
+    || Math.hypot(x - (cx + 26), y - (cy - BTN_DY)) <= 10;
 });
 canvas.addEventListener("pointerleave", () => { hovered = false; dragStart = null; });
 
