@@ -42,9 +42,18 @@ function bunny(x, y, alpha) {
   if (!sp) return;
   const dpr = window.devicePixelRatio || 1;
   const k = SPRITE_PX / dpr;
-  const side = pose.flip ? -1 : 1; // the bunny stands on the side the cursor came from
+  const side = pose.flip ? -1 : 1;
   const f = frameAt(sp, performance.now() / 1000 - pose.t0);
-  drawFrame(ctx, sp, f, x + side * (6 + (sprites.idle.w * k) / 2), y + sprites.idle.h * k * 0.6, SPRITE_PX, dpr, pose.flip, alpha);
+  // (x, y) is the click point: it sits on the bunny's front paw (idle-cell pixel 8 across and 12 up
+  // from the bottom centre), so the sprite points at the target the way the arrow used to.
+  drawFrame(ctx, sp, f, x - side * 8 * k, y + 12 * k, SPRITE_PX, dpr, pose.flip, alpha);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = `rgb(${AMBER})`;
+  ctx.beginPath();
+  ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 let fly = null; // { from, to, click, t0 }
@@ -291,6 +300,7 @@ function arc(a, b, g, bend) {
 }
 
 function arrow(x, y, scale, alpha) {
+  if (sprites) { bunny(x, y, alpha); return; } // the bunny replaces the arrow; the arrow is the fallback
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(x, y);
@@ -313,7 +323,6 @@ function arrow(x, y, scale, alpha) {
   ctx.strokeStyle = "rgba(20,20,30,0.85)";
   ctx.stroke();
   ctx.restore();
-  bunny(x, y, alpha);
 }
 
 function tick() {
