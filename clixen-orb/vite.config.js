@@ -19,6 +19,7 @@ export default defineConfig({
         main: resolve(import.meta.dirname, "index.html"),
         caption: resolve(import.meta.dirname, "caption.html"),
         cursor: resolve(import.meta.dirname, "cursor.html"),
+        setup: resolve(import.meta.dirname, "setup.html"),
       },
     },
   },

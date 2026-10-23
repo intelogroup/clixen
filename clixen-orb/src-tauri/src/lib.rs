@@ -869,6 +869,11 @@ pub fn run() {
             if let tauri::WindowEvent::Destroyed = event {
                 let _ = window.emit("orb-stop-listening", ());
             }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "setup" {
+                    app_lifecycle::on_setup_close(window.app_handle(), api);
+                }
+            }
             if window.label() != "orb" {
                 return;
             }

@@ -130,6 +130,14 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         let _ = w.hide();
     }
 
+    use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+    let h = app.clone();
+    app.global_shortcut().on_shortcut(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS), move |_a, _s, e| {
+        if e.state() == ShortcutState::Pressed {
+            show_settings(&h);
+        }
+    })?;
+
     let app2 = app.clone();
     std::thread::spawn(move || {
         // first pass: resume wherever the stored state says (Onboard waits for the user)
@@ -179,6 +187,27 @@ fn advance(app: &AppHandle, sh: &State) -> Stage {
     sync_sidecar(sh);
     emit(app, &stage);
     stage
+}
+
+/// Settings are only offered while the vault is unlocked; otherwise the stage screen shows.
+pub fn show_settings(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("setup") {
+        let _ = w.show().and_then(|_| w.set_focus());
+        let _ = app.emit("lifecycle-settings", ());
+    }
+}
+
+/// Closing the window while Ready just hides it; closing it mid-setup quits (nothing else is usable).
+pub fn on_setup_close(app: &AppHandle, api: &tauri::CloseRequestApi) {
+    let ready = app.try_state::<State>().is_some_and(|sh| *sh.lc.lock().unwrap().stage() == Stage::Ready);
+    if ready {
+        api.prevent_close();
+        if let Some(w) = app.get_webview_window("setup") {
+            let _ = w.hide();
+        }
+    } else {
+        app.exit(0);
+    }
 }
 
 /// Any orb use counts as activity for the idle lock.
