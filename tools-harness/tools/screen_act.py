@@ -423,6 +423,7 @@ def type_text(text: str, submit: bool = False) -> str:
     orb_cursor.typing(text, per)
     r = subprocess.run(["osascript", "-e", _type_script(text, per, False)], capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
+        orb_cursor.fail()  # the keystrokes did not go out: the bunny reacts at the parked cursor
         return _ERR + f"Typing failed: {r.stderr.strip()}"
     squash = lambda s: "".join(s.split())  # rich-text fields (Gmail's body) report their value without the newlines we typed
     for _ in range(6):  # a rich field's accessibility value trails the keystrokes: give it up to ~1.5s before calling the text missing

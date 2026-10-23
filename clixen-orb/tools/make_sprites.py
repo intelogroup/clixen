@@ -27,6 +27,9 @@ STATES = {
     # single poses for long flights (hops); they do not count toward the shared crop/scale below
     "jump": ("06-Jump&Fall/__Bunny1_Jump_*.png", 1, False),
     "fall": ("06-Jump&Fall/__Bunny1_Fall_*.png", 1, False),
+    "jthrow": ("05-JumpThrow", 14, False),  # mid-air click: throws while hopping
+    "fail": ("08-Hurt", 12, False),         # a tool errored: startled hurt pose
+    "dead": ("09-Dead", 8, False),          # the whole chain aborted: one dramatic flop
 }
 CORE = ("idle", "move", "click")
 HOP = 6            # the click strip is this many px taller: the bunny hops on the press

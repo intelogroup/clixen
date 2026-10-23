@@ -66,6 +66,22 @@ def scrolling(direction: str, duration_s: float) -> None:
     tmp.replace(_FILE)
 
 
+def fail() -> None:
+    """Tell the orb the action errored: the bunny plays its startled hurt pose at the cursor."""
+    _FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "fail": {}}))
+    tmp.replace(_FILE)
+
+
+def dead() -> None:
+    """Tell the orb the whole action chain was aborted: one dramatic flop, then the cursor fades."""
+    _FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "dead": {}}))
+    tmp.replace(_FILE)
+
+
 def front_window_center(app_name: str, wait_s: float = 0.6) -> tuple[float, float] | None:
     """Centre of `app_name`'s front-most on-screen window, once it has had a
     moment to appear. None if it has no window (the orb then just doesn't fly)."""
