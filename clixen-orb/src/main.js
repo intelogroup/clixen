@@ -55,6 +55,10 @@ const state = {
   t: 0,
 };
 
+// Continuous-listening toggle (declared here, not in the mic section, because
+// draw() reads it before that section is evaluated).
+let micOn = false;
+
 const PALETTES = {
   idle:      { hot: [186, 210, 255], mid: [96, 128, 245], cold: [46, 58, 150] },
   listening: { hot: [190, 250, 255], mid: [86, 190, 248], cold: [26, 96, 178] },
@@ -67,6 +71,16 @@ function setMode(mode) {
   state.mode = mode;
   emit("orb-mode", mode).catch(() => {}); // the cursor overlay shows its bunny thinking while the model works
   if (mode === "idle") state.targetAmp = 0;
+}
+
+// Backend session states → orb visuals. `speaking` is applied without
+// setMode() so a running tool (acting) keeps ownership of the cursor.
+function applyVoiceState(s) {
+  if (s === "hearing") { setMode("listening"); return; }
+  if (s === "listening") { setMode(micOn ? "listening" : "idle"); return; }
+  if (s === "thinking") { setMode("thinking"); return; }
+  if (s === "speaking") { state.mode = "speaking"; return; }
+  if (s === "idle" && !act.on) setMode(micOn ? "listening" : "idle");
 }
 
 /* ---- action: orb -> cursor -> click ------------------------------------
@@ -221,15 +235,17 @@ const CHIP_ICONS = {
     "........",
   ],
 };
-function drawPixelChip(cx, cy, icon) {
+function drawPixelChip(cx, cy, icon, active = false) {
   const grid = CHIP_ICONS[icon];
-  const cell = 3;                 // 8x8 icon = 24px, chip = 28px with border
-  const x0 = cx - 14, y0 = cy - 14;
+  const cell = 4;                 // 8x8 icon = 32px, chip = 36px with border
+  const x0 = cx - 18, y0 = cy - 18;
   // Chip body: black 2px border around a pale grey field, like a sprite tile.
+  // `active` (mic listening) fills the field with the warm accent so the
+  // toggle state is visible at a glance, not only by the orb's colour.
   ctx.fillStyle = PX.K;
-  ctx.fillRect(x0, y0, 28, 28);
-  ctx.fillStyle = PX.G;
-  ctx.fillRect(x0 + 2, y0 + 2, 24, 24);
+  ctx.fillRect(x0, y0, 36, 36);
+  ctx.fillStyle = active ? PX.O : PX.G;
+  ctx.fillRect(x0 + 2, y0 + 2, 32, 32);
   // Glyph cells.
   for (let r = 0; r < grid.length; r++) {
     for (let c = 0; c < grid[r].length; c++) {
@@ -255,24 +271,24 @@ function draw() {
   ctx.restore();
   drawCursor(cx, cy);
 
-  // Hover indicators: mic (listen) and chat (open input), shown only while the
-  // pointer is over the bunny itself and faded in/out smoothly. Drawn as tiny
-  // pixel-art chips using the bunny sprite's own palette (black outline, pale
-  // grey body, white, warm orange) so they read as part of the same artwork.
+  // Hover indicators: mic (listen) and chat (open input), shown instantly while
+  // the pointer is over the bunny itself. Drawn as tiny pixel-art chips using
+  // the bunny sprite's own palette (black outline, pale grey body, white, warm
+  // orange) so they read as part of the same artwork.
   hoverBtns = [];
-  hoverAlpha += ((hovered ? 1 : 0) - hoverAlpha) * 0.25; // ease toward target
+  hoverAlpha = hovered ? 1 : 0; // instant — chips appear the moment the pointer reaches the bunny
   if (hoverAlpha > 0.02) {
     const btns = [
-      { dx: -26, icon: "mic", action: () => { if (state.mode === "listening") stopListening(); else startListening(); } },
+      { dx: -26, icon: "mic", active: micOn, action: toggleMic },
       { dx: 26, icon: "chat", action: () => invoke("orb_prompt").catch(() => {}) },
     ];
     for (const b of btns) {
       const bx = cx + b.dx, by = cy - ORB_R - 4;
       ctx.save();
       ctx.globalAlpha = hoverAlpha;
-      drawPixelChip(bx, by, b.icon);
+      drawPixelChip(bx, by, b.icon, !!b.active);
       ctx.restore();
-      hoverBtns.push({ x: bx, y: by, r: 16, icon: b.icon, action: b.action });
+      hoverBtns.push({ x: bx, y: by, r: 20, icon: b.icon, action: b.action });
     }
   }
 }
@@ -348,8 +364,8 @@ canvas.addEventListener("pointermove", (e) => {
   const y = e.clientY - rect.top;
   const cx = W / 2, cy = ORB_CY;
   hovered = Math.hypot(x - cx, y - cy) <= ORB_R + 6
-    || Math.hypot(x - (cx - 26), y - (cy - BTN_DY)) <= 16
-    || Math.hypot(x - (cx + 26), y - (cy - BTN_DY)) <= 16;
+    || Math.hypot(x - (cx - 26), y - (cy - BTN_DY)) <= 20
+    || Math.hypot(x - (cx + 26), y - (cy - BTN_DY)) <= 20;
 });
 canvas.addEventListener("pointerleave", () => { hovered = false; dragStart = null; });
 
@@ -546,6 +562,98 @@ async function sendText(text) {
   }
 }
 
+/* ---- continuous listening (mic chip) ----------------------------------
+ * Click the mic: the backend session listens, turn after turn, until you
+ * click it again. Capture happens here (WebAudio + echoCancellation) and is
+ * streamed as 16 kHz mono PCM; the backend runs VAD, streaming ASR, the turn
+ * and TTS, then pushes state/partial/final/audio frames back over
+ * /voice/events. Never a second mic: hold-to-talk stays MediaRecorder-based,
+ * and the hold path is disabled while continuous mode owns the device.
+ * ---------------------------------------------------------------------- */
+
+let micCtx = null;
+let micStream = null;
+let micSrc = null;
+let micNode = null;
+
+const PCM_RATE = 16000;
+const FRAME_SAMPLES = 480;   // 30 ms at 16 kHz — the session's frame size
+
+function b64FromBytes(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+
+async function startContinuousMic() {
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+  });
+  micCtx = new (window.AudioContext || window.webkitAudioContext)();
+  micSrc = micCtx.createMediaStreamSource(micStream);
+  const ratio = micCtx.sampleRate / PCM_RATE;   // almost always 48000/16000 = 3
+  const node = micCtx.createScriptProcessor(2048, 1, 1);
+  let phase = 0;
+  let pending = [];
+  node.onaudioprocess = (ev) => {
+    if (!micOn) return;
+    const input = ev.inputBuffer.getChannelData(0);
+    for (let i = 0; i < input.length; i++) {
+      phase += 1;
+      if (phase >= ratio) { phase -= ratio; pending.push(input[i]); }
+    }
+    while (pending.length >= FRAME_SAMPLES) {
+      const pcm = new Int16Array(FRAME_SAMPLES);
+      for (let i = 0; i < FRAME_SAMPLES; i++) {
+        const v = Math.max(-1, Math.min(1, pending[i]));
+        pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+      }
+      pending = pending.slice(FRAME_SAMPLES);
+      invoke("orb_feed_audio", { audioB64: b64FromBytes(new Uint8Array(pcm.buffer)) })
+        .catch(() => {});
+    }
+  };
+  micSrc.connect(node);
+  node.connect(micCtx.destination);   // a ScriptProcessor only runs with a sink
+  micNode = node;
+}
+
+function stopContinuousMic() {
+  try { if (micNode) micNode.disconnect(); } catch { /* already gone */ }
+  try { if (micSrc) micSrc.disconnect(); } catch { /* already gone */ }
+  try { if (micStream) micStream.getTracks().forEach((t) => t.stop()); } catch { /* already gone */ }
+  try { if (micCtx) micCtx.close(); } catch { /* already gone */ }
+  micNode = micSrc = micStream = micCtx = null;
+}
+
+async function toggleMic() {
+  if (micOn) {
+    micOn = false;
+    stopContinuousMic();
+    setMode("idle");
+    sayClear();
+    invoke("orb_listen", { on: false }).catch(() => {});
+    dbg("mic off");
+    return;
+  }
+  try {
+    await invoke("orb_events_start").catch(() => {});
+    const res = await invoke("orb_listen", { on: true });
+    if (!res || res.listening !== true) throw new Error("backend refused to listen");
+    await startContinuousMic();
+    micOn = true;
+    setMode("listening");
+    say("Listening…", "you", true);
+    dbg(`mic on (${res.mic || "default"}, chat ${res.chat_id})`);
+  } catch (e) {
+    micOn = false;
+    stopContinuousMic();
+    say(`Mic unavailable: ${e.message || e}`, "", false);
+    setMode("idle");
+    invoke("orb_listen", { on: false }).catch(() => {});
+  }
+}
+
 /* ---- backend → orb ---------------------------------------------------- */
 
 let currentTurnId = "";   // tags every event to the voice turn it belongs to
@@ -636,10 +744,16 @@ function cursorHome() {
 
 listen("orb-stop-listening", () => {
   // Rust asks us to stop (the orb was dismissed). Never leave the mic hot.
+  if (micOn) { toggleMic(); return; }
   if (state.mode === "listening") stopListening();
 });
 
 listen("orb-event", (ev) => {
+  const p = ev.payload;
+  if (!p) return;
+  // Only filter when a turn is pinned; session events carry their own turn_id
+  // and currentTurnId is empty for them.
+  if (currentTurnId && p.turn_id && p.turn_id !== currentTurnId) return;
   if (p.kind === "cancel") {
     if (currentTurnId) {
       setAction(false);
@@ -649,9 +763,38 @@ listen("orb-event", (ev) => {
     }
     return;
   }
-  if (p.turn_id && p.turn_id !== currentTurnId) return;
-  const p = ev.payload;
   switch (p.kind) {
+    case "state":
+      applyVoiceState(p.state || "idle");
+      break;
+
+    case "partial":
+      // Live streaming transcript: the caption grows while you talk.
+      setAction(false);
+      setMode("listening");
+      say(p.text, "you", true);
+      break;
+
+    case "final":
+      // Endpoint: this is what the agent is answering.
+      setAction(false);
+      botBuffer = "";
+      say(p.text, "you", true);
+      setMode("thinking");
+      break;
+
+    case "interrupt":
+      // You talked over the reply (or cancelled): the turn is gone.
+      botBuffer = "";
+      setAction(false);
+      sayClear();
+      setMode(micOn ? "listening" : "idle");
+      break;
+
+    case "warning":
+      console.warn("orb voice:", p.text || p);
+      break;
+
     case "transcript":
       say(p.text, "you", true);
       break;
@@ -777,6 +920,7 @@ canvas.addEventListener("pointerdown", (e) => {
   holdListening = false;
   pressTimer = setTimeout(() => {
     pressTimer = null;
+    if (micOn) { dbg("hold ignored — the continuous mic owns the device"); return; }
     holdListening = true;
     dbg("hold -> listening");
     startListening();
@@ -885,6 +1029,7 @@ canvas.addEventListener("pointerleave", () => {
 
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
+  if (micOn) { toggleMic(); return; }
   if (state.mode === "listening") stopListening();
 });
 
@@ -906,12 +1051,17 @@ listen("orb-prompt", (ev) => {
 });
 
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && state.mode === "listening") stopListening();
+  if (e.key !== "Escape") return;
+  if (micOn) { toggleMic(); return; }
+  if (state.mode === "listening") stopListening();
 });
 
 /* ---- boot ------------------------------------------------------------- */
 
 (async function boot() {
+  // One long-lived SSE consumer for /voice/events (session states, partials,
+  // finals, audio). Idempotent in Rust; harmless if the backend is down.
+  invoke("orb_events_start").catch(() => {});
   try {
     const s = await invoke("orb_status");
     if (!s.reachable) {
