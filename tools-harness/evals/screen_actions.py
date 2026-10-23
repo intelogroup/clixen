@@ -568,24 +568,42 @@ def _drive_http(prompt: str, chat_id: str, timeout: float) -> tuple[str, list[st
     url = "http://localhost:9234/chat/stream?" + urllib.parse.urlencode({"message": prompt, "chat_id": chat_id})
     tools: list[str] = []
     text: list[str] = []
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"x-clixen-token": tok}), timeout=timeout) as r:
-        for line in r:
-            line = line.decode("utf-8", "replace").strip()
-            if not line.startswith("data:"):
-                continue
-            try:
-                t = json.loads(line[5:]).get("token")
-            except ValueError:
-                continue
-            if not t:
-                continue
-            if (m := re.search(r"Running (\w+)", t)):
-                tools.append(m.group(1))
-            elif "Searching the web" in t:
-                tools.append("ask_web_search")
-            else:
-                text.append(t)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"x-clixen-token": tok}), timeout=timeout) as r:
+            for line in r:
+                line = line.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    t = json.loads(line[5:]).get("token")
+                except ValueError:
+                    continue
+                if not t:
+                    continue
+                if (m := re.search(r"Running (\w+)", t)):
+                    tools.append(m.group(1))
+                elif "Searching the web" in t:
+                    tools.append("ask_web_search")
+                else:
+                    text.append(t)
+    except BaseException:
+        _abort_http(chat_id)  # the server-side agent turn outlives a killed client and can still click Send: stop it
+        raise
     return "".join(text).strip(), tools
+
+
+def _abort_http(chat_id: str) -> None:
+    import urllib.request
+
+    raw = subprocess.run(["security", "find-generic-password", "-s", "clixen.localhost.token", "-w"], capture_output=True, text=True).stdout.strip()
+    try:
+        tok = json.loads(raw)["value"]
+    except (ValueError, KeyError):
+        tok = raw
+    try:
+        urllib.request.urlopen(urllib.request.Request(f"http://localhost:9234/chat/abort?chat_id={chat_id}", method="POST", headers={"x-clixen-token": tok}), timeout=10)
+    except OSError:
+        pass
 
 
 def run_case(case: Case) -> dict:
@@ -627,6 +645,9 @@ def run_case(case: Case) -> dict:
 
 def main(argv: list[str]) -> int:
     global ORB
+    import signal
+
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))  # pkill must stop the agent too, not just this client
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     if "--list" in argv:
         for c in CASES:

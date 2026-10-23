@@ -10,7 +10,7 @@ def _j(o):
 
 
 @pytest.fixture
-def mail(monkeypatch):
+def mail(monkeypatch, tmp_path):
     class M:
         opened = []
         acts = []
@@ -24,6 +24,7 @@ def mail(monkeypatch):
     monkeypatch.setattr(rc.v2, "act", lambda **k: m.acts.append(k) or json.dumps({"ok": True, "expect": "met"}))
     monkeypatch.setattr(rc, "_sent_since", lambda to, subject, since: m.api)
     monkeypatch.setattr(rc.time, "sleep", lambda s: None)
+    monkeypatch.setattr(rc.v2, "TRACE_FILE", tmp_path / "trace.jsonl")  # tests must not write rows into the real trace
     return m
 
 
