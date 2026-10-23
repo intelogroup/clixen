@@ -37,6 +37,28 @@ const SPRITE_PX = 3; // device pixels per sprite pixel (integer keeps the art cr
 let pose = { name: "idle", t0: 0, flip: false };
 function setPose(name, flip = pose.flip) { if (pose.name !== name || pose.flip !== flip) pose = { name, t0: performance.now() / 1000, flip }; }
 
+// Per-frame motion of the bunny, set by tick(): lift = px above the ground, sy = squash on landing.
+const motion = { lift: 0, sy: 1 };
+let dust = []; // pixel puffs at the feet: { x, y, vx, vy, t0 }
+let hopN = -1, lastPuff = 0;
+const DUST_S = 0.4;
+function puff(pos, side) {
+  const k = SPRITE_PX / (window.devicePixelRatio || 1);
+  const now = performance.now() / 1000;
+  for (let i = 0; i < 3; i++) {
+    dust.push({ x: pos[0] - side * 8 * k, y: pos[1] + 12 * k, vx: -side * (10 + Math.random() * 30), vy: -(6 + Math.random() * 16), t0: now });
+  }
+}
+function drawDust() {
+  const now = performance.now() / 1000;
+  dust = dust.filter((d) => now - d.t0 < DUST_S);
+  for (const d of dust) {
+    const u = (now - d.t0) / DUST_S;
+    ctx.fillStyle = `rgba(255,236,190,${0.9 * (1 - u)})`;
+    ctx.fillRect(Math.round(d.x + d.vx * (now - d.t0)), Math.round(d.y + d.vy * (now - d.t0)), 3, 3);
+  }
+}
+
 function bunny(x, y, alpha) {
   const sp = sprites && sprites[pose.name];
   if (!sp) return;
@@ -46,7 +68,17 @@ function bunny(x, y, alpha) {
   const f = frameAt(sp, performance.now() / 1000 - pose.t0);
   // (x, y) is the click point: it sits on the bunny's front paw (idle-cell pixel 8 across and 12 up
   // from the bottom centre), so the sprite points at the target the way the arrow used to.
-  drawFrame(ctx, sp, f, x - side * 8 * k, y + 12 * k, SPRITE_PX, dpr, pose.flip, alpha);
+  const fx = x - side * 8 * k, fy = y + 12 * k;
+  if (motion.lift > 0) { // ground shadow shrinks as the bunny rises
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.18;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(fx, fy, 9 * k * (1 - motion.lift / 160), 2.5 * k, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  drawFrame(ctx, sp, f, fx, fy - motion.lift, SPRITE_PX, dpr, pose.flip, alpha, 1, motion.sy);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = `rgb(${AMBER})`;
@@ -289,6 +321,7 @@ listen("cursor-fly", (ev) => {
   fly = { from: park || from, to, click: click !== false, t0: performance.now() / 1000 };
   setPose("move", to[0] < fly.from[0]); // source frames face right; mirror when flying left
   trail = [];
+  dust = []; hopN = -1; lastPuff = 0;
   requestAnimationFrame(tick);
 });
 
@@ -333,6 +366,7 @@ function tick() {
   if (t >= (fly.click ? T_TOTAL : T_FLY + 0.05)) { // a no-click glide (before a scroll) lands and frees the cursor at once
     park = fly.to;
     fly = null;
+    motion.lift = 0; motion.sy = 1; dust = [];
     restPose();
     drawPark();
     parkTimer = setTimeout(fadePark, PARK_S * 1000);
@@ -342,13 +376,33 @@ function tick() {
   }
 
   let pos, scale = 1, alpha = 1;
+  const side = fly.to[0] < fly.from[0] ? -1 : 1;
   const tPress = T_FLY, tHold = T_FLY + T_PRESS;
   if (t < T_FLY) {
     const g = ease(t / T_FLY);
     pos = arc(fly.from, fly.to, g, 1);
     scale = 0.7 + 0.5 * g; // grows from orb-cursor size to full size
+    const len = Math.hypot(fly.to[0] - fly.from[0], fly.to[1] - fly.from[1]);
+    const hops = len > 380 ? Math.round(len / 300) : 0; // long flights hop along; short ones run
+    if (hops) {
+      const ph = (g * hops) % 1;
+      motion.lift = Math.sin(Math.PI * ph) * Math.min(70, len * 0.1);
+      motion.sy = ph < 0.08 || ph > 0.92 ? 0.88 : 1;
+      setPose(ph < 0.5 ? "jump" : "fall");
+      const n = Math.floor(g * hops);
+      if (n !== hopN) { if (hopN >= 0) puff(pos, side); hopN = n; } // a puff at each landing
+    } else {
+      motion.lift = Math.round(Math.sin(t * 44)); // 1 px bob at about 7 Hz
+      motion.sy = 1;
+      setPose("move");
+      if (t - lastPuff > 0.09) { puff(pos, side); lastPuff = t; }
+    }
   } else if (t < tHold) {
+    if (!fly.landed) { fly.landed = true; puff(fly.to, side); } // skid puff on arrival
+    motion.lift = 0;
+    motion.sy = t < T_FLY + 0.12 ? 0.88 : 1; // brief squash as it lands
     if (fly.click) setPose("click");
+    else setPose("idle");
     pos = fly.to;
     const p = Math.sin(Math.PI * clamp01((t - tPress) / T_PRESS));
     scale = 1.2 - 0.2 * p; // press down and release
@@ -365,6 +419,7 @@ function tick() {
     }
   } else {
     pos = fly.to;
+    motion.lift = 0; motion.sy = 1;
     scale = 1.2;
     if (fly.click) {
       const rip = clamp01((t - tPress) / (T_PRESS + 0.3));
@@ -392,6 +447,7 @@ function tick() {
     ctx.fill();
   });
 
+  drawDust();
   arrow(pos[0], pos[1], scale, alpha);
   requestAnimationFrame(tick);
 }

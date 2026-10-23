@@ -23,7 +23,11 @@ STATES = {
     "idle": ("01-Idle", 8, True),
     "move": ("02-Run", 14, True),
     "click": ("04-Throw", 14, False),
+    # single poses for long flights (hops); they do not count toward the shared crop/scale below
+    "jump": ("06-Jump&Fall/__Bunny1_Jump_*.png", 1, False),
+    "fall": ("06-Jump&Fall/__Bunny1_Fall_*.png", 1, False),
 }
+CORE = ("idle", "move", "click")
 HOP = 6            # the click strip is this many px taller: the bunny hops on the press
 THINK_PAD = 8      # empty columns each side of the think cells; the thought dots sit in the right one
 OUT = os.path.join(os.path.dirname(__file__), "..", "public", "sprites")
@@ -90,10 +94,10 @@ def thinking(idle):
 
 
 def main(src, preview=None):
-    frames = {s: [Image.open(f).convert("RGBA") for f in sorted(glob.glob(os.path.join(src, "Bunny1", d, "*.png")))]
+    frames = {s: [Image.open(f).convert("RGBA") for f in sorted(glob.glob(os.path.join(src, "Bunny1", d if "*" in d else d + "/*.png")))]
               for s, (d, _, _) in STATES.items()}
     assert all(frames.values()), "missing source frames under Bunny1/"
-    boxes = [im.getbbox() for fs in frames.values() for im in fs]
+    boxes = [im.getbbox() for st in CORE for im in frames[st]]
     box = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
     scale = CELL_H / (box[3] - box[1])  # one scale for every state, so the bunny never changes size
     os.makedirs(OUT, exist_ok=True)

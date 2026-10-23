@@ -27,14 +27,16 @@ export async function loadSprites(base = "/sprites/") {
 }
 
 /** Draw one frame with its feet at (x, y) bottom-centre. `px` is device pixels per sprite pixel (an
- * integer, so the art stays crisp); `dpr` converts that to CSS px. `flip` mirrors a right-facing frame. */
-export function drawFrame(ctx, sp, frame, x, y, px, dpr, flip, alpha) {
+ * integer, so the art stays crisp); `dpr` converts that to CSS px. `flip` mirrors a right-facing frame;
+ * `sx`/`sy` squash or stretch it about the feet (non-integer, so use briefly). */
+export function drawFrame(ctx, sp, frame, x, y, px, dpr, flip, alpha, sx = 1, sy = 1) {
   const k = px / dpr;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.imageSmoothingEnabled = false;
   ctx.translate(Math.round(x * dpr) / dpr, Math.round(y * dpr) / dpr);
   if (flip) ctx.scale(-1, 1);
+  ctx.scale(sx, sy); // squash/stretch about the feet
   ctx.drawImage(sp.img, frame * sp.w, 0, sp.w, sp.h, -(sp.w * k) / 2, -sp.h * k, sp.w * k, sp.h * k);
   ctx.restore();
 }

@@ -23,6 +23,22 @@
     "fps": 14,
     "loop": false
   },
+  "jump": {
+    "file": "jump.png",
+    "frames": 1,
+    "w": 28,
+    "h": 40,
+    "fps": 1,
+    "loop": false
+  },
+  "fall": {
+    "file": "fall.png",
+    "frames": 1,
+    "w": 28,
+    "h": 40,
+    "fps": 1,
+    "loop": false
+  },
   "think": {
     "file": "think.png",
     "frames": 10,
