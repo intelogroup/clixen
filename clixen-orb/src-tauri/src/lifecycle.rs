@@ -53,6 +53,7 @@ pub struct Lifecycle {
     pub data_dir: PathBuf,
     pub persisted: Persisted,
     last_activity: Instant,
+    mounted_since: Option<Instant>,
     stage: Stage,
 }
 
@@ -60,7 +61,7 @@ impl Lifecycle {
     pub fn new(vault: VaultManager, ollama: Box<dyn Ollama + Send>, models: Vec<String>, data_dir: PathBuf) -> Self {
         let persisted: Persisted = std::fs::read_to_string(data_dir.join("lifecycle.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let stage = if persisted.onboarded { Stage::VaultCreate } else { Stage::Onboard };
-        Self { vault, ollama, models, data_dir, persisted, last_activity: Instant::now(), stage }
+        Self { vault, ollama, models, data_dir, persisted, last_activity: Instant::now(), mounted_since: None, stage }
     }
 
     pub fn stage(&self) -> &Stage {
@@ -85,6 +86,11 @@ impl Lifecycle {
     pub fn set_idle_minutes(&mut self, m: u64) {
         self.persisted.idle_minutes = m.clamp(1, 240);
         self.save();
+    }
+
+    /// Seconds the vault has been mounted this session (the Settings badge timer).
+    pub fn mounted_secs(&self) -> Option<u64> {
+        self.mounted_since.map(|t| t.elapsed().as_secs())
     }
 
     pub fn touch(&mut self) {
@@ -146,6 +152,7 @@ impl Lifecycle {
             return self.stage.clone();
         }
         self.touch();
+        self.mounted_since = Some(Instant::now());
         set(self, Stage::Ready, on_stage);
         self.stage.clone()
     }
@@ -153,6 +160,7 @@ impl Lifecycle {
     /// Lock now (user choice, suspend, quit). Busy leaves the vault mounted and the stage Ready.
     pub fn lock(&mut self) -> Result<(), VaultError> {
         self.vault.unmount_retrying(5, Duration::from_millis(400))?;
+        self.mounted_since = None;
         self.stage = Stage::Locked;
         Ok(())
     }
@@ -173,6 +181,7 @@ impl Lifecycle {
         self.stage = match self.vault.mount() {
             Ok(()) => {
                 self.touch();
+                self.mounted_since = Some(Instant::now());
                 Stage::Ready
             }
             Err(e) => Stage::Failed(format!("could not unlock the vault: {e}")),

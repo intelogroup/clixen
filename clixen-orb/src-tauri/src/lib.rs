@@ -9,6 +9,7 @@
 //!            corners can never intercept a click meant for the page underneath.
 //!   `caption` 420x78  — the whisper strip. Ignores mouse events entirely.
 
+pub mod app_lifecycle;
 pub mod lifecycle;
 pub mod sidecar;
 pub mod vault;
@@ -422,6 +423,7 @@ async fn orb_status() -> OrbStatus {
 /// Stream a typed message through `/chat/stream`.
 #[tauri::command]
 async fn orb_send_text(app: AppHandle, message: String, chat_id: Option<String>) {
+    app_lifecycle::touch(&app);
     let backend = backend_url();
     let chat_id = chat_id.unwrap_or_else(|| "orb_ui".to_string());
     let url = format!(
@@ -450,6 +452,7 @@ async fn orb_send_audio(
     chat_id: Option<String>,
     tts: Option<bool>,
 ) {
+    app_lifecycle::touch(&app);
     let backend = backend_url();
     let chat_id = chat_id.unwrap_or_else(|| "orb_ui".to_string());
     let Ok(bytes) = B64.decode(audio_b64) else {
@@ -855,6 +858,9 @@ pub fn run() {
             if let Err(e) = setup_orb_window(&handle) {
                 eprintln!("[orb] setup failed: {e}");
             }
+            if app_lifecycle::enabled() {
+                app_lifecycle::setup(&handle)?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -909,9 +915,22 @@ pub fn run() {
             orb_prompt,
             orb_prompt_done,
             orb_cursor_fly,
+            app_lifecycle::lifecycle_info,
+            app_lifecycle::lifecycle_accept,
+            app_lifecycle::lifecycle_advance,
+            app_lifecycle::lifecycle_lock,
+            app_lifecycle::lifecycle_unlock,
+            app_lifecycle::lifecycle_set_idle,
+            app_lifecycle::lifecycle_touch,
+            app_lifecycle::lifecycle_uninstall,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running clixen orb");
+        .build(tauri::generate_context!())
+        .expect("error while building clixen orb")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app_lifecycle::on_exit(app);
+            }
+        });
 }
 #[cfg(test)]
 mod tests {

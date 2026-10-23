@@ -26,5 +26,7 @@ tauri-plugin-global-shortcut = "2.4.1"
 tauri-build = { version = "2", features = [] }
 
 [features]
+# Ship build: first-run setup, encrypted vault, sidecar supervision. Off for the dev orb.
+lifecycle = []
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
