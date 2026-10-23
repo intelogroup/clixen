@@ -4,6 +4,7 @@
  * relative to this window's origin (Rust already subtracted it). */
 import { listen, emit } from "@tauri-apps/api/event";
 import { frameAt, loadSprites, drawFrame } from "./sprites.js";
+import { TRAVEL, pickTravel, drawSkateboard, drawRoad, drawRocketRide } from "./ride.js";
 import { standoff, phaseAt, T_FIRE, T_IMPACT, T_END, MUZZLE_PX, drawBazooka, drawRocket, drawExplosion } from "./shoot.js";
 
 const canvas = document.getElementById("c");
@@ -337,13 +338,15 @@ function fadePark() {
 }
 
 listen("cursor-fly", (ev) => {
-  const { from, to, click, style } = ev.payload;
+  const { from, to, click, style, travel } = ev.payload;
   clearTimeout(parkTimer);
   fly = { from: park || from, to, click: click !== false, t0: performance.now() / 1000 };
   // Bazooka click: the bunny stops short, shoots, and the click lands where the rocket explodes.
   fly.shoot = fly.click && style === "bazooka" && !!sprites;
   fly.dest = fly.shoot ? standoff(fly.from, to) : to;
   lastSmoke = 0;
+  fly.travel = TRAVEL.includes(travel) ? travel : pickTravel(Math.hypot(fly.dest[0] - fly.from[0], fly.dest[1] - fly.from[1]));
+  fly.ride = null;
   setPose("move", to[0] < fly.from[0]); // source frames face right; mirror when flying left
   trail = [];
   dust = []; hopN = -1; lastPuff = 0;
@@ -408,6 +411,7 @@ function tick() {
   }
 
   let pos, scale = 1, alpha = 1, after = null;
+  const before = []; // vehicle drawn under the bunny's feet
   const side = fly.to[0] < fly.from[0] ? -1 : 1;
   const tPress = T_FLY, tHold = T_FLY + T_PRESS;
   if (t < T_FLY) {
@@ -415,8 +419,27 @@ function tick() {
     pos = arc(fly.from, fly.dest, g, 1);
     scale = 0.7 + 0.5 * g; // grows from orb-cursor size to full size
     const len = Math.hypot(fly.dest[0] - fly.from[0], fly.dest[1] - fly.from[1]);
-    const hops = len > 380 ? Math.round(len / 300) : 0; // long flights hop along; short ones run
-    if (hops) {
+    const hops = fly.travel === "hop" ? Math.max(1, Math.round(len / 300)) : 0;
+    const kk = SPRITE_PX / (window.devicePixelRatio || 1);
+    if (fly.travel === "skate" || fly.travel === "rocket") {
+      const skate = fly.travel === "skate";
+      if (skate) pos = [fly.from[0] + (fly.dest[0] - fly.from[0]) * g, fly.from[1] + (fly.dest[1] - fly.from[1]) * g]; // a straight line
+      motion.lift = 0; motion.sy = 1; motion.lean = skate ? 2 : 0;
+      setPose(skate ? "idle" : "jump");
+      const ahead = skate ? fly.dest : arc(fly.from, fly.dest, Math.min(1, g + 0.02), 1);
+      const ang = Math.atan2(ahead[1] - pos[1], ahead[0] - pos[0]) || 0;
+      const fx = pos[0] - side * 8 * kk, fy = pos[1] + 12 * kk, spin = Math.floor(t * 20), gg = g;
+      fly.ride = (a) => {
+        if (skate) { drawRoad(ctx, fly.from, fly.dest, gg, a); drawSkateboard(ctx, fx, fy, kk, spin, a); }
+        else drawRocketRide(ctx, fx, fy + 2 * kk, ang, kk, spin, a);
+      };
+      before.push(() => fly.ride(1));
+      if (t - lastPuff > (skate ? 0.09 : 0.03)) {
+        if (skate) puff(pos, side);
+        else dust.push({ x: fx - Math.cos(ang) * 16 * kk, y: fy + 2 * kk - Math.sin(ang) * 16 * kk, vx: -Math.cos(ang) * 25, vy: -Math.sin(ang) * 25, t0: performance.now() / 1000, c: Math.random() < 0.5 ? "190,190,200" : "255,170,70" });
+        lastPuff = t;
+      }
+    } else if (hops) {
       const ph = (g * hops) % 1;
       motion.lift = Math.sin(Math.PI * ph) * Math.min(70, len * 0.1);
       motion.sy = ph < 0.08 || ph > 0.92 ? 0.88 : 1;
@@ -439,6 +462,7 @@ function tick() {
     }
   } else if (fly.shoot) {
     const ts = t - T_FLY, ph = phaseAt(ts);
+    if (fly.ride && ts < 0.25) before.push(() => fly.ride(1 - ts / 0.25));
     if (!fly.landed) { fly.landed = true; puff(fly.dest, side); }
     const k = SPRITE_PX / (window.devicePixelRatio || 1);
     const ang = Math.atan2(fly.to[1] - fly.dest[1], fly.to[0] - fly.dest[0]);
@@ -466,6 +490,7 @@ function tick() {
       }
     };
   } else if (t < tHold) {
+    if (fly.ride && t - T_FLY < 0.25) before.push(() => fly.ride(1 - (t - T_FLY) / 0.25));
     if (!fly.landed) { fly.landed = true; puff(fly.to, side); } // skid puff on arrival
     motion.lift = 0; motion.lean = 0;
     motion.sy = t < T_FLY + 0.12 ? 0.88 : 1; // brief squash as it lands
@@ -516,6 +541,7 @@ function tick() {
   });
 
   drawDust();
+  before.forEach((f) => f());
   arrow(pos[0], pos[1], scale, alpha);
   if (after) after();
   requestAnimationFrame(tick);
