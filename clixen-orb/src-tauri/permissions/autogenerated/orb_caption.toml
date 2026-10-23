@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-caption"
+description = "Enables the orb_caption command without any pre-configured scope."
+commands.allow = ["orb_caption"]
+
+[[permission]]
+identifier = "deny-orb-caption"
+description = "Denies the orb_caption command without any pre-configured scope."
+commands.deny = ["orb_caption"]

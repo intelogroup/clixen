@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "setup-capability",
+  "description": "The setup/settings window: lifecycle commands only. It cannot drive the orb.",
+  "windows": [
+    "setup"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:allow-listen",
+    "allow-lifecycle-info",
+    "allow-lifecycle-accept",
+    "allow-lifecycle-advance",
+    "allow-lifecycle-lock",
+    "allow-lifecycle-unlock",
+    "allow-lifecycle-set-idle",
+    "allow-lifecycle-touch",
+    "allow-lifecycle-uninstall"
+  ]
+}

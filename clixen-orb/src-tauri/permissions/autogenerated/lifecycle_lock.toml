@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lifecycle-lock"
+description = "Enables the lifecycle_lock command without any pre-configured scope."
+commands.allow = ["lifecycle_lock"]
+
+[[permission]]
+identifier = "deny-lifecycle-lock"
+description = "Denies the lifecycle_lock command without any pre-configured scope."
+commands.deny = ["lifecycle_lock"]

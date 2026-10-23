@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-cursor-fly"
+description = "Enables the orb_cursor_fly command without any pre-configured scope."
+commands.allow = ["orb_cursor_fly"]
+
+[[permission]]
+identifier = "deny-orb-cursor-fly"
+description = "Denies the orb_cursor_fly command without any pre-configured scope."
+commands.deny = ["orb_cursor_fly"]

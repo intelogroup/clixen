@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-speak-reply"
+description = "Enables the orb_speak_reply command without any pre-configured scope."
+commands.allow = ["orb_speak_reply"]
+
+[[permission]]
+identifier = "deny-orb-speak-reply"
+description = "Denies the orb_speak_reply command without any pre-configured scope."
+commands.deny = ["orb_speak_reply"]

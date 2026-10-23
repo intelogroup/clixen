@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-status"
+description = "Enables the orb_status command without any pre-configured scope."
+commands.allow = ["orb_status"]
+
+[[permission]]
+identifier = "deny-orb-status"
+description = "Denies the orb_status command without any pre-configured scope."
+commands.deny = ["orb_status"]

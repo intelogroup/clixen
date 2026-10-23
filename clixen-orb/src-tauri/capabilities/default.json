@@ -1,14 +1,26 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "orb-capability",
-  "description": "Minimal capability for the floating orb overlay — it renders, drags itself, and calls the app's own commands. Nothing else.",
-  "windows": ["orb", "caption", "cursor"],
+  "description": "Minimal capability for the floating orb overlay: it renders, drags itself, and calls the orb's own commands. It cannot call the lifecycle commands (lock, unlock, uninstall).",
+  "windows": [
+    "orb",
+    "caption",
+    "cursor"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-outer-position",
     "core:window:allow-set-position",
     "core:event:allow-listen",
-    "core:event:allow-emit"
+    "core:event:allow-emit",
+    "allow-orb-status",
+    "allow-orb-send-text",
+    "allow-orb-send-audio",
+    "allow-orb-speak-reply",
+    "allow-orb-caption",
+    "allow-orb-prompt",
+    "allow-orb-prompt-done",
+    "allow-orb-cursor-fly"
   ]
 }

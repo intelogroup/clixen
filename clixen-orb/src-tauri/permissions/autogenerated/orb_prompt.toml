@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-prompt"
+description = "Enables the orb_prompt command without any pre-configured scope."
+commands.allow = ["orb_prompt"]
+
+[[permission]]
+identifier = "deny-orb-prompt"
+description = "Denies the orb_prompt command without any pre-configured scope."
+commands.deny = ["orb_prompt"]

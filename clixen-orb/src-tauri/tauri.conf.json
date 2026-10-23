@@ -59,7 +59,7 @@
     ],
     "security": {
       "csp": null,
-      "capabilities": ["orb-capability"]
+      "capabilities": ["orb-capability", "setup-capability"]
     }
   },
   "bundle": {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lifecycle-advance"
+description = "Enables the lifecycle_advance command without any pre-configured scope."
+commands.allow = ["lifecycle_advance"]
+
+[[permission]]
+identifier = "deny-lifecycle-advance"
+description = "Denies the lifecycle_advance command without any pre-configured scope."
+commands.deny = ["lifecycle_advance"]
