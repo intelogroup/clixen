@@ -19,7 +19,7 @@ def _run(focus, osa_calls):
 def test_refuses_when_a_button_has_focus():
     calls = []
     out = _run([("AXButton", "")], calls)
-    assert out.startswith("Nothing typed") and "button" in out
+    assert "Nothing typed" in out and out.startswith("[screen error]") and "button" in out
     assert calls == []  # no keystrokes sent into the void
 
 

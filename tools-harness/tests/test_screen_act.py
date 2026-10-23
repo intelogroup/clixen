@@ -32,6 +32,41 @@ def test_type_text_verifies_despite_newlines_the_field_value_drops(monkeypatch):
     assert "check it landed" not in screen_act.type_text("ports. No links.\n\nBest,\nKalinov")
 
 
+def test_screen_failures_are_tagged_so_the_tool_loop_counts_them_as_errors(monkeypatch):
+    from tools.registry import is_error_result
+
+    monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
+    monkeypatch.setattr(screen_act, "find_element", lambda t: None)
+    monkeypatch.setattr(screen_act, "dismiss_popovers", lambda app="": [])
+    monkeypatch.setattr(screen_act, "_ocr_boxes", lambda accurate=False: [])
+    monkeypatch.setattr(screen_act, "_through_folded_menu", lambda app, t: (None, None))
+    assert is_error_result(screen_act.click_text("Nope"))  # was a bare "Could not find ..." the loop treated as success
+
+    def many(t):
+        raise screen_act.AmbiguousTarget(["a", "b"])
+    monkeypatch.setattr(screen_act, "find_element", many)
+    assert is_error_result(screen_act.click_text("To"))
+
+
+
+def test_a_locked_screen_is_a_tagged_error(monkeypatch):
+    from tools.registry import is_error_result
+
+    monkeypatch.setattr(screen_act, "_screen_locked", lambda: True)
+    assert is_error_result(screen_act.type_text("x"))
+
+
+def test_click_reports_what_has_focus_afterwards(monkeypatch):
+    monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
+    monkeypatch.setattr(screen_act, "find_element", lambda t: (10.0, 20.0))
+    monkeypatch.setattr(screen_act, "labels_at", lambda x, y: ["To recipients"])
+    monkeypatch.setattr(screen_act, "_click", lambda x, y: None)
+    monkeypatch.setattr(screen_act, "window_title", lambda app="": "Gmail")
+    monkeypatch.setattr(screen_act, "settle_title", lambda before, app="": before)
+    monkeypatch.setattr(screen_act, "_focus", lambda: ("AXTextField", "jim"))
+    assert "Focus now: AXTextField" in screen_act.click_text("To recipients")
+
+
 def test_click_text_prefers_native_position(monkeypatch):
     monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
     monkeypatch.setattr(screen_act, "find_element", lambda t: (10.0, 20.0))

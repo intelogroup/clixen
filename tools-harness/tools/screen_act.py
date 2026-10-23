@@ -129,6 +129,7 @@ PRESS_KEYS_SCHEMA = {
 }
 
 _FLY_S = 0.85  # orb cursor: fly out 0.75s, then it presses
+_ERR = "[screen error] "  # tools.registry.is_error_result reads this tag: the tool loop counts the call as failed, not as done
 
 
 # Typing + Return into a shell would run it; never do that unasked.
@@ -137,12 +138,12 @@ _TERMINALS = ("terminal", "iterm", "ghostty", "warp", "alacritty", "kitty", "wez
 
 def _guard(typing: bool = False) -> str | None:
     if _screen_locked():
-        return "Screen is locked."
+        return _ERR + "Screen is locked."
     app, title = _front_window()
     if app and is_blocked(app, title):
-        return "Front window is private or a password manager; not acting on it."
+        return _ERR + "Front window is private or a password manager; not acting on it."
     if typing and any(t in app.lower() for t in _TERMINALS):
-        return f"Front app is a terminal ({app}); not typing into it."
+        return _ERR + f"Front app is a terminal ({app}); not typing into it."
     return None
 
 
@@ -288,7 +289,7 @@ def click_text(text: str, app: str = "") -> str:
     try:
         hit = find_element(text)  # native accessibility position first: exact, no OCR
     except AmbiguousTarget as a:
-        return f"'{text}' matches {len(a.args[0])} different elements: {a.args[0][:8]}. Say which one by using its full label."
+        return _ERR + f"'{text}' matches {len(a.args[0])} different elements: {a.args[0][:8]}. Say which one by using its full label."
     except Exception:
         hit = None
     if hit is None and (closed := dismiss_popovers(app)):  # a stray popover hides the page: close it, look again
@@ -310,13 +311,13 @@ def click_text(text: str, app: str = "") -> str:
             except Exception:
                 hit = None
             if hit is not None and not any(want in lab.lower() for lab in labels_at(*hit)):
-                return f"Not clicked: the point for '{text}' now holds '{(labels_at(*hit) or ['something else'])[0]}' (the page moved). Read the screen again and retry."
+                return _ERR + f"Not clicked: the point for '{text}' now holds '{(labels_at(*hit) or ['something else'])[0]}' (the page moved). Read the screen again and retry."
     via = "accessibility" if hit is not None else "OCR"
     hit = hit or find_text(_ocr_boxes(), text) or find_text(_ocr_boxes(accurate=True), text)
     if hit is None:
         hit, folded = _through_folded_menu(app, text)
         if hit is None:
-            return f"Could not find '{text}' on screen."
+            return _ERR + f"Could not find '{text}' on screen."
         via, note = "accessibility", note + f" (opened the '{folded}' menu first)"
     try:
         before = window_title(app)
@@ -324,6 +325,8 @@ def click_text(text: str, app: str = "") -> str:
         before = ""
     _click(*hit)
     where = f"Clicked '{text}' at ({hit[0]:.0f}, {hit[1]:.0f}) via {via}{note}"
+    if (f := _focus()):  # what the click left focused: lets the agent confirm it hit the field it meant
+        where += f"; Focus now: {f[0]} '{(f[1] or '')[-40:]}'"
     try:
         after = settle_title(before, app)
     except Exception:
@@ -358,13 +361,13 @@ def type_text(text: str, submit: bool = False) -> str:
     f = _focus()
     if f and f[0] in _NOT_EDITABLE:
         # A click that landed on a button or link leaves nothing to type into; saying so beats typing into the void.
-        return f"Nothing typed: the focused element is a {f[0][2:].lower()}, not a text field. Click the field itself (use its own placeholder or label text) and retry."
+        return _ERR + f"Nothing typed: the focused element is a {f[0][2:].lower()}, not a text field. Click the field itself (use its own placeholder or label text) and retry."
     # One keystroke per character, at the pace the orb's typing hand animates (about 2.5s for any length).
     per = min(0.05, max(0.004, 2.5 / max(len(text), 1)))
     orb_cursor.typing(text, per)
     r = subprocess.run(["osascript", "-e", _type_script(text, per, False)], capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
-        return f"Typing failed: {r.stderr.strip()}"
+        return _ERR + f"Typing failed: {r.stderr.strip()}"
     after = _focus()
     seen = f" Field reads: '{after[1][-60:]}'." if after and after[1] else ""
     squash = lambda s: "".join(s.split())  # rich-text fields (Gmail's body) report their value without the newlines we typed
@@ -424,7 +427,7 @@ def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str
     front, _ = _front_window()
     box = _front_bounds(front) if front else None
     if box is None:
-        return "No front window to scroll."
+        return _ERR + "No front window to scroll."
     x, y, w, h = box
     cx, cy = x + w / 2, y + h / 2
     dx, dy, gesture = scroll_deltas(direction, pages, h * 0.85)
@@ -472,10 +475,10 @@ def close_tabs(app: str = "", keep: int = 0) -> str:
     if not app and any(t in name for t in _TERMINALS):
         name = "google chrome"  # the user is talking from a terminal; they mean the browser
     if any(t in name for t in _TERMINALS):
-        return f"{name} is a terminal; not closing its tabs."
+        return _ERR + f"{name} is a terminal; not closing its tabs."
     inst = [a for a in apps if a.activationPolicy() == 0 and a.localizedName() and a.localizedName().lower() == name]
     if not inst:
-        return f"{app or name} is not running."
+        return _ERR + f"{app or name} is not running."
     closed, left = 0, 0
     for a in inst:
         pid = a.processIdentifier()
@@ -528,14 +531,14 @@ def key_script(keys: str) -> str | None:
 def press_keys(keys: str, app: str = "") -> str:
     script = key_script(keys)
     if script is None:
-        return f"Did not understand keys '{keys}'. Use e.g. 'cmd+d', 'cmd+shift+t', 'esc', 'cmd+plus'."
+        return _ERR + f"Did not understand keys '{keys}'. Use e.g. 'cmd+d', 'cmd+shift+t', 'esc', 'cmd+plus'."
     if app:
         if not activate_app(app):
             subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)  # not running yet: launch it
             time.sleep(0.6)
     front = _front_window()[0]
     if not app and any(t in front.lower() for t in _TERMINALS):
-        return f"Front app is a terminal ({front}); pass app (e.g. 'Google Chrome') so the keys go to the right window."
+        return _ERR + f"Front app is a terminal ({front}); pass app (e.g. 'Google Chrome') so the keys go to the right window."
     if (why := _guard(typing=True)):
         return why
     try:
