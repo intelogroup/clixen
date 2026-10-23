@@ -138,6 +138,15 @@ def _window_rect(win) -> tuple[float, float, float, float] | None:
     return (p[0], p[1], s[0], s[1]) if p and s else None
 
 
+_WARM: set[int] = set()  # apps whose accessibility tree has already answered with elements
+
+
+def _retry_walk(nodes: int, found: int, attempt: int, warm: bool) -> bool:
+    """Chromium may still be building its tree on the very first call: wait and walk once more, but only when the
+    walk was tiny AND found nothing, and never for an app that has already answered. A small real page is not slow."""
+    return nodes <= 200 and found == 0 and attempt == 0 and not warm
+
+
 def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[str, str, list[dict]]:
     """(app name, window title, on-screen actionable elements) of the target app's focused
     window. Each element: {role, label, x, y, w, h, el} with x,y the centre. `offscreen`
@@ -156,12 +165,12 @@ def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[s
     out: list[dict] = []
     seen: set[tuple] = set()
     deadline = time.monotonic() + _DEADLINE_S
-    stack = [(win, False)]  # (element, inside the page's web area)
+    stack = [(win, False, False)]  # (element, inside a web area, inside an extension panel's web area)
     n = 0
     # Chromium may still be building its tree on the very first call: retry once if the walk is tiny.
     for attempt in range(2):
         while stack and n < _MAX_NODES and time.monotonic() < deadline:
-            el, in_web = stack.pop()
+            el, in_web, in_panel = stack.pop()
             n += 1
             role = _get(el, "AXRole")
             if role in _ACTIONABLE:
@@ -174,15 +183,19 @@ def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[s
                     key = (role, label, round(cx), round(cy))
                     if (inside or offscreen) and key not in seen and (label or role in ("AXTextField", "AXTextArea", "AXSearchField")) and (not q or q in label.lower()):
                         seen.add(key)
-                        out.append({"role": role[2:], "label": label, "x": round(cx), "y": round(cy), "w": round(s[0]), "h": round(s[1]), "el": el, "web": in_web})
+                        out.append({"role": role[2:], "label": label, "x": round(cx), "y": round(cy), "w": round(s[0]), "h": round(s[1]), "el": el, "web": in_web, "panel": in_panel})
             kids = _get(el, "AXChildren")
             if kids:
+                if role == "AXWebArea" and not in_panel:
+                    in_panel = str(_get(el, "AXURL") or "").startswith("chrome-extension://")
                 in_web = in_web or role == "AXWebArea"
-                stack.extend((k, in_web) for k in reversed(kids))  # keep document order
-        if n > 200 or attempt:
+                stack.extend((k, in_web, in_panel) for k in reversed(kids))  # keep document order
+        if not _retry_walk(n, len(out), attempt, pid in _WARM):
             break
         time.sleep(1.2)
-        stack, n = [(win, False)], 0
+        stack, n = [(win, False, False)], 0
+    if out:
+        _WARM.add(pid)
     return name, title, out
 
 

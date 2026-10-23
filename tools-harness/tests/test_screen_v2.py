@@ -263,3 +263,29 @@ def test_every_act_is_traced_in_full(screen, monkeypatch, tmp_path):
     v2.act("Send", "click", expect={"appears": "Message sent"})
     row = json.loads(f.read_text().splitlines()[-1])
     assert row["tool"] == "act" and row["args"]["expect"] == {"appears": "Message sent"} and "expect_failed" in row["result"]
+
+
+def test_act_runs_a_batch_of_steps_and_stops_at_the_first_failure(screen):
+    screen.els = [_el("TextField", "Name", 1, 1), _el("TextField", "Email", 2, 2), _el("Button", "Submit", 3, 3)]
+    o = _j(v2.observe())
+    ids = {e["label"]: e["id"] for e in o["elements"]}
+    steps = [{"target": ids["Name"], "action": "type", "text": "Ada"},
+             {"target": "Nonexistent field", "action": "type", "text": "x"},
+             {"target": ids["Submit"], "action": "click"}]
+    r = _j(v2.act(steps=steps))
+    assert not r["ok"] and r["done"] == 2 and r["of"] == 3 and r["results"][1]["error"]["code"] == "not_found"
+    assert screen.typed == ["Ada"] and (3, 3) not in screen.clicks  # the Submit click never ran
+
+
+def test_a_batch_that_all_succeeds_reports_ok(screen):
+    screen.els = [_el("TextField", "Name", 1, 1), _el("TextField", "Email", 2, 2)]
+    ids = {e["label"]: e["id"] for e in _j(v2.observe())["elements"]}
+    r = _j(v2.act(steps=[{"target": ids["Name"], "action": "type", "text": "Ada"}, {"target": ids["Email"], "action": "type", "text": "a@x.io"}]))
+    assert r["ok"] and r["done"] == 2 and screen.typed == ["Ada", "a@x.io"]
+
+
+def test_extension_panel_elements_rank_after_the_page(screen):
+    panel = dict(_el("Button", "Chat", 5, 1), panel=True)
+    screen.els = [panel, _el("TextField", "Name", 9, 9), _el("Button", "Chrome menu", 1, 1, web=False)]
+    labels = [e["label"] for e in _j(v2.observe())["elements"]]
+    assert labels == ["Name", "Chrome menu", "Chat"]

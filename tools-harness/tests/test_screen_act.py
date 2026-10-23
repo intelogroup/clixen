@@ -100,6 +100,18 @@ def test_close_extension_panels_is_wired_for_the_agent():
     assert "close_extension_panels" not in orb_agent.TOOL_NAMES  # act() closes extension panels itself
 
 
+def test_front_window_is_cached_briefly_and_reset_by_an_app_switch(monkeypatch):
+    calls = []
+    monkeypatch.setattr(screen_act, "_front_window_raw", lambda: calls.append(1) or ("Ghostty", "zsh"))
+    monkeypatch.setattr(screen_act, "_activate_raw", lambda app: True)
+    screen_act._fw_cache[0] = 0.0
+    assert screen_act._front_window() == ("Ghostty", "zsh") and screen_act._front_window() == ("Ghostty", "zsh")
+    assert len(calls) == 1  # the second ask within the TTL is free
+    screen_act.activate_app("Google Chrome")  # switching app invalidates it: a cached terminal must not block Chrome
+    screen_act._front_window()
+    assert len(calls) == 2
+
+
 def test_click_text_prefers_native_position(monkeypatch):
     monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
     monkeypatch.setattr(screen_act, "find_element", lambda t: (10.0, 20.0))

@@ -102,3 +102,13 @@ def test_click_text_opens_a_folded_menu_to_reach_the_target(monkeypatch):
     monkeypatch.setattr(screen_act, "time", type("T", (), {"sleep": staticmethod(lambda s: None), "monotonic": staticmethod(lambda: 0.0)}))
     out = screen_act.click_text("Download")
     assert "opened the 'Toggle navigation menu' menu first" in out and clicks == [(5, 5), (9, 9)]
+
+
+def test_a_small_page_with_elements_is_not_walked_twice():
+    from tools import ax_context
+
+    assert ax_context._retry_walk(nodes=60, found=5, attempt=0, warm=False) is False  # a form page: nothing to wait for
+    assert ax_context._retry_walk(nodes=60, found=0, attempt=0, warm=False) is True   # tree still building on a cold first call
+    assert ax_context._retry_walk(nodes=60, found=0, attempt=0, warm=True) is False   # app already answered once: empty means empty
+    assert ax_context._retry_walk(nodes=60, found=0, attempt=1, warm=False) is False  # one retry at most
+    assert ax_context._retry_walk(nodes=900, found=0, attempt=0, warm=False) is False

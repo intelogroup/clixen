@@ -46,7 +46,7 @@ def _snapshot(app: str = "", query: str = ""):
     """(title, all elements, ranked items). Page content before browser chrome, then reading order; capped."""
     name, title, els = ax.elements(app, query)
     _state["app"] = name
-    ranked = sorted(els, key=lambda e: (not e["web"], e["y"], e["x"]))
+    ranked = sorted(els, key=lambda e: (e.get("panel", False), not e["web"], e["y"], e["x"]))  # the page first, browser chrome next, an extension panel last
     seen: Counter = Counter()
     items = []
     for e in ranked[:MAX_ITEMS]:
@@ -264,7 +264,20 @@ def _act(target: str, action: str, text: str, expect: dict | None, app: str, sub
     return _out(out)
 
 
-def act(target: str = "", action: str = "click", text: str = "", expect: dict | None = None, app: str = "", submit: bool = False) -> str:
+def act(target: str = "", action: str = "click", text: str = "", expect: dict | None = None, app: str = "", submit: bool = False,
+        steps: list | None = None) -> str:
+    """One action, or `steps`: several actions run in order in one call, stopping at the first failure."""
+    if steps:
+        results = []
+        for st in steps[:12]:
+            r = json.loads(_act(str(st.get("target", "")), st.get("action", "click"), str(st.get("text", "")),
+                                st.get("expect") if isinstance(st.get("expect"), dict) else None, app, bool(st.get("submit"))))
+            results.append(r)
+            if not r.get("ok"):
+                break
+        out = _out({"ok": all(r.get("ok") for r in results) and len(results) == len(steps), "done": len(results), "of": len(steps),
+                    "rev": _state["rev"], "results": results})
+        return _trace("act", {"steps": steps[:12], "app": app}, out)
     args = {"target": target, "action": action, "text": text[:200], "expect": expect, "submit": submit}
     return _trace("act", args, _act(target, action, text, expect, app, submit))
 
@@ -294,7 +307,7 @@ ACT_SCHEMA = {
     "function": {
         "name": "act",
         "description": (
-            "Does one thing on the user's screen and measures what changed. target: an element id from observe, copied exactly (e.g. 'e7.3'), or "
+            "Does one thing on the user's screen (or a batch via steps) and measures what changed. target: an element id from observe, copied exactly (e.g. 'e7.3'), or "
             "its label. action: 'click', 'type' (clicks the field, then types text; submit=true presses Return), 'key' (text is a "
             "shortcut like 'cmd+return' or 'esc'), or 'scroll' (text is 'up'/'down'). Returns {ok, effect:{focus, title, appeared, "
             "gone}} or {ok:false, error:{code, hint, candidates}}; a click that changed nothing carries warning 'no_effect'. "
@@ -310,8 +323,15 @@ ACT_SCHEMA = {
                 "submit": {"type": "boolean", "description": "With action 'type': press Return after typing."},
                 "expect": {"type": "object", "description": "Condition to wait for after the action."},
                 "app": {"type": "string", "description": "App name; omit for the front app."},
+                "steps": {
+                    "type": "array",
+                    "description": (
+                        "Several actions in ONE call, run in order, stopping at the first failure: each {target, action, text, expect}. "
+                        "Use it to fill a whole form or click a short sequence without a round trip per field. Ids from one observe stay valid."
+                    ),
+                    "items": {"type": "object"},
+                },
             },
-            "required": ["action"],
         },
     },
 }

@@ -19,8 +19,10 @@ import tempfile
 import time
 
 from tools import orb_cursor
-from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, activate_app, elements, find_element, focused_field, focused_label, front_url, labels_at, popovers, settle_title, tab_count, window_title
-from tools.screen_watch import _ensure_ocr_bin, _front_window, _screen_locked, is_blocked
+from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, elements, find_element, focused_field, focused_label, front_url, labels_at, popovers, settle_title, tab_count, window_title
+from tools.ax_context import activate_app as _activate_raw
+from tools.screen_watch import _ensure_ocr_bin, _screen_locked, is_blocked
+from tools.screen_watch import _front_window as _front_window_raw
 
 CLICK_TEXT_SCHEMA = {
     "type": "function",
@@ -143,6 +145,22 @@ PRESS_KEYS_SCHEMA = {
         },
     },
 }
+
+_fw_cache: list = [0.0, ("", "")]
+
+
+def _front_window() -> tuple[str, str]:
+    """(app, title) of the front window. The lookup costs ~0.26s and every guard and key press asks, so it is cached for 0.8s."""
+    if time.monotonic() - _fw_cache[0] > 0.8:
+        _fw_cache[1] = _front_window_raw()
+        _fw_cache[0] = time.monotonic()
+    return _fw_cache[1]
+
+
+def activate_app(app: str) -> bool:
+    _fw_cache[0] = 0.0  # the front window is about to change
+    return _activate_raw(app)
+
 
 _FLY_S = 0.85  # orb cursor: fly out 0.75s, then it presses
 _ERR = "[screen error] "  # tools.registry.is_error_result reads this tag: the tool loop counts the call as failed, not as done
@@ -588,7 +606,7 @@ def press_keys(keys: str, app: str = "") -> str:
     except Exception:
         t0 = u0 = ""
     subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
-    time.sleep(0.8)
+    time.sleep(0.4)
     closed = [] if keys.strip().lower() == "esc" else dismiss_popovers(app)
     try:
         t1, u1 = window_title(app), front_url(app)
