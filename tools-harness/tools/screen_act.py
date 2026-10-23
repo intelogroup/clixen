@@ -380,10 +380,14 @@ def type_text(text: str, submit: bool = False) -> str:
     r = subprocess.run(["osascript", "-e", _type_script(text, per, False)], capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
         return _ERR + f"Typing failed: {r.stderr.strip()}"
-    after = _focus()
-    seen = f" Field reads: '{after[1][-60:]}'." if after and after[1] else ""
     squash = lambda s: "".join(s.split())  # rich-text fields (Gmail's body) report their value without the newlines we typed
-    verified = bool(after and squash(text)[-20:] in squash(after[1]))
+    for _ in range(6):  # a rich field's accessibility value trails the keystrokes: give it up to ~1.5s before calling the text missing
+        after = _focus()
+        verified = bool(after and squash(text)[-20:] in squash(after[1]))
+        if verified or not after:
+            break
+        time.sleep(0.25)
+    seen = f" Field reads: '{after[1][-60:]}'." if after and after[1] else ""
     if submit:
         subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 36'], capture_output=True, timeout=10)
     note = "" if verified or not after else " (text not visible in the focused field: check it landed)"
