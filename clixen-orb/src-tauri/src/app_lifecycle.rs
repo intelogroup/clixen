@@ -110,7 +110,7 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let vault = VaultManager::new(VaultConfig {
         image: dir.join("vault").join("clixen.sparseimage"),
         mountpoint: dir.join("mnt"),
-        service: "clixen.vault.app".into(),
+        service: std::env::var("CLIXEN_VAULT_SERVICE").unwrap_or_else(|_| "clixen.vault.app".into()), // override: tests must never touch the real entry
         account: "default".into(),
         size: "20g".into(),
     });

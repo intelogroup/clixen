@@ -127,8 +127,7 @@ impl Lifecycle {
         // Models
         for m in self.missing_models() {
             set(self, Stage::Models(m.clone(), 0), on_stage);
-            let mut last = 0u8;
-            let mut report = |p: u8| last = p;
+            let mut report = |p: u8| on_stage(&Stage::Models(m.clone(), p));
             if let Err(e) = self.ollama.pull(&m, &mut report) {
                 set(self, Stage::Failed(format!("could not pull {m}: {e}")), on_stage);
                 return self.stage.clone();
@@ -247,14 +246,32 @@ impl Ollama for LocalOllama {
     }
 
     fn pull(&self, model: &str, progress: &mut dyn FnMut(u8)) -> Result<(), String> {
+        use std::io::{BufRead, BufReader, Write};
         let body = serde_json::json!({ "name": model, "stream": true }).to_string();
-        let Some((status, text)) = self.request("POST", "/api/pull", &body) else { return Err("Ollama did not answer".into()) };
+        let mut s = std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], self.port).into(), Duration::from_millis(800)).map_err(|_| "Ollama did not answer".to_string())?;
+        s.set_read_timeout(Some(Duration::from_secs(300))).map_err(|e| e.to_string())?; // per read: a stalled download fails, a slow one does not
+        let req = format!("POST /api/pull HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        s.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
+        let mut r = BufReader::new(s);
+        let mut line = String::new();
+        r.read_line(&mut line).map_err(|e| e.to_string())?;
+        let status: u16 = line.split_whitespace().nth(1).and_then(|c| c.parse().ok()).ok_or("Ollama sent no status")?;
         if status != 200 {
             return Err(format!("Ollama returned {status}"));
         }
         let mut ok = false;
-        for line in text.lines().filter(|l| l.trim_start().starts_with('{')) {
-            let v: serde_json::Value = serde_json::from_str(line).unwrap_or_default();
+        // chunk-size and header lines never start with `{`, so only the NDJSON events are parsed
+        loop {
+            line.clear();
+            match r.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(e) => return Err(format!("download stalled: {e}")),
+            }
+            if !line.trim_start().starts_with('{') {
+                continue;
+            }
+            let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap_or_default();
             if let Some(e) = v["error"].as_str() {
                 return Err(e.to_string());
             }
@@ -365,6 +382,7 @@ mod tests {
         let (end, seen) = run(&mut f.lc);
         assert_eq!(end, Stage::Ready);
         assert!(seen.contains(&Stage::Models("gemma4:12b".into(), 0)));
+        assert!(seen.contains(&Stage::Models("gemma4:12b".into(), 50)), "progress must reach the UI while the pull runs");
         assert!(seen.contains(&Stage::VaultCreate));
         assert_eq!(*f.ollama.pulled.lock().unwrap(), vec!["gemma4:12b", "nomic-embed-text"]);
         assert_eq!(f.lc.vault.status(), VaultStatus::Mounted);
