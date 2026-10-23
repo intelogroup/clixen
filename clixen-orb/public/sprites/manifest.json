@@ -47,12 +47,60 @@
     "fps": 1,
     "loop": false
   },
+  "jthrow": {
+    "file": "jthrow.png",
+    "frames": 8,
+    "w": 28,
+    "h": 40,
+    "fps": 14,
+    "loop": false
+  },
+  "fail": {
+    "file": "fail.png",
+    "frames": 6,
+    "w": 29,
+    "h": 40,
+    "fps": 12,
+    "loop": false
+  },
+  "dead": {
+    "file": "dead.png",
+    "frames": 8,
+    "w": 47,
+    "h": 40,
+    "fps": 8,
+    "loop": false
+  },
   "think": {
     "file": "think.png",
     "frames": 10,
     "w": 44,
     "h": 40,
     "fps": 6,
+    "loop": true
+  },
+  "type": {
+    "file": "move.png",
+    "frames": 8,
+    "w": 28,
+    "h": 40,
+    "fps": 14,
+    "loop": true
+  },
+  "slide": {
+    "file": "back.png",
+    "frames": 10,
+    "w": 28,
+    "h": 40,
+    "fps": 12,
+    "loop": true
+  },
+  "scroll": {
+    "file": "move.png",
+    "frames": 8,
+    "w": 28,
+    "h": 40,
+    "fps": 14,
     "loop": true
   }
 }

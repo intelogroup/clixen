@@ -3,7 +3,7 @@
  * there (fading out after PARK_S idle) instead of returning to the orb. Coordinates are logical screen points,
  * relative to this window's origin (Rust already subtracted it). */
 import { listen, emit } from "@tauri-apps/api/event";
-import { frameAt, loadSprites, drawFrame } from "./sprites.js";
+import { frameAt, finished, loadSprites, drawFrame } from "./sprites.js";
 import { TRAVEL, pickTravel, drawSkateboard, drawRoad, drawRocketRide } from "./ride.js";
 import { standoff, phaseAt, T_FIRE, T_IMPACT, T_END, MUZZLE_PX, drawBazooka, drawRocket, drawExplosion } from "./shoot.js";
 
@@ -112,14 +112,33 @@ function drawPark(alpha = 1) {
   if (alpha === 1 && !looping) { looping = true; requestAnimationFrame(parkLoop); }
 }
 
-// Keeps the parked bunny animating (idle / thinking) by redrawing only when its frame changes.
+// Keeps the parked bunny animating (idle / thinking / one-shots) by redrawing only when its frame changes.
 function parkLoop() {
   const sp = poseDef();
   if (!park || fly || typing || scrolling || fading || !sp) { looping = false; return; }
-  const f = frameAt(sp, performance.now() / 1000 - pose.t0);
+  const t = performance.now() / 1000 - pose.t0;
+  const f = frameAt(sp, t);
   if (f !== loopFrame) { loopFrame = f; ctx.clearRect(0, 0, W, H); arrow(park[0], park[1], 1.2, 1); }
+  if (!sp.loop && finished(sp, t)) { // a one-shot has played out
+    if (pose.name === "dead") { fading = false; fadePark(); return; } // the flop ends in a fade-out
+    restPose();
+  }
   requestAnimationFrame(parkLoop);
 }
+
+// Play a one-shot pose at the parked cursor. The event may arrive while idle, thinking, or
+// mid-fade: park if needed, cancel the fade, and let parkLoop redraw every frame.
+function oneshot(name) {
+  if (!sprites || !sprites[name]) return;
+  if (!park) park = [W / 2, H / 2];
+  fading = false;
+  clearTimeout(parkTimer);
+  setPose(name);
+  if (!looping) { looping = true; requestAnimationFrame(parkLoop); }
+}
+
+listen("cursor-fail", () => oneshot("fail")); // a tool errored: startled pose at the park point
+listen("cursor-dead", () => { oneshot("dead"); }); // the action chain was aborted: a dramatic flop listens
 
 const restPose = () => setPose(thinking ? "think" : "idle");
 listen("orb-mode", (ev) => {
@@ -140,7 +159,7 @@ function startType({ text, per }) {
   if (!park) park = [W / 2, H / 2]; // no earlier click: type from the middle of the screen
   clearTimeout(parkTimer);
   typing = { text: String(text || ""), per: Math.max(0.004, Number(per) || 0.04), t0: performance.now() / 1000 };
-  setPose("click", pose.flip, true); // the bunny taps along with the keys
+  setPose("type", pose.flip, true); // the bunny types along with the keys
   requestAnimationFrame(typeTick);
 }
 
@@ -445,7 +464,7 @@ function tick() {
       motion.lift = Math.sin(Math.PI * ph) * Math.min(70, len * 0.1);
       motion.sy = ph < 0.08 || ph > 0.92 ? 0.88 : 1;
       motion.lean = ph < 0.5 ? 1 : 0;
-      setPose(ph < 0.5 ? "jump" : "fall");
+      setPose(fly.click ? "jthrow" : ph < 0.5 ? "jump" : "fall"); // a click thrown mid-air
       const n = Math.floor(g * hops);
       if (n !== hopN) { if (hopN >= 0) puff(pos, side); hopN = n; } // a puff at each landing
     } else {

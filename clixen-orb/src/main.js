@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { loadSprites, drawFrame, frameAt } from "./sprites.js";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
 
@@ -26,6 +27,9 @@ const win = getCurrentWindow();
 const ORB_R = 55;      // sphere radius in logical px
 const ORB_CY = 75;     // centre of the 150x150 window
 const ORB_BREATH = 1;  // breathing scale applied to the idle envelope
+
+let sprites = null;
+loadSprites().then((s) => { sprites = s; }).catch((e) => console.warn("orb sprites unavailable:", e));
 
 /* ---- canvas sizing ----------------------------------------------------- */
 
@@ -235,82 +239,27 @@ function drawOrb(cx, cy) {
     ctx.restore();
   }
 
-  /* The sphere. */
-  const r = ORB_R * (1 + a * 0.06);
-
-  const body = ctx.createRadialGradient(
-    cx - r * 0.34, cy - r * 0.40, r * 0.08,
-    cx, cy, r * 1.12,
-  );
-  body.addColorStop(0, rgb(pal.hot));
-  body.addColorStop(0.34, rgb(mix(pal.hot, pal.mid, 0.75)));
-  body.addColorStop(0.66, rgb(pal.mid));
-  body.addColorStop(1, rgb(pal.cold));
-  ctx.fillStyle = body;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.clip();
-
-  /* Inner "liquid" contour that wobbles with the envelope — the thing that
-     makes it feel organic instead of like a CSS gradient. */
-  const cxr = cx + Math.cos(state.t * 0.9) * r * 0.10;
-  const cyr = cy + Math.sin(state.t * 1.15) * r * 0.12;
-  const inner = ctx.createRadialGradient(
-    cxr, cyr, r * 0.05,
-    cxr, cyr, r * (1.15 - a * 0.12),
-  );
-  inner.addColorStop(0, rgb(mix(pal.hot, [255, 255, 255], 0.55), 0.55));
-  inner.addColorStop(0.4, rgb(pal.hot, 0.16));
-  inner.addColorStop(1, rgb(pal.cold, 0));
-  ctx.fillStyle = inner;
-  ctx.beginPath();
-  for (let i = 0; i <= 96; i++) {
-    const th = (i / 96) * Math.PI * 2;
-    const wob =
-      1 +
-      0.055 * Math.sin(th * 3 + state.t * 1.6) * (0.5 + a * 1.6) +
-      0.03 * Math.sin(th * 5 - state.t * 2.3) * (0.5 + a);
-    const px = cx + Math.cos(th) * r * wob;
-    const py = cy + Math.sin(th) * r * wob;
-    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  /* The bunny — replaces the blue sphere. */
+  if (sprites && sprites.idle) {
+    const sp = sprites.idle;
+    const px = 4;
+    const dpr = window.devicePixelRatio || 1;
+    const k = px / dpr;
+    const spriteH = sp.h * k;
+    drawFrame(ctx, sp, frameAt(sp, state.t), cx, cy + ORB_R, px, dpr, false, 1 - 0.4 * act.k, 1, 1, 0);
+  } else {
+    /* fallback sphere */
+    const r = ORB_R * (1 + a * 0.06);
+    const body = ctx.createRadialGradient(cx - r * 0.34, cy - r * 0.40, r * 0.08, cx, cy, r * 1.12);
+    body.addColorStop(0, rgb(pal.hot));
+    body.addColorStop(0.34, rgb(mix(pal.hot, pal.mid, 0.75)));
+    body.addColorStop(0.66, rgb(pal.mid));
+    body.addColorStop(1, rgb(pal.cold));
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.closePath();
-  ctx.fill();
-
-  /* Rim darkening — what sells the sphere as 3D on a flat page. */
-  const rim = ctx.createRadialGradient(cx, cy, r * 0.62, cx, cy, r);
-  rim.addColorStop(0, rgb(pal.cold, 0));
-  rim.addColorStop(1, rgb(pal.cold, 0.55));
-  ctx.fillStyle = rim;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  /* Inner rim light along the top-left arc. */
-  ctx.strokeStyle = rgb(pal.hot, 0.5);
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r - 0.7, Math.PI * 0.86, Math.PI * 1.72);
-  ctx.stroke();
-
-  /* Specular highlight. */
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  const sx = cx - r * 0.30, sy = cy - r * 0.34;
-  const spec = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 0.42);
-  spec.addColorStop(0, `rgba(255,255,255,${0.42 + a * 0.16})`);
-  spec.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = spec;
-  ctx.beginPath();
-  ctx.arc(sx, sy, r * 0.42, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
 }
 
 /* ---- animation loop --------------------------------------------------- */
@@ -469,12 +418,12 @@ function blobToB64(blob) {
   });
 }
 
-async function sendAudio(blob) {
+async function sendAudio(blob, turnId = "") {
   setMode("thinking");
   say("…", "you", true);
   try {
     const audio_b64 = await blobToB64(blob);
-    await invoke("orb_send_audio", { audioB64: audio_b64, tts: true });
+    await invoke("orb_send_audio", { audioB64: audio_b64, tts: true, turnId });
   } catch (e) {
     say(String(e), "", false);
     setMode("idle");
@@ -495,6 +444,9 @@ async function sendText(text) {
 }
 
 /* ---- backend → orb ---------------------------------------------------- */
+
+let currentTurnId = "";   // tags every event to the voice turn it belongs to
+
 
 let botBuffer = "";
 
@@ -529,6 +481,38 @@ async function playWavB64(b64) {
   src.start();
 }
 
+// Wake-word streaming: subscribe to /voice/stream SSE (backend sends wake-word
+// events pushed via /voice/ingest). Each utterance arrives as
+// {"type": "voice", "query": "...", "turn_id": "..."}.
+let voiceStreamListener = null;
+const DOUBLE_TAP_WINDOW = 300;
+let lastTap = null;
+
+async function startListeningStream() {
+  try {
+    const resp = await fetch('http://127.0.0.1:9234/voice/stream', {headers: {'X-Auth-Token': ''}});
+    if (!resp.ok) return false;
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value);
+      for (const line of text.split('\n')) {
+        const m = line.match(/^data: (.*)$/);
+        if (!m) continue;
+        try {
+          const ev = JSON.parse(m[1]);
+          if (ev.type === 'voice') {
+            say(ev.query, 'you', true);
+          }
+        } catch (_) { /* ignore malformed frames */ }
+      }
+    }
+  } catch (_) { /* stream died — retry on next tap */ }
+  return false;
+}
+
 // The overlay cursor (cursor.js) is flying to a click target: the orb stays in
 // its "acting" core shape until the cursor has come home.
 let flyGuard = 0;
@@ -553,6 +537,16 @@ listen("orb-stop-listening", () => {
 });
 
 listen("orb-event", (ev) => {
+  if (p.kind === "cancel") {
+    if (currentTurnId) {
+      setAction(false);
+      setMode("idle");
+      sayClear();
+      currentTurnId = "";
+    }
+    return;
+  }
+  if (p.turn_id && p.turn_id !== currentTurnId) return;
   const p = ev.payload;
   switch (p.kind) {
     case "transcript":
@@ -672,6 +666,22 @@ function releasePress() {
   // Released before the hold threshold: a plain tap, so don't record.
   // Held past it: the 200ms timer already started listening — stop it now.
   if (!wasTap && state.mode === "listening") stopListening();
+
+  // Double-tap barge-in: track tap timing; if two taps land within
+  // DOUBLE_TAP_WINDOW ms while a turn is executing, cancel it. Single taps
+  // are ignored to avoid accidental cancels.
+  if (wasTap && (state.mode === 'acting' || state.mode === 'speaking')) {
+    const now = Date.now();
+    if (lastTap && now - lastTap < DOUBLE_TAP_WINDOW) {
+      // Double tap detected — cancel the current turn.
+      invoke('orb_cancel', { chat_id: 'orb_ui' }).catch(() => {});
+      lastTap = null; // reset so a third tap doesn't immediately double-tap again
+    } else {
+      lastTap = now;
+      setTimeout(() => { if (lastTap === now) lastTap = null; }, DOUBLE_TAP_WINDOW);
+    }
+  }
+
   dragStart = null;
   dragging = false;
 }
