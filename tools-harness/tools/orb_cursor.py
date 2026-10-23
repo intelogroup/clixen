@@ -30,12 +30,20 @@ def click_style() -> str:
     return v if v in IMPACT_S else "bazooka"
 
 
+def travel_mode() -> str | None:
+    """CLIXEN_ORB_TRAVEL=run|hop|skate|rocket pins how the bunny gets there; unset lets the orb pick by distance."""
+    v = os.environ.get("CLIXEN_ORB_TRAVEL", "").strip().lower()
+    return v if v in ("run", "hop", "skate", "rocket") else None
+
+
 def point(x: float, y: float, click: bool = True, style: str | None = None) -> None:
     _FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = _FILE.with_suffix(".tmp")
     payload = {"seq": time.time_ns(), "ts": time.time(), "x": x, "y": y, "click": click}
     if style:
         payload["style"] = style
+    if travel := travel_mode():
+        payload["travel"] = travel
     tmp.write_text(json.dumps(payload))
     tmp.replace(_FILE)
 
