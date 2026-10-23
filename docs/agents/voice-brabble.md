@@ -74,3 +74,30 @@ launchctl kickstart gui/$(id -u)/com.brabble.agent   # restart daemon
 ## Stale Code Gotchas
 
 After rebuilding `go build -o ~/.local/bin/brabble .`, run `install_name_tool -add_rpath "$HOME/.local/opt/whisper/lib" ~/.local/bin/brabble` to fix dylib paths.
+
+
+## Shared STT backend (`tools/stt.py`) — 2026-10-23
+
+Every voice entry point (the orb's press-to-talk via `/voice/process`, the web UI, Telegram-
+adjacent helpers) transcribes through **`tools/stt.py`'s `get_stt()`**, not `tools/audio.py`.
+The pluggable refactor landed with four defects that made voice silent end to end and are
+easy to reintroduce:
+
+- **The factory dict named a class that does not exist** (`Phonon2STT` vs `Phonón2STT`, accented
+  o). A dict literal is evaluated before the lookup, so the `NameError` fired for *every*
+  backend, including the default `whisper` — `/voice/model` 500'd and `/voice/process` returned
+  an empty 200 stream (no transcript, no tokens, no audio). Keep `tests/test_stt_backend.py`
+  green.
+- **`_to_wav()` converted to a temp wav and then deleted it**, and `transcribe()` handed
+  whisper-cli the *original* file. whisper.cpp only decodes wav/flac/mp3/ogg, so every real
+  orb recording (MediaRecorder → `audio/webm` → opus) produced no output. Convert, then
+  transcribe the converted path; unlink it in `finally`.
+- **No `-nt`**: whisper-cli's stdout carries `[00:00:00.000 --> 00:00:01.800]` prefixes, which
+  became both the caption and part of the model's prompt. `-nt` + reading `<input>.txt` fixes it.
+- **`err:` was not on `/voice/process`'s bad-transcript list**, so a backend failure string was
+  forwarded as the user's turn and answered as if it were speech. `chat_ui.py` now rejects
+  `err:` (and `[00:0`) prefixes.
+
+`_to_wav` needs ffmpeg; a `CalledProcessError(254, …)` from it is transient (it succeeded on
+retry), but the returned string is `err: …`, which the endpoint now surfaces as an error frame
+instead of a question.

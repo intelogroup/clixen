@@ -47,6 +47,9 @@ from clients.cloud_client import DEFAULT_CLOUD_MODEL, _TOOL_PROGRESS_LABELS
 from tools.websearch import search as _websearch
 
 from tools.query_guard import check_all as _guard_check
+from tools.stt import get_stt, set_stt_backend, STTBackend
+from voice import session as voice_session
+from voice.agent import VOICE_CHAT_ID as _VOICE_CHAT_ID, get_agent as _get_voice_agent
 from store.conversation import get as conv_get, clear as conv_clear
 from clients.router import warm_classifier
 from store import upload_store, automation_store, workflow_store
@@ -70,6 +73,14 @@ class ChatRequest(BaseModel):
 class TTSSpeakRequest(BaseModel):
     text: str
     voice: str = "af_heart"
+
+
+class VoiceListenRequest(BaseModel):
+    on: bool = True
+    # the client may own the mic (desktop app: AEC, its own TCC grant) and stream
+    # frames to /voice/feed instead of letting the backend open a device.
+    mic: bool = True
+    chat_id: str = "voice_agent"
 
 
 class MockLoginRequest(BaseModel):
@@ -1446,6 +1457,7 @@ async def voice_process(
     chat_id: str = Form(default="web_ui"),
     tts: str = Form(default="0"),
     web_search: str = Form(default="0"),
+    turn_id: str = Form(default=""),   # new — tags this turn for routing + queue
 ):
     _require_auth(request)
     content = await file.read()
@@ -1463,26 +1475,30 @@ async def voice_process(
             tmp.write_bytes(content)
 
             def _transcribe():
-                from tools.audio import execute as transcribe
-
-                return transcribe(str(tmp))
-
+                stt = get_stt()
+                return stt.transcribe(str(tmp))
             transcript = await asyncio.to_thread(_transcribe)
         finally:
             tmp.unlink(missing_ok=True)
+
         bad = (
-            "File not found",
-            "ffmpeg",
-            "Whisper",
-            "Transcription",
-            "[Could not",
-            "[Binary",
-            "[BLANK_AUDIO]",
+            "File not found", "ffmpeg", "Whisper", "Transcription",
+            "[Could not", "[Binary", "[BLANK_AUDIO]",
+            # tools/stt.py reports backend failures as "err: ..."; without this
+            # the error string itself became the user's turn ("err: whisper
+            # produced no output ...") and the model answered it as speech.
+            "err:", "[00:0",
         )
         if not transcript or any(transcript.startswith(p) for p in bad):
             yield f"data: {json.dumps({'type': 'error', 'text': transcript or 'Transcription failed'})}\n\n"
             return
+
+        # Emit the raw transcript once so the frontend can show it as a caption.
         yield f"data: {json.dumps({'type': 'transcript', 'text': transcript})}\n\n"
+
+        # ── Dispatch logic ──────────────────────────────────────────────────
+        # If a turn queue is active and the orchestrator is busy, enqueue this
+        # turn. Otherwise dispatch immediately.
         token_q: queue_mod.Queue = queue_mod.Queue()
         result: dict = {}
         abort_event = register_active_stream(chat_id)
@@ -1492,11 +1508,22 @@ async def voice_process(
 
         def run_llm():
             try:
-                reply, model, intent = harness_run(
-                    transcript, chat_id=chat_id, on_token=on_token, force_web_search=use_web_search
+                result_tuple = harness_run(
+                    transcript,
+                    chat_id=chat_id,
+                    on_token=on_token,
+                    force_web_search=use_web_search,
+                    turn_id=turn_id,
                 )
-                result.update(model=model, reply=reply)
-                _mark_first_message_sent()
+                if result_tuple is None:
+                    # Turn was enqueued — orchestrator is busy. Signal SSE
+                    # so the orb can show a "queued" indicator.
+                    result["queued"] = True
+                    result["reply"] = ""  # no reply to emit
+                else:
+                    reply, model, intent = result_tuple
+                    result.update(model=model, reply=reply)
+                    _mark_first_message_sent()
             except QueryAbortedException:
                 _log.info("[voice/process] request chat_id=%s was cancelled by client", chat_id)
             except Exception as exc:
@@ -1510,6 +1537,7 @@ async def voice_process(
         t = threading.Thread(target=run_llm, daemon=True)
         t.abort_event = abort_event
         t.start()
+
         sent_buf = ""
         loop = asyncio.get_running_loop()
         _visible_filter, _visible_flush = _make_visible_token_filter()
@@ -1547,6 +1575,113 @@ async def voice_process(
             yield f"data: {json.dumps({'type': 'error', 'text': result['error']})}\n\n"
         else:
             yield f"data: {json.dumps({'type': 'done', 'model': result.get('model', '')})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/voice/cancel")
+async def voice_cancel(request: Request):
+    """Barge-in: release the active stream for a chat_id so the user can
+    interrupt a long-running turn. Idempotent."""
+    _require_auth(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    chat_id = str(body.get("chat_id", "orb_ui"))
+    with _active_streams_lock:
+        abort_event = _active_streams.get(chat_id)
+        if abort_event is not None:
+            abort_event.set()
+            _active_streams.pop(chat_id, None)
+    return {"ok": True, "chat_id": chat_id}
+
+
+@app.get("/voice/model")
+async def voice_model(request: Request):
+    """Return the active STT/TTS backend names."""
+    _require_auth(request)
+    return {
+        "stt": get_stt().name,
+        "stt_models": get_stt().supported_models(),
+        "tts": "kokoro",
+    }
+
+
+# ── continuous listening (the mic on the orb) ───────────────────────────────
+# One process-wide session: click the mic on, it keeps listening across turns
+# until it is clicked off. `CLIXEN_VOICE_MIC=0` opens no device (tests, CI).
+
+_VOICE_MIC = os.environ.get("CLIXEN_VOICE_MIC", "1") != "0"
+_VOICE_BUS = voice_session.get_bus()
+_VOICE_SESSION = None
+_VOICE_SESSION_LOCK = threading.Lock()
+
+
+def _voice_session() -> voice_session.VoiceSession:
+    """The session, wired to the real orchestrator the first time it is asked for."""
+    global _VOICE_SESSION
+    with _VOICE_SESSION_LOCK:
+        if _VOICE_SESSION is None:
+            agent = _get_voice_agent()
+            if not agent.ready:
+                agent.set_brain(lambda query, **kwargs: harness_run(query, **kwargs))
+            _VOICE_SESSION = voice_session.VoiceSession(
+                agent=agent, chat_id=_VOICE_CHAT_ID, on_event=_VOICE_BUS.publish
+            )
+        return _VOICE_SESSION
+
+
+@app.post("/voice/listen")
+async def voice_listen(req: VoiceListenRequest, request: Request):
+    """Toggle continuous listening on/off. Returns the session's state."""
+    _require_auth(request)
+    sess = _voice_session()
+    if req.on:
+        ok = await asyncio.to_thread(sess.start, mic=bool(req.mic and _VOICE_MIC))
+        return {"ok": ok, **sess.status()}
+    await asyncio.to_thread(sess.stop)
+    return {"ok": True, **sess.status()}
+
+
+@app.post("/voice/feed")
+async def voice_feed(request: Request):
+    """Raw int16 mono PCM @16 kHz from a client that owns the mic.
+
+    The desktop app streams its mic here (or over the session socket); the
+    endpoint exists so the exact same session state machine can be driven and
+    debugged without a device.
+    """
+    _require_auth(request)
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "empty audio")
+    _voice_session().feed_pcm(body)
+    return {"ok": True, "bytes": len(body)}
+
+
+@app.get("/voice/session")
+async def voice_session_status(request: Request):
+    _require_auth(request)
+    return _voice_session().status()
+
+
+@app.get("/voice/events")
+async def voice_events(request: Request):
+    """SSE fan-out for listener events: state, partial, final, token, audio, tool, interrupt."""
+    _require_auth(request)
+    q = _VOICE_BUS.subscribe()
+
+    async def generate():
+        try:
+            while True:
+                try:
+                    payload = await asyncio.to_thread(q.get, True, 30)
+                except queue_mod.Empty:
+                    payload = {"type": "ping"}
+                yield f"data: {json.dumps(payload)}\n\n"
+        finally:
+            _VOICE_BUS.unsubscribe(q)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
