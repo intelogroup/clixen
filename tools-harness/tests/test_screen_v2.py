@@ -230,3 +230,26 @@ def test_the_orchestrator_tool_list_in_harness_offers_observe_and_act():
     src = open(harness.__file__).read()
     line = next(l for l in src.splitlines() if '"get_screen_context", "set_screen_watch"' in l)
     assert '"observe"' in line and '"act"' in line
+
+
+def test_appears_also_matches_the_window_title(screen):
+    screen.els = [_el("Button", "Add to cart Mug")]
+    titles = iter(["shop", "shop", "cart|Mug"])
+    screen.title = "shop"
+    real = v2.ax.elements
+
+    def moving(app="", query="", offscreen=False):
+        return "Google Chrome", next(titles, "cart|Mug"), screen.els
+
+    v2.ax.elements = moving
+    try:
+        r = _j(v2.act("Add to cart Mug", "click", expect={"appears": "cart|Mug"}))
+    finally:
+        v2.ax.elements = real
+    assert r["ok"] and r["expect"] == "met"
+
+
+def test_an_unmet_expect_says_the_action_already_ran(screen):
+    screen.els = [_el("Button", "Send")]
+    r = _j(v2.act("Send", "click", expect={"appears": "Message sent"}))
+    assert not r["ok"] and r["performed"] is True and "do not repeat" in r["error"]["hint"].lower()

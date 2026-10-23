@@ -135,7 +135,7 @@ def _resolve(target: str, items: list):
 
 def _met(expect: dict, title: str, items: list) -> tuple[bool, str]:
     labels = [it["fp"][1].lower() for it in items]
-    if (w := expect.get("appears")) and not any(w.lower() in l for l in labels):
+    if (w := expect.get("appears")) and not any(w.lower() in l for l in labels + [title.lower()]):  # a result often shows only in the window title
         return False, f"'{w}' has not appeared"
     if (w := expect.get("gone")) and any(w.lower() in l for l in labels):
         return False, f"'{w}' is still there"
@@ -237,7 +237,8 @@ def act(target: str = "", action: str = "click", text: str = "", expect: dict | 
     if expect:
         if not verdict:
             return _out({"ok": False, "rev": rev, "effect": effect, **({"cleared": cleared} if cleared else {}),
-                         "error": {"code": "expect_failed", "hint": why}})
+                         "performed": True,
+                         "error": {"code": "expect_failed", "hint": f"{why}. The action itself ran: do not repeat it. Observe to see what the screen shows now."}})
         out["expect"] = "met"
     if action == "click" and not (appeared or gone or effect["title"] or focus_after != focus_before):
         out["warning"] = "no_effect"
