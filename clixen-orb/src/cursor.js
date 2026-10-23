@@ -3,6 +3,7 @@
  * there (fading out after PARK_S idle) instead of returning to the orb. Coordinates are logical screen points,
  * relative to this window's origin (Rust already subtracted it). */
 import { listen, emit } from "@tauri-apps/api/event";
+import { frameAt, loadSprites, drawFrame } from "./sprites.js";
 
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -27,6 +28,24 @@ const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const T_FLY = 0.75, T_PRESS = 0.25, T_HOLD = 0.45;
 const T_TOTAL = T_FLY + T_PRESS + T_HOLD;
 const PARK_S = 30, FADE_S = 0.8; // idle time before the parked cursor fades
+
+// The bunny that rides beside the arrow. null until the strips load, and stays null if they fail:
+// the plain arrow then draws exactly as before.
+let sprites = null;
+loadSprites().then((s) => { sprites = s; }).catch((e) => console.warn("cursor sprites unavailable:", e));
+const SPRITE_PX = 3; // device pixels per sprite pixel (integer keeps the art crisp)
+let pose = { name: "idle", t0: 0, flip: false };
+function setPose(name, flip = pose.flip) { if (pose.name !== name || pose.flip !== flip) pose = { name, t0: performance.now() / 1000, flip }; }
+
+function bunny(x, y, alpha) {
+  const sp = sprites && sprites[pose.name];
+  if (!sp) return;
+  const dpr = window.devicePixelRatio || 1;
+  const k = SPRITE_PX / dpr;
+  const side = pose.flip ? -1 : 1; // the bunny stands on the side the cursor came from
+  const f = frameAt(sp, performance.now() / 1000 - pose.t0);
+  drawFrame(ctx, sp, f, x + side * (6 + (sp.w * k) / 2), y + sp.h * k * 0.6, SPRITE_PX, dpr, pose.flip, alpha);
+}
 
 let fly = null; // { from, to, click, t0 }
 let park = null; // [x, y] where the cursor last clicked
@@ -238,6 +257,7 @@ listen("cursor-fly", (ev) => {
   const { from, to, click } = ev.payload;
   clearTimeout(parkTimer);
   fly = { from: park || from, to, click: click !== false, t0: performance.now() / 1000 };
+  setPose("move", to[0] < fly.from[0]); // source frames face right; mirror when flying left
   trail = [];
   requestAnimationFrame(tick);
 });
@@ -272,6 +292,7 @@ function arrow(x, y, scale, alpha) {
   ctx.strokeStyle = "rgba(20,20,30,0.85)";
   ctx.stroke();
   ctx.restore();
+  bunny(x, y, alpha);
 }
 
 function tick() {
@@ -282,6 +303,7 @@ function tick() {
   if (t >= (fly.click ? T_TOTAL : T_FLY + 0.05)) { // a no-click glide (before a scroll) lands and frees the cursor at once
     park = fly.to;
     fly = null;
+    setPose("idle");
     drawPark();
     parkTimer = setTimeout(fadePark, PARK_S * 1000);
     emit("cursor-done").catch(() => {});
@@ -296,6 +318,7 @@ function tick() {
     pos = arc(fly.from, fly.to, g, 1);
     scale = 0.7 + 0.5 * g; // grows from orb-cursor size to full size
   } else if (t < tHold) {
+    if (fly.click) setPose("click");
     pos = fly.to;
     const p = Math.sin(Math.PI * clamp01((t - tPress) / T_PRESS));
     scale = 1.2 - 0.2 * p; // press down and release
