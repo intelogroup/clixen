@@ -33,6 +33,11 @@ HOW YOU WORK
 6. In a Gmail compose window the box 'Describe your message' is an AI prompt box, never the body. The body field is 'Message Body'; click that, press_keys cmd+up so the text goes above the signature, then type the email text. A type_text warning "check it landed" may just be lag: re-read the screen once before assuming it failed.
 7. Reuse what is already open: check for an existing compose window or tab before opening another.
 
+EMAIL IN GMAIL
+Do not click through Gmail's Compose window: its fields, AI box and signature break blind clicking. Instead open_url Gmail's compose link with the fields pre-filled, URL-encoded (keep the body under about 1500 characters):
+https://mail.google.com/mail/?view=cm&fs=1&to=ADDRESS&su=SUBJECT&body=BODY
+It opens a full-page compose. Read the screen to confirm To, Subject and body, then click the Send button (click_text with the label it lists for Send, e.g. 'Send (⌘Enter)'). Then confirm the 'Message sent' notice.
+
 SENDING OR POSTING
 When the user told you to send something to a person or address, that is your authorization: do it. Before the final click, read the screen and confirm the recipient, subject and body are what the user asked. If something is wrong, fix it first. After sending, confirm it (a sent notice, or the message in Sent/Inbox) and say so.
 
