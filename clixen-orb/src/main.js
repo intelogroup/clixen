@@ -190,6 +190,57 @@ function rr(x, y, w, h, r) {
   else ctx.rect(x, y, w, h);
 }
 
+/* Pixel-art hover chips, drawn with hard 2px cells (no anti-aliasing) from the
+ * bunny sprite's sampled palette: black outline, pale grey, white, warm orange. */
+const PX = {
+  K: "rgb(0,0,0)",          // black outline (sprite outline)
+  G: "rgb(203,204,204)",    // pale grey (bunny body)
+  W: "rgb(241,241,241)",    // white (bunny highlight)
+  O: "rgb(245,191,128)",    // warm orange (bunny accent)
+};
+const CHIP_ICONS = {
+  // 8x8 grids; '.' = chip background.
+  mic: [
+    "..KKKK..",
+    ".KWWWWK.",
+    ".KWWWWK.",
+    ".KWWWWK.",
+    "K......K",
+    "KK....KK",
+    ".KKKKKK.",
+    "...OO...",
+  ],
+  chat: [
+    ".KKKKKK.",
+    "KWWWWWWK",
+    "KOWOWOWK",
+    "KWWWWWWK",
+    ".KKKKKK.",
+    ".KK.....",
+    "K.......",
+    "........",
+  ],
+};
+function drawPixelChip(cx, cy, icon) {
+  const grid = CHIP_ICONS[icon];
+  const cell = 2;                 // 8x8 icon = 16px, chip = 20px with border
+  const x0 = cx - 10, y0 = cy - 10;
+  // Chip body: black 2px border around a pale grey field, like a sprite tile.
+  ctx.fillStyle = PX.K;
+  ctx.fillRect(x0, y0, 20, 20);
+  ctx.fillStyle = PX.G;
+  ctx.fillRect(x0 + 2, y0 + 2, 16, 16);
+  // Glyph cells.
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      const ch = grid[r][c];
+      if (ch === ".") continue;
+      ctx.fillStyle = PX[ch];
+      ctx.fillRect(x0 + 2 + c * cell, y0 + 2 + r * cell, cell, cell);
+    }
+  }
+}
+
 function draw() {
   const cx = W / 2, cy = ORB_CY;
   ctx.clearRect(0, 0, W, H);
@@ -205,7 +256,9 @@ function draw() {
   drawCursor(cx, cy);
 
   // Hover indicators: mic (listen) and chat (open input), shown only while the
-  // pointer is over the bunny itself and faded in/out smoothly.
+  // pointer is over the bunny itself and faded in/out smoothly. Drawn as tiny
+  // pixel-art chips using the bunny sprite's own palette (black outline, pale
+  // grey body, white, warm orange) so they read as part of the same artwork.
   hoverBtns = [];
   hoverAlpha += ((hovered ? 1 : 0) - hoverAlpha) * 0.25; // ease toward target
   if (hoverAlpha > 0.02) {
@@ -214,44 +267,12 @@ function draw() {
       { dx: 26, icon: "chat", action: () => invoke("orb_prompt").catch(() => {}) },
     ];
     for (const b of btns) {
-      const bx = cx + b.dx, by = cy - ORB_R - 14;
+      const bx = cx + b.dx, by = cy - ORB_R - 4;
       ctx.save();
       ctx.globalAlpha = hoverAlpha;
-      ctx.fillStyle = "rgba(20,24,40,0.55)";
-      ctx.beginPath();
-      ctx.arc(bx, by, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(186,210,255,0.55)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      // Tiny glyph drawn with strokes so it stays minimal.
-      ctx.strokeStyle = "rgba(235,242,255,0.9)";
-      ctx.fillStyle = "rgba(235,242,255,0.9)";
-      ctx.lineWidth = 1.2;
-      ctx.lineCap = "round";
-      if (b.icon === "mic") {
-        // Capsule mic + stand.
-        rr(bx - 1.8, by - 5, 3.6, 6, 1.8);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(bx, by + 1, 3.2, 0, Math.PI);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(bx, by + 4.2);
-        ctx.lineTo(bx, by + 5.5);
-        ctx.stroke();
-      } else {
-        // Speech bubble.
-        rr(bx - 4, by - 4.5, 8, 6, 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(bx - 1.5, by + 1.5);
-        ctx.lineTo(bx - 2.5, by + 4.5);
-        ctx.lineTo(bx + 1, by + 1.5);
-        ctx.stroke();
-      }
+      drawPixelChip(bx, by, b.icon);
       ctx.restore();
-      hoverBtns.push({ x: bx, y: by, r: 8, action: b.action });
+      hoverBtns.push({ x: bx, y: by, r: 12, action: b.action });
     }
   }
 }
@@ -320,15 +341,15 @@ let hoverBtns = []; // {x,y,r,action}
 // transparent window. Without the button check the icons would fade out while
 // the pointer travels from the bunny up to a button (they sit ~67px from the
 // orb centre, beyond the ORB_R+6 bunny zone).
-const BTN_DY = ORB_R + 14; // matches the draw() offset (cy - by)
+const BTN_DY = ORB_R + 4; // matches the draw() offset (cy - by)
 canvas.addEventListener("pointermove", (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
   const cx = W / 2, cy = ORB_CY;
   hovered = Math.hypot(x - cx, y - cy) <= ORB_R + 6
-    || Math.hypot(x - (cx - 26), y - (cy - BTN_DY)) <= 10
-    || Math.hypot(x - (cx + 26), y - (cy - BTN_DY)) <= 10;
+    || Math.hypot(x - (cx - 26), y - (cy - BTN_DY)) <= 12
+    || Math.hypot(x - (cx + 26), y - (cy - BTN_DY)) <= 12;
 });
 canvas.addEventListener("pointerleave", () => { hovered = false; dragStart = null; });
 
@@ -699,6 +720,9 @@ canvas.addEventListener("pointerdown", (e) => {
     }
   }
   if (e.button !== 0) return;
+  // Capture the pointer so drag tracking keeps flowing to the canvas even when
+  // the cursor momentarily slides off the orb onto the transparent margin.
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* older WKWebView */ }
   dragStart = { x: e.screenX, y: e.screenY };
   // Logical window origin at press time; the drag is origin + cursor delta.
   winOrigin = win.outerPosition().then((p) => ({
