@@ -54,10 +54,30 @@ let trail = [];
 let typing = null; // { text, per, t0 } while the typing hand is shown
 let scrolling = null; // { dir, dur, t0 } while the scroll gesture is shown
 
+let thinking = false; // the orb's model is working: the parked bunny shows the thought dots
+let fading = false;
+let loopFrame = -1, looping = false;
+
 function drawPark(alpha = 1) {
   ctx.clearRect(0, 0, W, H);
   if (park) arrow(park[0], park[1], 1.2, alpha);
+  if (alpha === 1 && !looping) { looping = true; requestAnimationFrame(parkLoop); }
 }
+
+// Keeps the parked bunny animating (idle / thinking) by redrawing only when its frame changes.
+function parkLoop() {
+  const sp = sprites && sprites[pose.name];
+  if (!park || fly || typing || scrolling || fading || !sp) { looping = false; return; }
+  const f = frameAt(sp, performance.now() / 1000 - pose.t0);
+  if (f !== loopFrame) { loopFrame = f; ctx.clearRect(0, 0, W, H); arrow(park[0], park[1], 1.2, 1); }
+  requestAnimationFrame(parkLoop);
+}
+
+const restPose = () => setPose(thinking ? "think" : "idle");
+listen("orb-mode", (ev) => {
+  thinking = ev.payload === "thinking";
+  if (!fly && !typing && !scrolling) { restPose(); if (park) drawPark(); }
+});
 
 // Typing: a small hand taps four keys under the parked cursor while a bubble fills in the
 // text, one character per `per` seconds, the same pace the keystrokes are sent at.
@@ -243,10 +263,11 @@ function scrollTick() {
 
 function fadePark() {
   const t0 = performance.now() / 1000;
+  fading = true;
   const step = () => {
-    if (fly || typing || scrolling || !park) return; // a new action took over
+    if (fly || typing || scrolling || !park) { fading = false; return; } // a new action took over
     const k = (performance.now() / 1000 - t0) / FADE_S;
-    if (k >= 1) { park = null; drawPark(); return; }
+    if (k >= 1) { park = null; fading = false; drawPark(); return; }
     drawPark(1 - k);
     requestAnimationFrame(step);
   };
@@ -303,7 +324,7 @@ function tick() {
   if (t >= (fly.click ? T_TOTAL : T_FLY + 0.05)) { // a no-click glide (before a scroll) lands and frees the cursor at once
     park = fly.to;
     fly = null;
-    setPose("idle");
+    restPose();
     drawPark();
     parkTimer = setTimeout(fadePark, PARK_S * 1000);
     emit("cursor-done").catch(() => {});

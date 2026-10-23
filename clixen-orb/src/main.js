@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
 
 /* =========================================================================
@@ -61,6 +61,7 @@ const PALETTES = {
 
 function setMode(mode) {
   state.mode = mode;
+  emit("orb-mode", mode).catch(() => {}); // the cursor overlay shows its bunny thinking while the model works
   if (mode === "idle") state.targetAmp = 0;
 }
 
