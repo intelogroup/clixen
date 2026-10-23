@@ -9,6 +9,8 @@
 //!            corners can never intercept a click meant for the page underneath.
 //!   `caption` 420x78  — the whisper strip. Ignores mouse events entirely.
 
+pub mod vault;
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
