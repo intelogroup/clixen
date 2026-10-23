@@ -8,13 +8,18 @@
     "build:web": "vite build",
     "dev": "tauri dev",
     "build": "tauri build",
+    "typecheck": "tsc -p . --noEmit",
+    "typecheck:js": "tsc -p . --noEmit --checkJs",
     "test:web": "node --test test/*.test.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
+    "typescript": "^5.9.3",
     "vite": "^8.3.5"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0"
+    "@tauri-apps/api": "^2.0.0",
+    "caveman": "^0.1.6",
+    "ponytail": "^1.0.57"
   }
 }

@@ -19,9 +19,9 @@ import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
  *   acting    — a tool is running: orb shrinks, amber cursor glides and clicks
  * ========================================================================= */
 
-const canvas = document.getElementById("orb");
+const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("orb"));
 const ctx = canvas.getContext("2d");
-const statusEl = document.getElementById("status");
+const statusEl = /** @type {HTMLElement} */ (document.getElementById("status"));
 const win = getCurrentWindow();
 
 const ORB_R = 55;      // sphere radius in logical px

@@ -121,13 +121,16 @@ fn debug_enabled() -> bool {
 
 #[derive(Clone, Serialize)]
 struct SseEvent {
-    /// One of: token | transcript | audio | done | error
+    /// One of: token | transcript | audio | done | error | partial | final | state
     ///
     /// Serialised as `kind`, not `type` — the renderer switches on
     /// `payload.kind`, and a rename here silently drops every frame.
     kind: String,
     text: String,
     data: Option<String>,
+    /// Set for `state` frames (listening | hearing | thinking | speaking | idle).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<String>,
 }
 
 /// Split an SSE byte stream into events and relay each to the `orb` window.
@@ -174,6 +177,7 @@ async fn pump_sse(app: &AppHandle, resp: reqwest::Response) {
                     kind,
                     text,
                     data: v.get("data").and_then(|d| d.as_str()).map(String::from),
+                    state: v.get("state").and_then(|s| s.as_str()).map(String::from),
                 };
 
                 if debug_enabled() {
@@ -443,6 +447,77 @@ async fn orb_send_text(app: AppHandle, message: String, chat_id: Option<String>)
     }
 }
 
+// ---------------------------------------------------------------------------
+// Continuous listening (the mic chip)
+//
+// The mic chip is a toggle: on -> the backend listens until clicked again.
+// The app owns the capture device (WebAudio with echoCancellation), so the
+// backend session is told `mic: false` and receives 16 kHz PCM through
+// `orb_feed_audio`. A backend-opened device would hear the orb's own TTS and
+// barge itself in on every reply.
+// ---------------------------------------------------------------------------
+
+/// Toggle the backend's listening session. Returns its status payload.
+#[tauri::command]
+async fn orb_listen(on: Option<bool>) -> Result<serde_json::Value, String> {
+    let backend = backend_url();
+    let body = serde_json::json!({ "on": on.unwrap_or(true), "mic": false });
+    let resp = post(format!("{backend}/voice/listen"))
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("listen HTTP {}", resp.status()));
+    }
+    resp.json::<serde_json::Value>().await.map_err(|e| e.to_string())
+}
+
+/// Forward one base64 chunk of 16 kHz mono int16 PCM to the session.
+#[tauri::command]
+async fn orb_feed_audio(audio_b64: String) -> Result<(), String> {
+    let Ok(pcm) = B64.decode(audio_b64) else {
+        return Err("bad pcm payload".into());
+    };
+    let backend = backend_url();
+    let resp = post(format!("{backend}/voice/feed"))
+        .header("content-type", "application/octet-stream")
+        .body(pcm)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("feed HTTP {}", resp.status()));
+    }
+    Ok(())
+}
+
+static EVENTS_PUMP: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+/// Keep one SSE connection to `/voice/events` open for the app's lifetime.
+/// Idempotent — the renderer calls it on boot and when the mic is toggled on.
+#[tauri::command]
+async fn orb_events_start(app: AppHandle) -> Result<(), String> {
+    if EVENTS_PUMP.set(()).is_err() {
+        return Ok(()); // already pumping
+    }
+    std::thread::spawn(move || loop {
+        let url = format!("{}/voice/events", backend_url());
+        let app2 = app.clone();
+        tauri::async_runtime::block_on(async move {
+            if let Ok(r) = get(url).timeout(std::time::Duration::from_secs(600)).send().await {
+                if r.status().is_success() {
+                    pump_sse(&app2, r).await;
+                }
+            }
+        });
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    });
+    Ok(())
+}
+
 /// Push a recorded clip through `/voice/process`:
 /// transcribe → orchestrator → optional sentence-by-sentence TTS.
 #[tauri::command]
@@ -540,6 +615,7 @@ async fn orb_cancel(app: AppHandle, chat_id: Option<String>) {
                     kind: "cancel".into(),
                     text: format!("cancelled {}", chat_id),
                     data: None,
+                    state: None,
                 });
             }
         }
@@ -552,7 +628,7 @@ fn emit_error(app: &AppHandle, msg: String) {
     if let Some(w) = app.get_webview_window("orb") {
         let _ = w.emit(
             "orb-event",
-            SseEvent { kind: "error".into(), text: msg, data: None },
+            SseEvent { kind: "error".into(), text: msg, data: None, state: None },
         );
     }
 }
@@ -973,6 +1049,9 @@ pub fn run() {
             orb_cursor_fly,
             orb_debug,
             orb_cancel,
+            orb_listen,
+            orb_feed_audio,
+            orb_events_start,
             app_lifecycle::lifecycle_info,
             app_lifecycle::lifecycle_accept,
             app_lifecycle::lifecycle_advance,
