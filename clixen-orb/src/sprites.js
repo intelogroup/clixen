@@ -33,9 +33,9 @@ export async function loadSprites(base = "/sprites/") {
 }
 
 /** Draw one frame with its feet at (x, y) bottom-centre. `px` is device pixels per sprite pixel (an
- * integer, so the art stays crisp); `dpr` converts that to CSS px. `flip` mirrors a right-facing frame;
+ * integer, so the art stays crisp); `dpr` converts that to CSS px. `flip` mirrors the left-facing frame to face right;
  * `sx`/`sy` squash or stretch it about the feet (non-integer, so use briefly); `lean` leans it
- * forward by that many sprite px at the head. */
+ * forward (the strips face left) by that many sprite px at the head. */
 export function drawFrame(ctx, sp, frame, x, y, px, dpr, flip, alpha, sx = 1, sy = 1, lean = 0) {
   const k = px / dpr;
   ctx.save();
@@ -46,7 +46,7 @@ export function drawFrame(ctx, sp, frame, x, y, px, dpr, flip, alpha, sx = 1, sy
   ctx.scale(sx, sy); // squash/stretch about the feet
   const bands = 4, bh = sp.h / bands, off = leanOffsets(lean, bands);
   for (let b = 0; b < bands; b++) {
-    ctx.drawImage(sp.img, frame * sp.w, b * bh, sp.w, bh, -(sp.w * k) / 2 + off[b] * k, -sp.h * k + b * bh * k, sp.w * k, bh * k);
+    ctx.drawImage(sp.img, frame * sp.w, b * bh, sp.w, bh, -(sp.w * k) / 2 - off[b] * k, -sp.h * k + b * bh * k, sp.w * k, bh * k);
   }
   ctx.restore();
 }

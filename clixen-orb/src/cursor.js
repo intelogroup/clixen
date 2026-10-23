@@ -71,7 +71,7 @@ function bunny(x, y, alpha) {
   if (!sp) return;
   const dpr = window.devicePixelRatio || 1;
   const k = SPRITE_PX / dpr;
-  const side = pose.flip ? -1 : 1;
+  const side = pose.flip ? 1 : -1; // the strips face left, so a mirrored bunny faces right
   const f = frameAt(sp, performance.now() / 1000 - pose.t0);
   // (x, y) is the click point: it sits on the bunny's front paw (idle-cell pixel 8 across and 12 up
   // from the bottom centre), so the sprite points at the target the way the arrow used to.
@@ -347,7 +347,8 @@ listen("cursor-fly", (ev) => {
   lastSmoke = 0;
   fly.travel = TRAVEL.includes(travel) ? travel : pickTravel(Math.hypot(fly.dest[0] - fly.from[0], fly.dest[1] - fly.from[1]));
   fly.ride = null;
-  setPose("move", to[0] < fly.from[0]); // source frames face right; mirror when flying left
+  // The source frames face left: mirror when moving right. A near-vertical move keeps the old facing.
+  setPose("move", Math.abs(to[0] - fly.from[0]) < 8 ? pose.flip : to[0] > fly.from[0]);
   trail = [];
   dust = []; hopN = -1; lastPuff = 0;
   requestAnimationFrame(tick);

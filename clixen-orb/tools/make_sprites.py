@@ -5,7 +5,7 @@
 Each animation becomes one horizontal strip `public/sprites/<state>.png` (frames side by side, all
 cells the same size, feet on one baseline) plus `manifest.json`. The source art is 669px smooth
 cartoon, so frames are shrunk to CELL_H, snapped to a small palette and a hard alpha edge, and the
-blue shirt is shifted to the orb's amber. Facing: the source faces right; the cursor flips at runtime.
+blue shirt is shifted to the orb's amber. Facing: the source faces LEFT; the cursor mirrors it when the bunny moves right.
 """
 import colorsys
 import glob
