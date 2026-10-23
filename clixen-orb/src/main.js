@@ -196,6 +196,33 @@ function draw() {
   drawOrb(cx, cy);
   ctx.restore();
   drawCursor(cx, cy);
+
+  // Hover indicators: mic (listen) and chat (open input).
+  hoverBtns = [];
+  if (hovered) {
+    const btns = [
+      { dx: -28, label: "mic", action: () => { if (state.mode === "listening") stopListening(); else startListening(); } },
+      { dx: 28, label: "chat", action: () => invoke("orb_prompt").catch(() => {}) },
+    ];
+    for (const b of btns) {
+      const bx = cx + b.dx, by = cy - ORB_R - 18;
+      ctx.save();
+      ctx.fillStyle = "rgba(20,24,40,0.85)";
+      ctx.beginPath();
+      ctx.arc(bx, by, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(186,210,255,0.6)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(b.label === "mic" ? "🎤" : "💬", bx, by);
+      ctx.restore();
+      hoverBtns.push({ x: bx, y: by, r: 12, action: b.action });
+    }
+  }
 }
 
 function drawOrb(cx, cy) {
@@ -262,7 +289,14 @@ function drawOrb(cx, cy) {
   }
 }
 
-/* ---- animation loop --------------------------------------------------- */
+let hovered = false;
+let hoverBtns = []; // {x,y,r,action}
+
+canvas.addEventListener("mouseenter", () => { hovered = true; });
+canvas.addEventListener("mouseleave", () => { hovered = false; dragStart = null; });
+
+// Draw hover indicators inside draw() after orb
+const origDraw = draw;
 
 let last = performance.now();
 function frame(now) {
@@ -617,6 +651,16 @@ let dragStart = null;
 let winOrigin = null;
 
 canvas.addEventListener("pointerdown", (e) => {
+  // Hover indicator clicks.
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  for (const b of hoverBtns) {
+    if (Math.hypot(x - b.x, y - b.y) <= b.r) {
+      b.action();
+      return;
+    }
+  }
   if (e.button !== 0) return;
   dragStart = { x: e.screenX, y: e.screenY };
   // Logical window origin at press time; the drag is origin + cursor delta.
