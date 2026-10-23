@@ -138,6 +138,13 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         }
     })?;
 
+    // Logout and shutdown send SIGTERM, which skips Tauri's exit event: run the quit path ourselves.
+    let h = app.clone();
+    let _ = ctrlc::set_handler(move || {
+        on_exit(&h);
+        std::process::exit(0);
+    });
+
     let app2 = app.clone();
     std::thread::spawn(move || {
         // first pass: resume wherever the stored state says (Onboard waits for the user)
