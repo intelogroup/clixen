@@ -581,7 +581,7 @@ fn follow_target(cur: &WebviewWindow, x: f64, y: f64) -> Option<(f64, f64)> {
 
 /// Send the overlay cursor from the orb's centre to a screen point (logical px,
 /// top-left origin). The overlay window covers the monitor, so subtract its origin.
-fn cursor_fly(app: &AppHandle, x: f64, y: f64, click: bool, style: Option<String>) {
+fn cursor_fly(app: &AppHandle, x: f64, y: f64, click: bool, style: Option<String>, travel: Option<String>) {
     let (Some(orb), Some(cur)) = (app.get_webview_window("orb"), app.get_webview_window("cursor"))
     else {
         return;
@@ -601,14 +601,14 @@ fn cursor_fly(app: &AppHandle, x: f64, y: f64, click: bool, style: Option<String
     // App-wide: the overlay animates it, the orb hides its own in-canvas cursor.
     let _ = app.emit(
         "cursor-fly",
-        serde_json::json!({ "from": [from.0, from.1], "to": [x - off.0, y - off.1], "click": click, "style": style }),
+        serde_json::json!({ "from": [from.0, from.1], "to": [x - off.0, y - off.1], "click": click, "style": style, "travel": travel }),
     );
 }
 
 /// A click target from the frontend or another process.
 #[tauri::command]
 fn orb_cursor_fly(app: AppHandle, x: f64, y: f64, click: Option<bool>) {
-    cursor_fly(&app, x, y, click.unwrap_or(true), None);
+    cursor_fly(&app, x, y, click.unwrap_or(true), None, None);
 }
 
 /// Poll the backend's target file. Entries older than 3s are ignored, and the
@@ -656,6 +656,7 @@ fn spawn_cursor_watcher(app: AppHandle) {
                     y,
                     v.get("click").and_then(|c| c.as_bool()).unwrap_or(true),
                     v.get("style").and_then(|c| c.as_str()).map(String::from),
+                    v.get("travel").and_then(|c| c.as_str()).map(String::from),
                 );
             }
         }
