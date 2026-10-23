@@ -24,6 +24,14 @@ def test_type_text_refuses_terminal(monkeypatch):
     assert "terminal" in screen_act.type_text("rm -rf x", submit=True)
 
 
+def test_type_text_verifies_despite_newlines_the_field_value_drops(monkeypatch):
+    monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
+    monkeypatch.setattr(screen_act, "_focus", lambda: ("AXTextArea", "ports. No links.Best,Kalinov"))  # Gmail's body value has no newlines
+    monkeypatch.setattr(screen_act.orb_cursor, "typing", lambda *a, **k: None)
+    monkeypatch.setattr(screen_act.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 0, "stderr": ""})())
+    assert "check it landed" not in screen_act.type_text("ports. No links.\n\nBest,\nKalinov")
+
+
 def test_click_text_prefers_native_position(monkeypatch):
     monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
     monkeypatch.setattr(screen_act, "find_element", lambda t: (10.0, 20.0))

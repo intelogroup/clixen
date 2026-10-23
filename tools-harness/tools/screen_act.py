@@ -367,7 +367,8 @@ def type_text(text: str, submit: bool = False) -> str:
         return f"Typing failed: {r.stderr.strip()}"
     after = _focus()
     seen = f" Field reads: '{after[1][-60:]}'." if after and after[1] else ""
-    verified = bool(after and text[-20:] in after[1])
+    squash = lambda s: "".join(s.split())  # rich-text fields (Gmail's body) report their value without the newlines we typed
+    verified = bool(after and squash(text)[-20:] in squash(after[1]))
     if submit:
         subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 36'], capture_output=True, timeout=10)
     note = "" if verified or not after else " (text not visible in the focused field: check it landed)"
