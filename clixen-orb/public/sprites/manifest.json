@@ -23,6 +23,14 @@
     "fps": 14,
     "loop": false
   },
+  "back": {
+    "file": "back.png",
+    "frames": 10,
+    "w": 28,
+    "h": 40,
+    "fps": 12,
+    "loop": true
+  },
   "jump": {
     "file": "jump.png",
     "frames": 1,

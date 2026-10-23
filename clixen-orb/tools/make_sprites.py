@@ -23,6 +23,7 @@ STATES = {
     "idle": ("01-Idle", 8, True),
     "move": ("02-Run", 14, True),
     "click": ("04-Throw", 14, False),
+    "back": ("03-Back", 12, True),      # backing off: the settle after an overshoot (Rolling is not used: its frames sink below the feet line)
     # single poses for long flights (hops); they do not count toward the shared crop/scale below
     "jump": ("06-Jump&Fall/__Bunny1_Jump_*.png", 1, False),
     "fall": ("06-Jump&Fall/__Bunny1_Fall_*.png", 1, False),
@@ -55,10 +56,10 @@ def shrink(im, box, scale):
 
 def snap(cells):
     """Quantise every cell against one palette built from all of them."""
-    w, n = cells[0].width, len(cells)
-    mont = Image.new("RGB", (w, CELL_H * n))
+    w, n = max(c.width for c in cells), len(cells)
+    mont = Image.new("RGB", (w, CELL_H * 2 * n))
     for i, c in enumerate(cells):
-        mont.paste(c.convert("RGB"), (0, i * CELL_H))
+        mont.paste(c.convert("RGB"), (0, i * CELL_H * 2))
     pal = mont.quantize(PALETTE, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     out = []
     for c in cells:
@@ -102,7 +103,11 @@ def main(src, preview=None):
     scale = CELL_H / (box[3] - box[1])  # one scale for every state, so the bunny never changes size
     os.makedirs(OUT, exist_ok=True)
     manifest, sheets = {}, []
-    cells_by = {s: [shrink(im, box, scale) for im in frames[s]] for s in STATES}
+    def state_box(st):  # same height and feet line as the core crop, widened where a pose (rolling) sticks out sideways
+        bs = [im.getbbox() for im in frames[st]]
+        return (min(box[0], *(b[0] for b in bs)), box[1], max(box[2], *(b[2] for b in bs)), box[3])
+
+    cells_by = {s: [shrink(im, state_box(s), scale) for im in frames[s]] for s in STATES}
     flat = snap([c for cs in cells_by.values() for c in cs])
     k = 0
     for s, (_, fps, loop) in STATES.items():

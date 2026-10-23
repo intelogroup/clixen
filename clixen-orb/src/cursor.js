@@ -27,6 +27,7 @@ const clamp01 = (x) => Math.max(0, Math.min(1, x));
 // seconds: fly, press, hold
 const T_FLY = 0.75, T_PRESS = 0.25, T_HOLD = 0.45;
 const T_TOTAL = T_FLY + T_PRESS + T_HOLD;
+const T_WIND = 0.14; // crouch before launch
 const PARK_S = 30, FADE_S = 0.8; // idle time before the parked cursor fades
 
 // The bunny that rides beside the arrow. null until the strips load, and stays null if they fail:
@@ -34,11 +35,15 @@ const PARK_S = 30, FADE_S = 0.8; // idle time before the parked cursor fades
 let sprites = null;
 loadSprites().then((s) => { sprites = s; }).catch((e) => console.warn("cursor sprites unavailable:", e));
 const SPRITE_PX = 3; // device pixels per sprite pixel (integer keeps the art crisp)
-let pose = { name: "idle", t0: 0, flip: false };
-function setPose(name, flip = pose.flip) { if (pose.name !== name || pose.flip !== flip) pose = { name, t0: performance.now() / 1000, flip }; }
+let pose = { name: "idle", t0: 0, flip: false, loop: false };
+// `loop` forces a one-shot strip (click) to repeat, for typing.
+function setPose(name, flip = pose.flip, loop = false) {
+  if (pose.name !== name || pose.flip !== flip || pose.loop !== loop) pose = { name, t0: performance.now() / 1000, flip, loop };
+}
+const poseDef = () => { const sp = sprites && sprites[pose.name]; return sp && pose.loop ? { ...sp, loop: true } : sp; };
 
 // Per-frame motion of the bunny, set by tick(): lift = px above the ground, sy = squash on landing.
-const motion = { lift: 0, sy: 1 };
+const motion = { lift: 0, sy: 1, lean: 0 };
 let dust = []; // pixel puffs at the feet: { x, y, vx, vy, t0 }
 let hopN = -1, lastPuff = 0;
 const DUST_S = 0.4;
@@ -60,7 +65,7 @@ function drawDust() {
 }
 
 function bunny(x, y, alpha) {
-  const sp = sprites && sprites[pose.name];
+  const sp = poseDef();
   if (!sp) return;
   const dpr = window.devicePixelRatio || 1;
   const k = SPRITE_PX / dpr;
@@ -78,7 +83,7 @@ function bunny(x, y, alpha) {
     ctx.fill();
     ctx.restore();
   }
-  drawFrame(ctx, sp, f, fx, fy - motion.lift, SPRITE_PX, dpr, pose.flip, alpha, 1, motion.sy);
+  drawFrame(ctx, sp, f, fx, fy - motion.lift, SPRITE_PX, dpr, pose.flip, alpha, 1, motion.sy, motion.lean);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = `rgb(${AMBER})`;
@@ -92,7 +97,7 @@ let fly = null; // { from, to, click, t0 }
 let park = null; // [x, y] where the cursor last clicked
 let parkTimer = null;
 let trail = [];
-let typing = null; // { text, per, t0 } while the typing hand is shown
+let typing = null; // { text, per, t0 } while the bunny's typing keyboard is shown
 let scrolling = null; // { dir, dur, t0 } while the scroll gesture is shown
 
 let thinking = false; // the orb's model is working: the parked bunny shows the thought dots
@@ -107,7 +112,7 @@ function drawPark(alpha = 1) {
 
 // Keeps the parked bunny animating (idle / thinking) by redrawing only when its frame changes.
 function parkLoop() {
-  const sp = sprites && sprites[pose.name];
+  const sp = poseDef();
   if (!park || fly || typing || scrolling || fading || !sp) { looping = false; return; }
   const f = frameAt(sp, performance.now() / 1000 - pose.t0);
   if (f !== loopFrame) { loopFrame = f; ctx.clearRect(0, 0, W, H); arrow(park[0], park[1], 1.2, 1); }
@@ -120,8 +125,8 @@ listen("orb-mode", (ev) => {
   if (!fly && !typing && !scrolling) { restPose(); if (park) drawPark(); }
 });
 
-// Typing: a small hand taps four keys under the parked cursor while a bubble fills in the
-// text, one character per `per` seconds, the same pace the keystrokes are sent at.
+// Typing: the bunny taps a tiny keyboard in front of it while a bubble fills in the text,
+// one character per `per` seconds, the same pace the keystrokes are sent at.
 const T_TYPE_TAIL = 0.5;
 let pending = null; // a typing/scroll gesture that arrived while the cursor was still flying in
 listen("cursor-type", (ev) => {
@@ -133,6 +138,7 @@ function startType({ text, per }) {
   if (!park) park = [W / 2, H / 2]; // no earlier click: type from the middle of the screen
   clearTimeout(parkTimer);
   typing = { text: String(text || ""), per: Math.max(0.004, Number(per) || 0.04), t0: performance.now() / 1000 };
+  setPose("click", pose.flip, true); // the bunny taps along with the keys
   requestAnimationFrame(typeTick);
 }
 
@@ -146,35 +152,36 @@ function roundRect(x, y, w, h, r) {
   ctx.closePath();
 }
 
-function hand(x, y, t, alpha) {
-  // x,y = cursor tip. Hand sits just below-right; fingers alternate down on a row of keys.
+function keyboard(x, y, i, alpha) {
+  // x,y = click point. A tiny 4-key board stands on the same ground line as the bunny's feet,
+  // just in front of its front paw; the key being tapped dips and lights up amber, showing
+  // the character it just pressed.
+  const KEYS = 4, KW = 11, KH = 6, GAP = 1.5;
+  const k = SPRITE_PX / (window.devicePixelRatio || 1);
+  const kx = x + 3, ky = y + 12 * k - KH; // bottom of the keys on the bunny's feet line
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.translate(x + 16, y + 26);
-  ctx.shadowColor = `rgba(${AMBER},0.7)`;
-  ctx.shadowBlur = 10;
-  roundRect(-6, -24, 52, 20, 7); // back of the hand
-  ctx.fillStyle = "#fff";
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.lineWidth = 1.3;
-  ctx.strokeStyle = "rgba(20,20,30,0.85)";
-  ctx.stroke();
-  for (let i = 0; i < 4; i++) {
-    const tap = Math.max(0, Math.sin(t * 22 + i * 1.9)); // each finger taps on its own phase
-    const fx = i * 12.5 - 1, fy = -6 + tap * 7;
-    roundRect(fx, fy, 10, 18, 5); // finger
-    ctx.fillStyle = "#fff";
+  ctx.font = '700 8px ui-monospace, "SF Mono", Menlo, monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (let j = 0; j < KEYS; j++) {
+    const down = j === i % KEYS;
+    const bx = kx + j * (KW + GAP);
+    roundRect(bx, ky + (down ? 1.5 : 0), KW, KH, 2);
+    ctx.fillStyle = down ? `rgba(${AMBER},0.95)` : "rgba(28,28,42,0.92)";
     ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = down ? "rgba(90,50,10,0.9)" : "rgba(255,255,255,0.28)";
     ctx.stroke();
-    roundRect(fx - 0.5, 18 + 5, 11, 5, 2); // key under it
-    ctx.fillStyle = tap > 0.6 ? `rgba(${AMBER},0.95)` : "rgba(40,40,60,0.9)";
-    ctx.fill();
+    if (down && i < typing.text.length) { // label the tapped key with its own character
+      ctx.fillStyle = "rgba(30,18,6,0.95)";
+      ctx.fillText(typing.text[i], bx + KW / 2, ky + 1.5 + KH / 2);
+    }
   }
   ctx.restore();
 }
 
-function bubble(x, y, text, caret, alpha) {
+function bubble(x, y, text, caret, alpha, progress) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.font = '600 13px ui-monospace, "SF Mono", Menlo, monospace';
@@ -198,6 +205,12 @@ function bubble(x, y, text, caret, alpha) {
     ctx.fillStyle = `rgba(${AMBER},1)`;
     ctx.fillRect(cx, by + 7, 2, 14);
   }
+  if (progress != null) { // amber fill bar along the bubble's bottom edge
+    ctx.fillStyle = `rgba(${AMBER},0.35)`;
+    ctx.fillRect(bx + 1.5, by + 26 - 2.5, w - 3, 1);
+    ctx.fillStyle = `rgba(${AMBER},1)`;
+    ctx.fillRect(bx + 1.5, by + 26 - 2.5, (w - 3) * clamp01(progress), 1);
+  }
   ctx.restore();
 }
 
@@ -207,18 +220,20 @@ function typeTick() {
   const full = typing.text.length * typing.per;
   if (t >= full + T_TYPE_TAIL) {
     typing = null;
+    restPose();
     drawPark();
     parkTimer = setTimeout(fadePark, PARK_S * 1000);
     return;
   }
   const n = Math.min(typing.text.length, Math.floor(t / typing.per));
   const typingNow = t < full;
-  const out = clamp01((t - full) / T_TYPE_TAIL); // bubble and hand fade out after the last key
+  const out = clamp01((t - full) / T_TYPE_TAIL); // bubble and board fade out after the last key
   ctx.clearRect(0, 0, W, H);
+  setPose("idle");
   arrow(park[0], park[1], 1.2, 1);
   const a = 1 - out;
-  hand(park[0], park[1], typingNow ? t : full, a);
-  bubble(park[0], park[1], typing.text.slice(0, n), typingNow ? true : Math.floor(t * 3) % 2 === 0, a);
+  keyboard(park[0], park[1], n, a);
+  bubble(park[0], park[1], typing.text.slice(0, n), typingNow ? true : Math.floor(t * 3) % 2 === 0, a, n / typing.text.length);
   requestAnimationFrame(typeTick);
 }
 
@@ -234,6 +249,8 @@ listen("cursor-scroll", (ev) => {
 function startScroll({ dir, dur }) {
   if (!park) park = [W / 2, H / 2];
   clearTimeout(parkTimer);
+  setPose("move", pose.flip, true); // jogs in place while the page moves
+  motion.lean = 0;
   scrolling = { dir: SCROLL_VEC[dir] ? dir : "up", dur: Math.max(0.2, Number(dur) || 0.7), t0: performance.now() / 1000 };
   requestAnimationFrame(scrollTick);
 }
@@ -242,6 +259,7 @@ function scrollHand(x, y, k, dir, alpha) {
   // k 0..1 = progress through the gesture. The hand rides an eased sweep along `dir`.
   const [vx, vy] = SCROLL_VEC[dir];
   const sweep = (k * k * (3 - 2 * k) - 0.5) * 70;
+  if (!sprites) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(x + 22 + vx * sweep, y + 30 + vy * sweep);
@@ -263,6 +281,7 @@ function scrollHand(x, y, k, dir, alpha) {
     ctx.stroke();
   }
   ctx.restore();
+  }
   // chevrons streaming the way the page moves
   ctx.save();
   ctx.translate(x + 22, y + 30);
@@ -291,6 +310,7 @@ function scrollTick() {
   const t = performance.now() / 1000 - scrolling.t0;
   if (t >= scrolling.dur + T_SCROLL_TAIL) {
     scrolling = null;
+    restPose();
     drawPark();
     parkTimer = setTimeout(fadePark, PARK_S * 1000);
     return;
@@ -360,13 +380,20 @@ function arrow(x, y, scale, alpha) {
 
 function tick() {
   if (!fly) return;
-  const t = performance.now() / 1000 - fly.t0;
+  const t = performance.now() / 1000 - fly.t0 - T_WIND;
   ctx.clearRect(0, 0, W, H);
+  if (t < 0) { // anticipation: a quick crouch before the launch
+    setPose("idle");
+    motion.lift = 0; motion.sy = 0.86; motion.lean = 0;
+    arrow(fly.from[0], fly.from[1], 1, 1);
+    requestAnimationFrame(tick);
+    return;
+  }
 
   if (t >= (fly.click ? T_TOTAL : T_FLY + 0.05)) { // a no-click glide (before a scroll) lands and frees the cursor at once
     park = fly.to;
     fly = null;
-    motion.lift = 0; motion.sy = 1; dust = [];
+    motion.lift = 0; motion.sy = 1; motion.lean = 0; dust = [];
     restPose();
     drawPark();
     parkTimer = setTimeout(fadePark, PARK_S * 1000);
@@ -388,18 +415,26 @@ function tick() {
       const ph = (g * hops) % 1;
       motion.lift = Math.sin(Math.PI * ph) * Math.min(70, len * 0.1);
       motion.sy = ph < 0.08 || ph > 0.92 ? 0.88 : 1;
+      motion.lean = ph < 0.5 ? 1 : 0;
       setPose(ph < 0.5 ? "jump" : "fall");
       const n = Math.floor(g * hops);
       if (n !== hopN) { if (hopN >= 0) puff(pos, side); hopN = n; } // a puff at each landing
     } else {
       motion.lift = Math.round(Math.sin(t * 44)); // 1 px bob at about 7 Hz
       motion.sy = 1;
+      motion.lean = 2;
       setPose("move");
+      if (g > 0.85) { // lunge a little past the target, then back off onto it
+        const u = (g - 0.85) / 0.15;
+        const dx = fly.to[0] - fly.from[0], dy = fly.to[1] - fly.from[1], d = Math.hypot(dx, dy) || 1;
+        pos = [pos[0] + (dx / d) * 7 * Math.sin(Math.PI * u), pos[1] + (dy / d) * 7 * Math.sin(Math.PI * u)];
+        if (u > 0.5) { setPose("back"); motion.lean = 0; }
+      }
       if (t - lastPuff > 0.09) { puff(pos, side); lastPuff = t; }
     }
   } else if (t < tHold) {
     if (!fly.landed) { fly.landed = true; puff(fly.to, side); } // skid puff on arrival
-    motion.lift = 0;
+    motion.lift = 0; motion.lean = 0;
     motion.sy = t < T_FLY + 0.12 ? 0.88 : 1; // brief squash as it lands
     if (fly.click) setPose("click");
     else setPose("idle");

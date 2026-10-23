@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { frameAt, finished } from "../src/sprites.js";
+import { frameAt, finished, leanOffsets } from "../src/sprites.js";
 
 const loop = { frames: 8, fps: 10, loop: true };
 const once = { frames: 8, fps: 10, loop: false };
@@ -22,4 +22,10 @@ test("one-shot holds its last frame and reports finished", () => {
 
 test("negative time clamps to frame 0", () => {
   assert.equal(frameAt(loop, -1), 0);
+});
+
+test("lean shifts the head most and keeps the feet put", () => {
+  assert.deepEqual(leanOffsets(0), [0, 0, 0, 0]);
+  assert.deepEqual(leanOffsets(3), [3, 2, 1, 0]);
+  assert.equal(leanOffsets(2).at(-1), 0);
 });
