@@ -4,6 +4,7 @@
  * relative to this window's origin (Rust already subtracted it). */
 import { listen, emit } from "@tauri-apps/api/event";
 import { frameAt, loadSprites, drawFrame } from "./sprites.js";
+import { standoff, phaseAt, T_FIRE, T_IMPACT, T_END, MUZZLE_PX, drawBazooka, drawRocket, drawExplosion } from "./shoot.js";
 
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -45,7 +46,7 @@ const poseDef = () => { const sp = sprites && sprites[pose.name]; return sp && p
 // Per-frame motion of the bunny, set by tick(): lift = px above the ground, sy = squash on landing.
 const motion = { lift: 0, sy: 1, lean: 0 };
 let dust = []; // pixel puffs at the feet: { x, y, vx, vy, t0 }
-let hopN = -1, lastPuff = 0;
+let hopN = -1, lastPuff = 0, lastSmoke = 0;
 const DUST_S = 0.4;
 function puff(pos, side) {
   const k = SPRITE_PX / (window.devicePixelRatio || 1);
@@ -59,7 +60,7 @@ function drawDust() {
   dust = dust.filter((d) => now - d.t0 < DUST_S);
   for (const d of dust) {
     const u = (now - d.t0) / DUST_S;
-    ctx.fillStyle = `rgba(255,236,190,${0.9 * (1 - u)})`;
+    ctx.fillStyle = d.c ? `rgba(${d.c},${0.7 * (1 - u)})` : `rgba(255,236,190,${0.9 * (1 - u)})`;
     ctx.fillRect(Math.round(d.x + d.vx * (now - d.t0)), Math.round(d.y + d.vy * (now - d.t0)), 3, 3);
   }
 }
@@ -336,9 +337,13 @@ function fadePark() {
 }
 
 listen("cursor-fly", (ev) => {
-  const { from, to, click } = ev.payload;
+  const { from, to, click, style } = ev.payload;
   clearTimeout(parkTimer);
   fly = { from: park || from, to, click: click !== false, t0: performance.now() / 1000 };
+  // Bazooka click: the bunny stops short, shoots, and the click lands where the rocket explodes.
+  fly.shoot = fly.click && style === "bazooka" && !!sprites;
+  fly.dest = fly.shoot ? standoff(fly.from, to) : to;
+  lastSmoke = 0;
   setPose("move", to[0] < fly.from[0]); // source frames face right; mirror when flying left
   trail = [];
   dust = []; hopN = -1; lastPuff = 0;
@@ -390,8 +395,8 @@ function tick() {
     return;
   }
 
-  if (t >= (fly.click ? T_TOTAL : T_FLY + 0.05)) { // a no-click glide (before a scroll) lands and frees the cursor at once
-    park = fly.to;
+  if (t >= (fly.shoot ? T_FLY + T_END : fly.click ? T_TOTAL : T_FLY + 0.05)) { // a no-click glide (before a scroll) lands and frees the cursor at once
+    park = fly.dest;
     fly = null;
     motion.lift = 0; motion.sy = 1; motion.lean = 0; dust = [];
     restPose();
@@ -402,14 +407,14 @@ function tick() {
     return;
   }
 
-  let pos, scale = 1, alpha = 1;
+  let pos, scale = 1, alpha = 1, after = null;
   const side = fly.to[0] < fly.from[0] ? -1 : 1;
   const tPress = T_FLY, tHold = T_FLY + T_PRESS;
   if (t < T_FLY) {
     const g = ease(t / T_FLY);
-    pos = arc(fly.from, fly.to, g, 1);
+    pos = arc(fly.from, fly.dest, g, 1);
     scale = 0.7 + 0.5 * g; // grows from orb-cursor size to full size
-    const len = Math.hypot(fly.to[0] - fly.from[0], fly.to[1] - fly.from[1]);
+    const len = Math.hypot(fly.dest[0] - fly.from[0], fly.dest[1] - fly.from[1]);
     const hops = len > 380 ? Math.round(len / 300) : 0; // long flights hop along; short ones run
     if (hops) {
       const ph = (g * hops) % 1;
@@ -426,12 +431,40 @@ function tick() {
       setPose("move");
       if (g > 0.85) { // lunge a little past the target, then back off onto it
         const u = (g - 0.85) / 0.15;
-        const dx = fly.to[0] - fly.from[0], dy = fly.to[1] - fly.from[1], d = Math.hypot(dx, dy) || 1;
+        const dx = fly.dest[0] - fly.from[0], dy = fly.dest[1] - fly.from[1], d = Math.hypot(dx, dy) || 1;
         pos = [pos[0] + (dx / d) * 7 * Math.sin(Math.PI * u), pos[1] + (dy / d) * 7 * Math.sin(Math.PI * u)];
         if (u > 0.5) { setPose("back"); motion.lean = 0; }
       }
       if (t - lastPuff > 0.09) { puff(pos, side); lastPuff = t; }
     }
+  } else if (fly.shoot) {
+    const ts = t - T_FLY, ph = phaseAt(ts);
+    if (!fly.landed) { fly.landed = true; puff(fly.dest, side); }
+    const k = SPRITE_PX / (window.devicePixelRatio || 1);
+    const ang = Math.atan2(fly.to[1] - fly.dest[1], fly.to[0] - fly.dest[0]);
+    const recoil = ts >= T_FIRE && ts < T_FIRE + 0.1 ? 1 - (ts - T_FIRE) / 0.1 : 0; // bunny kicks back as it fires
+    pos = [fly.dest[0] - Math.cos(ang) * 5 * recoil, fly.dest[1] - Math.sin(ang) * 5 * recoil];
+    motion.lift = 0; motion.lean = 0;
+    motion.sy = ts < 0.12 ? 0.88 : 1;
+    setPose(ts >= T_FIRE ? "click" : "idle");
+    const muzzle = [pos[0] + Math.cos(ang) * (MUZZLE_PX - 6) * k, pos[1] + Math.sin(ang) * (MUZZLE_PX - 6) * k];
+    after = () => {
+      const gone = ph.name === "boom" ? clamp01((ph.u - 0.25) / 0.35) : 0; // bazooka slips away once it has fired
+      drawBazooka(ctx, pos[0], pos[1], ang, k, ph.name === "draw" ? ph.u : 1, 1 - gone);
+      if (ts >= T_FIRE && ts < T_FIRE + 0.08) { // muzzle flash
+        ctx.save(); ctx.fillStyle = "#fff0b0"; ctx.beginPath(); ctx.arc(muzzle[0], muzzle[1], 7, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      }
+      if (ph.name === "rocket") {
+        const e = Math.pow(ph.u, 1.6), rx = muzzle[0] + (fly.to[0] - muzzle[0]) * e, ry = muzzle[1] + (fly.to[1] - muzzle[1]) * e;
+        if (ts - lastSmoke > 0.03) { dust.push({ x: rx, y: ry, vx: 0, vy: -4, t0: performance.now() / 1000, c: "190,190,200" }); lastSmoke = ts; }
+        drawRocket(ctx, rx, ry, ang, k);
+      } else if (ph.name === "boom") {
+        drawExplosion(ctx, fly.to[0], fly.to[1], ph.u, k);
+        const rip = clamp01(ph.u * 1.4);
+        ctx.save(); ctx.globalAlpha = (1 - rip) * 0.9; ctx.strokeStyle = `rgba(${AMBER},1)`; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(fly.to[0], fly.to[1], 8 + rip * 46, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
+    };
   } else if (t < tHold) {
     if (!fly.landed) { fly.landed = true; puff(fly.to, side); } // skid puff on arrival
     motion.lift = 0; motion.lean = 0;
@@ -484,5 +517,6 @@ function tick() {
 
   drawDust();
   arrow(pos[0], pos[1], scale, alpha);
+  if (after) after();
   requestAnimationFrame(tick);
 }
