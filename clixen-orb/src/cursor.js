@@ -44,7 +44,7 @@ function bunny(x, y, alpha) {
   const k = SPRITE_PX / dpr;
   const side = pose.flip ? -1 : 1; // the bunny stands on the side the cursor came from
   const f = frameAt(sp, performance.now() / 1000 - pose.t0);
-  drawFrame(ctx, sp, f, x + side * (6 + (sp.w * k) / 2), y + sp.h * k * 0.6, SPRITE_PX, dpr, pose.flip, alpha);
+  drawFrame(ctx, sp, f, x + side * (6 + (sprites.idle.w * k) / 2), y + sprites.idle.h * k * 0.6, SPRITE_PX, dpr, pose.flip, alpha);
 }
 
 let fly = null; // { from, to, click, t0 }

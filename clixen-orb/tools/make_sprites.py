@@ -10,6 +10,7 @@ blue shirt is shifted to the orb's amber. Facing: the source faces right; the cu
 import colorsys
 import glob
 import json
+import math
 import os
 import sys
 
@@ -23,6 +24,7 @@ STATES = {
     "move": ("02-Run", 14, True),
     "click": ("04-Throw", 14, False),
 }
+HOP = 6            # the click strip is this many px taller: the bunny hops on the press
 THINK_PAD = 8      # empty columns each side of the think cells; the thought dots sit in the right one
 OUT = os.path.join(os.path.dirname(__file__), "..", "public", "sprites")
 
@@ -62,6 +64,16 @@ def snap(cells):
     return out
 
 
+def hopping(cells):
+    """The throw frames with the bunny rising and landing over the strip, so a press reads at small size."""
+    n, out = len(cells), []
+    for i, c in enumerate(cells):
+        cell = Image.new("RGBA", (c.width, CELL_H + HOP), (0, 0, 0, 0))
+        cell.paste(c, (0, HOP - round(HOP * math.sin(math.pi * i / (n - 1)))))
+        out.append(cell)
+    return out
+
+
 def thinking(idle):
     """The idle cycle, padded, with a thought bubble of 1-3 amber dots filling up above the head."""
     n, out = len(idle), []
@@ -94,12 +106,14 @@ def main(src, preview=None):
         k += len(cells)
         if s == "idle":
             idle = cells
-        w = cells[0].width
-        strip = Image.new("RGBA", (w * len(cells), CELL_H), (0, 0, 0, 0))
+        if s == "click":
+            cells = hopping(cells)
+        w, h = cells[0].size
+        strip = Image.new("RGBA", (w * len(cells), h), (0, 0, 0, 0))
         for i, c in enumerate(cells):
             strip.paste(c, (i * w, 0))
         strip.save(os.path.join(OUT, f"{s}.png"), optimize=True)
-        manifest[s] = {"file": f"{s}.png", "frames": len(cells), "w": w, "h": CELL_H, "fps": fps, "loop": loop}
+        manifest[s] = {"file": f"{s}.png", "frames": len(cells), "w": w, "h": h, "fps": fps, "loop": loop}
         sheets.append(strip)
     cells = thinking(idle)
     strip = Image.new("RGBA", (cells[0].width * len(cells), CELL_H), (0, 0, 0, 0))
