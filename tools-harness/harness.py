@@ -575,7 +575,13 @@ from _harness_dispatch_render import _render_dispatch_result  # noqa: F401
 def run(*args, **kwargs):
     """Public entry: stamp CURRENT_RUN_ID correlation for the whole call, then
     delegate. try/finally guarantees the ContextVar resets on every exit
-    (returns and raises) — no run_id leaks into subsequent sequential calls."""
+    (returns and raises) — no run_id leaks into subsequent sequential calls.
+
+    `turn_id` is accepted because voice callers tag their turns with it, but it
+    is not used for scheduling: turn ordering and barge-in live in
+    `voice.agent`, which cancels the running turn instead of queueing a stale
+    one behind it.
+    """
     run_id = kwargs.get("run_id") or uuid.uuid4().hex[:8]
     from log_config import CURRENT_RUN_ID
     token = CURRENT_RUN_ID.set(run_id)
@@ -587,6 +593,9 @@ def run(*args, **kwargs):
     # pure local/offline ollama reply).
     served_token = cloud_client.LAST_SERVED_MODEL.set("")
     try:
+        # Strip turn_id before delegating — _run_impl has no use for it and
+        # doesn't declare the parameter (would raise TypeError).
+        kwargs.pop("turn_id", None)
         return _run_impl(*args, **kwargs)
     finally:
         CURRENT_RUN_ID.reset(token)
