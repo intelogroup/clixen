@@ -231,16 +231,7 @@ function drawOrb(cx, cy) {
     : base;
   const a = state.amp;
 
-  /* Outer bloom — a soft halo that swells with the envelope. */
-  const bloomR = ORB_R * (1.85 + a * 0.55);
-  const bloom = ctx.createRadialGradient(cx, cy, ORB_R * 0.4, cx, cy, bloomR);
-  bloom.addColorStop(0, rgb(pal.mid, 0.32 + a * 0.24));
-  bloom.addColorStop(0.45, rgb(pal.cold, 0.13 + a * 0.11));
-  bloom.addColorStop(1, rgb(pal.cold, 0));
-  ctx.fillStyle = bloom;
-  ctx.beginPath();
-  ctx.arc(cx, cy, bloomR, 0, Math.PI * 2);
-  ctx.fill();
+  /* Outer bloom removed — the bunny sits on a fully transparent background. */
 
   /* Radiating ripples. Their spacing widens with amplitude, which is what
      makes the orb read as "reacting" rather than merely pulsing. */
