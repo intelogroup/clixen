@@ -16,7 +16,7 @@
         "label": "orb",
         "title": "Clixen Orb",
         "width": 150,
-        "height": 150,
+        "height": 180,
         "resizable": false,
         "decorations": false,
         "transparent": true,

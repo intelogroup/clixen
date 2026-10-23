@@ -25,7 +25,7 @@ const statusEl = document.getElementById("status");
 const win = getCurrentWindow();
 
 const ORB_R = 55;      // sphere radius in logical px
-const ORB_CY = 75;     // centre of the 150x150 window
+const ORB_CY = 90;     // centre of the 150x180 window
 const ORB_BREATH = 1;  // breathing scale applied to the idle envelope
 
 let sprites = null;
