@@ -22,5 +22,13 @@
     "h": 40,
     "fps": 14,
     "loop": false
+  },
+  "think": {
+    "file": "think.png",
+    "frames": 10,
+    "w": 44,
+    "h": 40,
+    "fps": 6,
+    "loop": true
   }
 }

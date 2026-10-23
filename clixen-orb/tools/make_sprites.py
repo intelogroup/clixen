@@ -23,6 +23,7 @@ STATES = {
     "move": ("02-Run", 14, True),
     "click": ("04-Throw", 14, False),
 }
+THINK_PAD = 8      # empty columns each side of the think cells; the thought dots sit in the right one
 OUT = os.path.join(os.path.dirname(__file__), "..", "public", "sprites")
 
 
@@ -61,6 +62,21 @@ def snap(cells):
     return out
 
 
+def thinking(idle):
+    """The idle cycle, padded, with a thought bubble of 1-3 amber dots filling up above the head."""
+    n, out = len(idle), []
+    for i, c in enumerate(idle):
+        cell = Image.new("RGBA", (c.width + 2 * THINK_PAD, CELL_H), (0, 0, 0, 0))
+        cell.paste(c, (THINK_PAD, 0))
+        px = cell.load()
+        for d in range(1 + i * 3 // n):
+            for dx in range(2):
+                for dy in range(2):
+                    px[cell.width - THINK_PAD + d * 3 + dx, 4 + dy] = (255, 178, 70, 255)
+        out.append(cell)
+    return out
+
+
 def main(src, preview=None):
     frames = {s: [Image.open(f).convert("RGBA") for f in sorted(glob.glob(os.path.join(src, "Bunny1", d, "*.png")))]
               for s, (d, _, _) in STATES.items()}
@@ -76,6 +92,8 @@ def main(src, preview=None):
     for s, (_, fps, loop) in STATES.items():
         cells = flat[k:k + len(cells_by[s])]
         k += len(cells)
+        if s == "idle":
+            idle = cells
         w = cells[0].width
         strip = Image.new("RGBA", (w * len(cells), CELL_H), (0, 0, 0, 0))
         for i, c in enumerate(cells):
@@ -83,6 +101,13 @@ def main(src, preview=None):
         strip.save(os.path.join(OUT, f"{s}.png"), optimize=True)
         manifest[s] = {"file": f"{s}.png", "frames": len(cells), "w": w, "h": CELL_H, "fps": fps, "loop": loop}
         sheets.append(strip)
+    cells = thinking(idle)
+    strip = Image.new("RGBA", (cells[0].width * len(cells), CELL_H), (0, 0, 0, 0))
+    for i, c in enumerate(cells):
+        strip.paste(c, (i * cells[0].width, 0))
+    strip.save(os.path.join(OUT, "think.png"), optimize=True)
+    manifest["think"] = {"file": "think.png", "frames": len(cells), "w": cells[0].width, "h": CELL_H, "fps": 6, "loop": True}
+    sheets.append(strip)
     with open(os.path.join(OUT, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
     print(json.dumps(manifest))
