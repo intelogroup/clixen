@@ -120,3 +120,25 @@ Working end to end: hold to talk → transcribe → answer → speak, with the
 caption strip tracking the exchange. Typed input goes through the caption
 window. Not yet done: the orb is not code-signed or packaged for
 distribution, and there is no installer or launchd plist.
+
+
+## Shipping build: lifecycle
+
+`npx tauri build --features lifecycle --bundles app` turns on first-run setup and the encrypted vault
+(off in the dev orb; `CLIXEN_LIFECYCLE=1|0` overrides at runtime).
+
+Flow: onboarding consent -> Ollama check -> model pull (progress streams) -> AES-256 sparse-image vault
+(passphrase in the Keychain, service `clixen.vault.app`) -> mount -> workspace init -> orb shown.
+The vault locks on idle (default 15 min, Settings, ctrl+shift+s), on wake from sleep, on quit and on
+SIGTERM. A busy vault stays mounted ("vault still busy"), it is never force-detached. Uninstall
+(Settings) needs the typed word DELETE and removes the vault, its Keychain entry and the state file.
+
+Test switches (never touch the real vault): `CLIXEN_DATA_DIR`, `CLIXEN_VAULT_SERVICE`,
+`CLIXEN_OLLAMA_PORT`, `CLIXEN_MODELS`, `CLIXEN_SIDECAR_CMD` (JSON argv), `CLIXEN_SIDECAR_PORT`.
+
+Known limits: App Sandbox is NOT enabled (the orb shells out to hdiutil, security, osascript and
+drives other apps, which the sandbox forbids); Hardened Runtime is on with two entitlements
+(microphone, Apple Events). The sleep lock fires on wake (the process is frozen during sleep), so a
+Mac that sleeps with the vault mounted is locked the moment it wakes, before any UI is usable.
+Activity from other channels (Telegram etc.) does not reset the idle timer; only orb use does.
+Signing/notarization needs a Developer ID certificate (only an Apple Development one is installed).

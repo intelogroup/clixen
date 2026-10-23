@@ -52,3 +52,16 @@ fn every_granted_command_permission_exists() {
         }
     }
 }
+
+#[test]
+fn hardened_runtime_on_and_entitlements_are_the_minimum() {
+    let conf = json("tauri.conf.json");
+    assert_eq!(conf["bundle"]["macOS"]["hardenedRuntime"], true);
+    let plist = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Entitlements.plist")).unwrap();
+    let keys: Vec<&str> = plist.split("<key>").skip(1).filter_map(|k| k.split("</key>").next()).collect();
+    let allowed = ["com.apple.security.device.audio-input", "com.apple.security.automation.apple-events"];
+    assert!(keys.iter().all(|k| allowed.contains(k)), "unexpected entitlement in {keys:?}");
+    for banned in ["files.all", "allow-jit", "disable-library-validation", "allow-unsigned-executable-memory"] {
+        assert!(!plist.contains(banned), "{banned} must not be granted");
+    }
+}
