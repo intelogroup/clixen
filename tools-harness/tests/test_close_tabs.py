@@ -52,3 +52,43 @@ def test_side_panel_and_extensions_are_reported():
            {"role": "PopUpButton", "label": "Extensions"}, {"role": "Button", "label": "Close Side Panel"}]
     assert ax_context.toolbar_extensions(els) == ["Monica", "Thunderbit"]
     assert ax_context.side_panel_open(els) and not ax_context.side_panel_open(els[:3])
+
+
+def _stub_ax(monkeypatch, els):
+    from tools import ax_context
+
+    monkeypatch.setattr(ax_context, "_target_app", lambda app="": (1, "Google Chrome"))
+    monkeypatch.setattr(ax_context, "elements", lambda app, label, offscreen=False: ("Google Chrome", "t", els))
+    monkeypatch.setattr(ax_context, "_ax_app", lambda pid: None)
+    monkeypatch.setattr(ax_context, "_get", lambda el, attr: None)
+    monkeypatch.setattr(ax_context, "_visible_centre", lambda el, rect, strict=False: (el, 0))
+    return ax_context
+
+
+def test_find_element_prefers_the_page_over_browser_chrome(monkeypatch):
+    ax = _stub_ax(monkeypatch, [
+        {"role": "RadioButton", "label": "Node.js - Download Node.js - Memory usage - 200 MB", "el": "tab", "web": False},
+        {"role": "Link", "label": "Download", "el": "page", "web": True},
+    ])
+    assert ax.find_element("Download") == ("page", 0)
+
+
+def test_find_element_still_reaches_browser_chrome_when_the_page_has_no_match(monkeypatch):
+    ax = _stub_ax(monkeypatch, [{"role": "RadioButton", "label": "Gmail - Inbox", "el": "tab", "web": False}])
+    assert ax.find_element("Gmail") == ("tab", 0)
+
+
+def test_click_text_opens_a_folded_menu_to_reach_the_target(monkeypatch):
+    clicks = []
+    state = {"open": False}
+    monkeypatch.setattr(screen_act, "_guard", lambda typing=False: None)
+    monkeypatch.setattr(screen_act, "labels_at", lambda x, y: ["download"])
+    monkeypatch.setattr(screen_act, "_click", lambda x, y: (clicks.append((x, y)), state.update(open=not state["open"])))
+    monkeypatch.setattr(screen_act, "window_title", lambda app="": "t")
+    monkeypatch.setattr(screen_act, "settle_title", lambda before, app="": before)
+    monkeypatch.setattr(screen_act, "elements", lambda app="": ("c", "t", [{"role": "Button", "label": "Toggle navigation menu", "web": True}]))
+    monkeypatch.setattr(screen_act, "find_element", lambda label, app="": (5, 5) if label.startswith("Toggle") else ((9, 9) if state["open"] else None))
+    monkeypatch.setattr(screen_act, "_ocr_boxes", lambda accurate=False: [])
+    monkeypatch.setattr(screen_act, "time", type("T", (), {"sleep": staticmethod(lambda s: None), "monotonic": staticmethod(lambda: 0.0)}))
+    out = screen_act.click_text("Download")
+    assert "opened the 'Toggle navigation menu' menu first" in out and clicks == [(5, 5), (9, 9)]

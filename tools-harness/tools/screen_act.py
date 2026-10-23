@@ -13,12 +13,13 @@ apps / private windows; types only into whatever has focus after a click.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tempfile
 import time
 
 from tools import orb_cursor
-from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, activate_app, find_element, focused_field, front_url, labels_at, popovers, settle_title, tab_count, window_title
+from tools.ax_context import _NOT_EDITABLE, AmbiguousTarget, activate_app, elements, find_element, focused_field, front_url, labels_at, popovers, settle_title, tab_count, window_title
 from tools.screen_watch import _ensure_ocr_bin, _front_window, _screen_locked, is_blocked
 
 CLICK_TEXT_SCHEMA = {
@@ -248,6 +249,34 @@ def close_side_panel(app: str = "") -> bool:
     return True
 
 
+def _through_folded_menu(app: str, text: str):
+    """A narrow window folds a site's nav into a hamburger: open the menu-like control, look for `text` again,
+    and close the menu if it was not there. Returns (point, menu label) or (None, "")."""
+    try:
+        toggles = sorted({e["label"] for e in elements(app)[2] if e["web"] and e["role"] in ("Button", "CheckBox", "PopUpButton", "Link")
+                          and re.search(r"\bmenu\b|navigation", e["label"], re.I)})
+    except Exception:
+        return None, ""
+    for lab in toggles[:2]:
+        try:
+            pt = find_element(lab)
+        except Exception:
+            continue
+        if pt is None:
+            continue
+        _click(*pt)
+        time.sleep(0.7)
+        try:
+            hit = find_element(text)
+        except Exception:
+            hit = None
+        if hit is not None:
+            return hit, lab
+        _click(*pt)  # not in there: put the menu back
+        time.sleep(0.4)
+    return None, ""
+
+
 def click_text(text: str, app: str = "") -> str:
     if app:
         if not activate_app(app):
@@ -281,15 +310,19 @@ def click_text(text: str, app: str = "") -> str:
                 hit = None
             if hit is not None and not any(want in lab.lower() for lab in labels_at(*hit)):
                 return f"Not clicked: the point for '{text}' now holds '{(labels_at(*hit) or ['something else'])[0]}' (the page moved). Read the screen again and retry."
+    via = "accessibility" if hit is not None else "OCR"
     hit = hit or find_text(_ocr_boxes(), text) or find_text(_ocr_boxes(accurate=True), text)
     if hit is None:
-        return f"Could not find '{text}' on screen."
+        hit, folded = _through_folded_menu(app, text)
+        if hit is None:
+            return f"Could not find '{text}' on screen."
+        via, note = "accessibility", note + f" (opened the '{folded}' menu first)"
     try:
         before = window_title(app)
     except Exception:
         before = ""
     _click(*hit)
-    where = f"Clicked '{text}' at ({hit[0]:.0f}, {hit[1]:.0f}){note}"
+    where = f"Clicked '{text}' at ({hit[0]:.0f}, {hit[1]:.0f}) via {via}{note}"
     try:
         after = settle_title(before, app)
     except Exception:

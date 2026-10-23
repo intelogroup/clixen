@@ -141,7 +141,7 @@ def _window_rect(win) -> tuple[float, float, float, float] | None:
 def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[str, str, list[dict]]:
     """(app name, window title, on-screen actionable elements) of the target app's focused
     window. Each element: {role, label, x, y, w, h, el} with x,y the centre. `offscreen`
-    also keeps elements scrolled out of view (for scroll_into_view)."""
+    also keeps elements scrolled out of view (for scroll_into_view). `web` marks entries inside the page's content (not the browser's own toolbar, tab strip or extensions)."""
     pid, name = _target_app(app)
     if pid is None:
         return "", "", []
@@ -156,12 +156,12 @@ def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[s
     out: list[dict] = []
     seen: set[tuple] = set()
     deadline = time.monotonic() + _DEADLINE_S
-    stack = [win]
+    stack = [(win, False)]  # (element, inside the page's web area)
     n = 0
     # Chromium may still be building its tree on the very first call: retry once if the walk is tiny.
     for attempt in range(2):
         while stack and n < _MAX_NODES and time.monotonic() < deadline:
-            el = stack.pop()
+            el, in_web = stack.pop()
             n += 1
             role = _get(el, "AXRole")
             if role in _ACTIONABLE:
@@ -174,14 +174,15 @@ def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[s
                     key = (role, label, round(cx), round(cy))
                     if (inside or offscreen) and key not in seen and (label or role in ("AXTextField", "AXTextArea", "AXSearchField")) and (not q or q in label.lower()):
                         seen.add(key)
-                        out.append({"role": role[2:], "label": label, "x": round(cx), "y": round(cy), "w": round(s[0]), "h": round(s[1]), "el": el})
+                        out.append({"role": role[2:], "label": label, "x": round(cx), "y": round(cy), "w": round(s[0]), "h": round(s[1]), "el": el, "web": in_web})
             kids = _get(el, "AXChildren")
             if kids:
-                stack.extend(reversed(kids))  # keep document order
+                in_web = in_web or role == "AXWebArea"
+                stack.extend((k, in_web) for k in reversed(kids))  # keep document order
         if n > 200 or attempt:
             break
         time.sleep(1.2)
-        stack, n = [win], 0
+        stack, n = [(win, False)], 0
     return name, title, out
 
 
@@ -255,7 +256,6 @@ def tab_count(pid: int) -> int:
     return n
 
 
-def settle_title(before: str, app: str = "", limit: float = 3.0, quiet: float = 0.4) -> str:
 def tab_elements(app: str = "") -> list:
     """Tab-strip entries (AX elements) of the target app's focused window, left to right."""
     pid, _ = _target_app(app)
@@ -281,6 +281,7 @@ def select_tab(tab) -> bool:
     return AXUIElementPerformAction(tab, "AXPress") == 0
 
 
+def settle_title(before: str, app: str = "", limit: float = 3.0, quiet: float = 0.4) -> str:
     """Poll the window title until it differs from `before` and holds still for `quiet`
     seconds, or `limit` runs out. Returns the last title seen."""
     end = time.monotonic() + limit
@@ -390,6 +391,7 @@ def find_element(label: str, app: str = "") -> tuple[float, float] | None:
     Scrolls it into view first and aims at its visible part."""
     pid, _ = _target_app(app)
     _, _, els = elements(app, label, offscreen=True)
+    els = [e for e in els if e["web"]] or els  # a toolbar button or tab titled like the target is not the page link; browser chrome only when the page has no match
     w = label.strip().lower()
     app_el = _ax_app(pid)
     win = _get(app_el, "AXFocusedWindow") or _get(app_el, "AXMainWindow")
