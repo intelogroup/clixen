@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-cancel"
+description = "Enables the orb_cancel command without any pre-configured scope."
+commands.allow = ["orb_cancel"]
+
+[[permission]]
+identifier = "deny-orb-cancel"
+description = "Denies the orb_cancel command without any pre-configured scope."
+commands.deny = ["orb_cancel"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-debug"
+description = "Enables the orb_debug command without any pre-configured scope."
+commands.allow = ["orb_debug"]
+
+[[permission]]
+identifier = "deny-orb-debug"
+description = "Denies the orb_debug command without any pre-configured scope."
+commands.deny = ["orb_debug"]
