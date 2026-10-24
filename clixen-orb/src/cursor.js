@@ -140,6 +140,15 @@ function oneshot(name) {
 listen("cursor-fail", () => oneshot("fail")); // a tool errored: startled pose at the park point
 listen("cursor-dead", () => { oneshot("dead"); }); // the action chain was aborted: a dramatic flop listens
 
+// The turn is over: retire the parked bunny instead of leaving it on screen for
+// another 30s. It lives on the click-through overlay, so a lingering one is a
+// bunny the user can see but never click — easy to mistake for the orb itself.
+listen("cursor-park-fade", () => {
+  if (fly || typing || scrolling || fading || !park) return; // still working: leave it
+  clearTimeout(parkTimer);
+  fadePark();
+});
+
 const restPose = () => setPose(thinking ? "think" : "idle");
 listen("orb-mode", (ev) => {
   thinking = ev.payload === "thinking";

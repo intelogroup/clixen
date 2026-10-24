@@ -70,6 +70,10 @@ const PALETTES = {
 function setMode(mode) {
   state.mode = mode;
   emit("orb-mode", mode).catch(() => {}); // the cursor overlay shows its bunny thinking while the model works
+  // A finished turn must also retire the overlay's parked bunny: it is drawn on
+  // the click-through cursor window, so an idle one is a bunny you can see but
+  // never click.
+  if (mode === "idle") emit("cursor-park-fade").catch(() => {});
   if (mode === "idle") state.targetAmp = 0;
 }
 
@@ -406,9 +410,33 @@ let rafId = 0;
 
 function ensureAudioCtx() {
   if (!audioCtx) audioCtx = new AudioContext();
-  if (audioCtx.state === "suspended") audioCtx.resume();
   return audioCtx;
 }
+
+// WebKit only lets an AudioContext leave "suspended" inside a user gesture, and
+// it grants that most reliably when the context is CONSTRUCTED synchronously in
+// the handler. TTS frames arrive later over SSE (no gesture of their own), so
+// unlock the output context on the press that opens the mic — otherwise decode
+// succeeds and `start()` runs silently on a suspended context.
+async function unlockAudio() {
+  const c = ensureAudioCtx();
+  if (c.state === "suspended") {
+    try {
+      await c.resume();
+    } catch (e) {
+      dbg(`audio unlock failed: ${e && e.message ? e.message : e}`);
+    }
+  }
+  dbg(`audio unlocked ctx=${c.state}`);
+}
+function unlockAudioNow() {
+  // Synchronous path: build the context while the gesture is still live, which
+  // is what WebKit's autoplay gate keys off (activation, not the resume call).
+  unlockAudio(); // fire-and-forget; the await below in playWavB64 re-checks
+}
+canvas.addEventListener("pointerdown", unlockAudioNow, { capture: true });
+canvas.addEventListener("touchstart", unlockAudioNow, { capture: true, passive: true });
+window.addEventListener("keydown", unlockAudioNow, { capture: true });
 
 function meterLoop() {
   if (!analyser) return;
@@ -441,6 +469,9 @@ function detachAnalyser() {
 }
 
 let recordedChunks = [];
+// Bumped on every start/stop: a getUserMedia that resolves after the press
+// already ended must not start recording (nor leave the caption stranded).
+let listenSeq = 0;
 let recordGuard = 0;
 
 /**
@@ -458,19 +489,32 @@ async function startListening() {
   // Never record while the orb is talking: the microphone would pick the
   // reply back up and the two would trade sentences forever.
   if (state.mode === "speaking") return;
+  // Opening the mic takes a TCC round-trip; a quick press-and-hold can end
+  // before it returns. Every start/stop bumps this, so a stream that arrives
+  // after the user let go is handed straight back instead of recording into
+  // the void (and leaving the caption stuck on "Listening…").
+  const seq = ++listenSeq;
   setMode("listening");
   say("Listening…", "you", true);
   recordedChunks = [];
 
+  let stream;
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
     });
   } catch (e) {
-    say(`Mic unavailable: ${e.message || e}`, "", false);
-    setMode("idle");
+    if (seq === listenSeq) {
+      say(`Mic unavailable: ${e.message || e}`, "", false);
+      setMode("idle");
+    }
     return;
   }
+  if (seq !== listenSeq) {
+    stream.getTracks().forEach((t) => t.stop());
+    return;
+  }
+  mediaStream = stream;
 
   const c = ensureAudioCtx();
   attachAnalyser(c.createMediaStreamSource(mediaStream));
@@ -489,8 +533,15 @@ async function startListening() {
 }
 
 function stopListening() {
+  listenSeq++;   // any getUserMedia still in flight is stale from here on
   if (!mediaRecorder || mediaRecorder.state === "inactive") {
     teardownMic();
+    // Nothing was recorded (the press ended before the mic opened): put the
+    // orb back to rest instead of leaving "Listening…" waiting for a reply.
+    if (!micOn) {
+      setMode("idle");
+      sayClear();
+    }
     return Promise.resolve();
   }
   // Resolve only once the recorder has fully stopped: while a mic stream is
@@ -575,6 +626,10 @@ let micCtx = null;
 let micStream = null;
 let micSrc = null;
 let micNode = null;
+// Half-duplex gate: while a reply is playing the mic stream stays open but its
+// frames go out as silence. Set from the audio processor, which is the only
+// place that needs to know.
+let micGate = false;
 
 const PCM_RATE = 16000;
 const FRAME_SAMPLES = 480;   // 30 ms at 16 kHz — the session's frame size
@@ -591,22 +646,87 @@ async function startContinuousMic() {
   });
   micCtx = new (window.AudioContext || window.webkitAudioContext)();
   micSrc = micCtx.createMediaStreamSource(micStream);
-  const ratio = micCtx.sampleRate / PCM_RATE;   // almost always 48000/16000 = 3
+
+  // -------------------------------------------------------------------------
+  // Proper 48k -> 16k decimation. The old code picked every 3rd sample with a
+  // drift-prone floating `phase` and NO low-pass filter, so every frequency
+  // above 8 kHz aliased down into the speech band and muddied the signal
+  // (the "Hello can you can you can you" garbling).
+  //
+  // This does it correctly: a windowed-sinc FIR low-pass at 8 kHz (Nyquist of
+  // 16 kHz), then decimate by the integer ratio. The FIR is applied to the
+  // rolling input history via a filter that only ever emits at the downsampled
+  // rate, so no transient folds back.
+  // -------------------------------------------------------------------------
+
+  const ratio = Math.round(micCtx.sampleRate / PCM_RATE); // 3 at 48 kHz
+  const TAPS_PER_RATIO = 16;                              // filter length = 3*16 = 48 taps
+  const NTAPS = ratio * TAPS_PER_RATIO;
+  const cutoff = 1.0 / ratio;                             // 0..1 relative to source Nyquist
+
+  // Precompute a windowed-sinc (Blackman) low-pass kernel, normalised to DC gain 1.
+  const coeffs = new Float64Array(NTAPS);
+  let sum = 0;
+  for (let n = 0; n < NTAPS; n++) {
+    const x = n - (NTAPS - 1) / 2;
+    // sinc(2*cutoff*x) with cutoff in units of pi
+    const sinc = x === 0 ? 2 * cutoff : Math.sin(2 * Math.PI * cutoff * x) / (Math.PI * x);
+    const win = 0.42 - 0.5 * Math.cos((2 * Math.PI * n) / (NTAPS - 1)) + 0.08 * Math.cos((4 * Math.PI * n) / (NTAPS - 1));
+    coeffs[n] = sinc * win;
+    sum += coeffs[n];
+  }
+  for (let n = 0; n < NTAPS; n++) coeffs[n] /= sum; // DC gain 1
+
+  // Rolling input history (ring buffer) for the FIR. `ring` holds the last
+  // NTAPS input samples, newest first (ring[0] is the most recent sample).
+  const ring = new Float64Array(NTAPS);
+  let filled = 0;        // how many valid samples the ring currently holds
+  let sampleCount = 0;   // total input samples consumed (exact, no float drift)
+  let pending = [];      // resampled floats waiting to be framed
+
   const node = micCtx.createScriptProcessor(2048, 1, 1);
-  let phase = 0;
-  let pending = [];
   node.onaudioprocess = (ev) => {
     if (!micOn) return;
     const input = ev.inputBuffer.getChannelData(0);
-    for (let i = 0; i < input.length; i++) {
-      phase += 1;
-      if (phase >= ratio) { phase -= ratio; pending.push(input[i]); }
+    // A reply is on the wire: from here until it ends, the samples we forward are
+    // zeros. Toggling is logged because "the mic went deaf for a second" is
+    // otherwise invisible while debugging.
+    if (audioBusy !== micGate) {
+      micGate = audioBusy;
+      dbg(micGate ? "mic gated — reply playing" : "mic open again");
     }
+
+    for (let i = 0; i < input.length; i++) {
+      // Shift the ring right: newest sample goes to index 0.
+      ring.copyWithin(1, 0, NTAPS - 1);
+      ring[0] = input[i];
+      if (filled < NTAPS) filled++;
+      sampleCount++;
+
+      // Emit one resampled point when the input index hits a decimation
+      // multiple (ratio-step). `sampleCount % ratio === 0` uses an integer
+      // counter, so the 3:1 decimation can never drift.
+      if (filled >= NTAPS && sampleCount % ratio === 0) {
+        // Convolve the FIR: ring[n] holds input[t - n], coeffs[n] weights it.
+        let acc = 0;
+        for (let n = 0; n < NTAPS; n++) {
+          acc += coeffs[n] * ring[n];
+        }
+        pending.push(acc);
+      }
+    }
+
     while (pending.length >= FRAME_SAMPLES) {
       const pcm = new Int16Array(FRAME_SAMPLES);
-      for (let i = 0; i < FRAME_SAMPLES; i++) {
-        const v = Math.max(-1, Math.min(1, pending[i]));
-        pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+      if (micGate) {
+        // Half-duplex: the reply is playing, so send silence. A zero frame keeps
+        // the backend's frame clock running (its VAD can endpoint the utterance)
+        // while making sure the orb never hears itself.
+      } else {
+        for (let i = 0; i < FRAME_SAMPLES; i++) {
+          const v = Math.max(-1, Math.min(1, pending[i]));
+          pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+        }
       }
       pending = pending.slice(FRAME_SAMPLES);
       invoke("orb_feed_audio", { audioB64: b64FromBytes(new Uint8Array(pcm.buffer)) })
@@ -624,6 +744,7 @@ function stopContinuousMic() {
   try { if (micStream) micStream.getTracks().forEach((t) => t.stop()); } catch { /* already gone */ }
   try { if (micCtx) micCtx.close(); } catch { /* already gone */ }
   micNode = micSrc = micStream = micCtx = null;
+  micGate = false;   // a fresh stream starts open
 }
 
 async function toggleMic() {
@@ -662,34 +783,113 @@ let currentTurnId = "";   // tags every event to the voice turn it belongs to
 let botBuffer = "";
 
 /**
- * How many TTS clips are still playing.
- *
- * The backend speaks a reply one sentence at a time, so a single answer can
- * arrive as several audio frames. The strip must stay up — and the orb must
- * stay in its "speaking" palette — until the LAST clip has finished.
+ * TTS clips arrive one per sentence — usually faster than they play. Starting
+ * each on arrival makes neighbouring sentences overlap, which sounds like the
+ * same reply spoken twice. Queue them and play strictly one at a time.
  */
-let pendingAudio = 0;
+let pendingAudio = 0;   // clips queued + currently playing
+let audioQueue = [];
+let audioBusy = false;
+let currentSrc = null;
+let currentEl = null;
+
+function endClip() {
+  pendingAudio = Math.max(0, pendingAudio - 1);
+  if (pendingAudio === 0 && state.mode === "speaking") {
+    detachAnalyser();
+    setMode("idle");
+    sayClear();
+  }
+}
+
+/** Drop everything queued/playing — used by barge-in and mic-on ducking. */
+function stopSpeech() {
+  audioQueue.length = 0;
+  pendingAudio = 0;
+  try { if (currentSrc) currentSrc.stop(); } catch { /* already ended */ }
+  try { if (currentEl) { currentEl.pause(); currentEl.src = ""; } } catch { /* already gone */ }
+  currentSrc = currentEl = null;
+  detachAnalyser();
+  if (state.mode === "speaking") { setMode("idle"); sayClear(); }
+}
+
+function queueSpeech(b64) {
+  if (!b64) return;
+  // Half-duplex, not mute: the reply always plays. While a clip is playing the
+  // mic keeps its stream open but feeds silence downstream (see the gate in
+  // startContinuousMic), so the orb never transcribes its own voice and the
+  // backend still receives a steady frame clock to endpoint on. Between clips —
+  // while the next sentence is still being synthesized — the gate is open, which
+  // is exactly when a barge-in should land.
+  audioQueue.push(b64);
+  pendingAudio += 1;
+  void pumpSpeech();
+}
+
+async function pumpSpeech() {
+  if (audioBusy) return;
+  const b64 = audioQueue.shift();
+  if (!b64) return;
+  audioBusy = true;
+  try {
+    await playWavB64(b64);
+  } finally {
+    audioBusy = false;
+    if (audioQueue.length) void pumpSpeech();
+  }
+}
 
 async function playWavB64(b64) {
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  const buf = await ensureAudioCtx().decodeAudioData(bytes.buffer);
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  // The analyser alone is a dead end — a node that nothing downstream reads
-  // from never reaches the speakers. Route it to the output as well.
-  src.connect(audioCtx.destination);
-  attachAnalyser(src);
-  pendingAudio += 1;
-  src.onended = () => {
-    pendingAudio -= 1;
-    if (pendingAudio <= 0 && state.mode === "speaking") {
-      pendingAudio = 0;
-      detachAnalyser();
-      setMode("idle");
-      sayClear();
+  try {
+    if (!b64) throw new Error("empty audio frame");
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const ctx = ensureAudioCtx();
+    if (ctx.state === "suspended") await ctx.resume().catch(() => {});
+    // WebKit can leave the context suspended (the unlock gesture happened on a
+    // non-focusing panel). Media elements are exempt under wry's autoplay
+    // policy, so fall back to one instead of dropping the clip.
+    if (ctx.state !== "running") {
+      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      const el = new Audio(url);
+      currentEl = el;
+      await new Promise((resolve) => {
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          URL.revokeObjectURL(url);
+          currentEl = null;
+          endClip();
+          resolve();
+        };
+        el.onended = done;
+        el.onerror = () => { dbg("audio failed: <audio> error"); done(); };
+        el.play().then(() => dbg(`audio ${Math.round((el.duration || 0) * 1000)}ms via <audio>`))
+          .catch((e) => {
+            dbg(`audio blocked: ctx=${ctx.state} (${e && e.message ? e.message : e})`);
+            say("Tap the orb, then ask again", "", false);
+            done();
+          });
+      });
+      return;
     }
-  };
-  src.start();
+    const buf = await ctx.decodeAudioData(bytes.buffer);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    // The analyser alone is a dead end — a node that nothing downstream reads
+    // from never reaches the speakers. Route it to the output as well.
+    src.connect(ctx.destination);
+    attachAnalyser(src);
+    currentSrc = src;
+    await new Promise((resolve) => {
+      src.onended = () => { currentSrc = null; endClip(); resolve(); };
+      src.start();
+      dbg(`audio ${Math.round(buf.duration * 1000)}ms ctx=${ctx.state}`);
+    });
+  } catch (e) {
+    dbg(`audio failed: ${e && e.message ? e.message : e}`);
+    endClip();
+  }
 }
 
 // Wake-word streaming: subscribe to /voice/stream SSE (backend sends wake-word
@@ -756,6 +956,7 @@ listen("orb-event", (ev) => {
   if (currentTurnId && p.turn_id && p.turn_id !== currentTurnId) return;
   if (p.kind === "cancel") {
     if (currentTurnId) {
+      stopSpeech();
       setAction(false);
       setMode("idle");
       sayClear();
@@ -785,6 +986,7 @@ listen("orb-event", (ev) => {
 
     case "interrupt":
       // You talked over the reply (or cancelled): the turn is gone.
+      stopSpeech();
       botBuffer = "";
       setAction(false);
       sayClear();
@@ -818,7 +1020,7 @@ listen("orb-event", (ev) => {
       // The reply is being spoken — hand the envelope over to the TTS.
       state.mode = "speaking";
       if (!botBuffer) say("…", "", true);
-      playWavB64(p.data).catch(() => {});
+      queueSpeech(p.data);
       break;
 
     case "done":
@@ -841,6 +1043,21 @@ listen("orb-event", (ev) => {
         return;
       }
       botBuffer = "";
+      break;
+
+    case "ignored":
+      // The VAD heard something that is not a turn — a cough, a door, room tone.
+      // No reply is coming, so drop the caption instead of leaving "Listening…"
+      // on screen waiting for an answer that will never arrive.
+      setAction(false);
+      botBuffer = "";
+      if (micOn) {
+        setMode("listening");
+        say("Listening…", "you", true);
+      } else {
+        setMode("idle");
+        sayClear();
+      }
       break;
 
     case "error":
@@ -874,9 +1091,27 @@ listen("orb-event", (ev) => {
  * ------------------------------------------------------------------------ */
 
 const HOLD_MS = 200;   // press-and-hold before the mic opens
-const DRAG_SLOP = 6;   // movement that separates a drag from a hold/tap
+// 10 px, not 6: a trackpad tap routinely drags 4-8 px between press and release,
+// and the old threshold turned those taps into drags — the orb slid a few pixels
+// when you meant to click it, and a press-and-hold lost its hold. A real drag is
+// deliberate movement, so the extra 4 px cost nothing.
+const DRAG_SLOP = 10;  // movement that separates a drag from a hold/tap
 const DBG = true;      // gesture trace via orb_debug -> stderr (run from a shell)
 const dbg = (m) => { if (DBG) invoke("orb_debug", { msg: m }).catch(() => {}); };
+
+// Every click that lands in the webview is logged once, at the window level.
+// If a report says "the bunny isn't clickable", the presence of this line means
+// the click arrived and a gesture swallowed it; its absence means the click
+// never reached the webview at all (a window-level problem: pass-through on, a
+// stale ignoresMouseEvents, or something stacked above the panel).
+window.addEventListener("pointerdown", (e) => {
+  dbg(`win down btn=${e.button} @${e.clientX},${e.clientY} target=${e.target && e.target.id}`);
+}, { capture: true });
+// Enter/leave tell us whether the window is receiving mouse input at all, which
+// is the difference between "the gesture was swallowed" and "there were no
+// events to swallow".
+window.addEventListener("pointerenter", () => dbg("win pointerenter"), { capture: true });
+window.addEventListener("pointerleave", () => dbg("win pointerleave"), { capture: true });
 
 let pressTimer = null;
 let dragging = false;
@@ -1019,7 +1254,9 @@ window.addEventListener("pointercancel", releasePress);
 
 canvas.addEventListener("pointerleave", () => {
   if (dragging) return;
-  dbg("pointerleave while pressed -> cancel hold");
+  // Only worth a line when a press was actually in flight; a plain "the pointer
+  // left the orb" used to log like a cancelled gesture and muddied the trace.
+  if (pressTimer || dragStart) dbg("pointerleave while pressed -> cancel hold");
   dragStart = null;
   if (pressTimer) {
     clearTimeout(pressTimer);
