@@ -48,11 +48,19 @@ def snapshot_db(db_path: Path, out_dir: Path) -> tuple[Path, int]:
         dest_conn = sqlite3.connect(str(dest))
         try:
             src.backup(dest_conn)
-            dest_conn.execute("VACUUM")  # compact the copy, not the original
+            # The backup inherits the source's journal_mode=WAL, which would make
+            # the snapshot depend on -wal/-shm sidecars when reopened. Switch the
+            # copy back to a plain rollback journal so it is one self-contained
+            # file, then compact it.
+            dest_conn.execute("PRAGMA journal_mode=DELETE")
+            dest_conn.execute("VACUUM")
         finally:
             dest_conn.close()
     finally:
         src.close()
+    for sidecar in (dest.with_name(dest.name + "-wal"), dest.with_name(dest.name + "-shm")):
+        if sidecar.exists():
+            sidecar.unlink()
     return dest, dest.stat().st_size
 
 

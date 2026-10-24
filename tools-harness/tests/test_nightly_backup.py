@@ -78,6 +78,9 @@ def test_snapshot_is_readable_and_complete(store_db, tmp_path):
         conn.close()
     ok, detail = snap.verify_snapshot(dest)
     assert ok and "integrity=ok" in detail
+    # A snapshot must be one self-contained file — no -wal/-shm sidecars.
+    assert not Path(str(dest) + "-wal").exists()
+    assert not Path(str(dest) + "-shm").exists()
 
 
 def test_rotation_keeps_newest_dirs(tmp_path):
