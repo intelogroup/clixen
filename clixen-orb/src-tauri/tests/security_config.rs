@@ -53,6 +53,75 @@ fn every_granted_command_permission_exists() {
     }
 }
 
+/// Every `#[tauri::command]` in `src/`, as the name the webview invokes.
+fn command_fns() -> Vec<String> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).unwrap();
+        let mut lines = src.lines();
+        while let Some(line) = lines.next() {
+            if line.trim() != "#[tauri::command]" {
+                continue;
+            }
+            for next in lines.by_ref() {
+                let t = next.trim_start();
+                if t.is_empty() || t.starts_with("//") || t.starts_with("#[") {
+                    continue;
+                }
+                let rest = t.strip_prefix("pub ").unwrap_or(t);
+                if let Some(rest) = rest.strip_prefix("async fn ").or_else(|| rest.strip_prefix("fn ")) {
+                    out.push(rest.split(['(', '<']).next().unwrap().trim().to_string());
+                }
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// The names registered in `build.rs`; only these get an `allow-*` permission.
+fn build_commands() -> Vec<String> {
+    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("build.rs");
+    let src = std::fs::read_to_string(&p).unwrap();
+    let list = src
+        .split("const COMMANDS: &[&str] = &[")
+        .nth(1)
+        .expect("build.rs must define COMMANDS")
+        .split(']')
+        .next()
+        .unwrap();
+    list.split('"').skip(1).step_by(2).map(String::from).collect()
+}
+
+#[test]
+fn every_command_is_registered_in_build_rs_and_granted_by_a_capability() {
+    let mut found = command_fns();
+    found.sort();
+    let mut listed = build_commands();
+    listed.sort();
+
+    let missing: Vec<_> = found.iter().filter(|c| !listed.contains(c)).collect();
+    assert!(missing.is_empty(), "commands missing from build.rs COMMANDS (invoking them fails with \"not allowed by ACL\"): {missing:?}");
+
+    let stale: Vec<_> = listed.iter().filter(|c| !found.contains(c)).collect();
+    assert!(stale.is_empty(), "build.rs lists commands that no longer exist: {stale:?}");
+
+    let mut granted = Vec::new();
+    for f in ["capabilities/default.json", "capabilities/setup.json"] {
+        granted.extend(perms(&json(f)));
+    }
+    let ungranted: Vec<_> = found
+        .iter()
+        .filter(|c| !granted.contains(&format!("allow-{}", c.replace('_', "-"))))
+        .collect();
+    assert!(ungranted.is_empty(), "commands not granted by any capability (invoking them fails with \"not allowed by ACL\"): {ungranted:?}");
+}
+
 #[test]
 fn hardened_runtime_on_and_entitlements_are_the_minimum() {
     let conf = json("tauri.conf.json");

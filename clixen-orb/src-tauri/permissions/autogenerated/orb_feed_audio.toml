@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-feed-audio"
+description = "Enables the orb_feed_audio command without any pre-configured scope."
+commands.allow = ["orb_feed_audio"]
+
+[[permission]]
+identifier = "deny-orb-feed-audio"
+description = "Denies the orb_feed_audio command without any pre-configured scope."
+commands.deny = ["orb_feed_audio"]

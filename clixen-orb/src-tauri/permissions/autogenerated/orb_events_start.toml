@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-events-start"
+description = "Enables the orb_events_start command without any pre-configured scope."
+commands.allow = ["orb_events_start"]
+
+[[permission]]
+identifier = "deny-orb-events-start"
+description = "Denies the orb_events_start command without any pre-configured scope."
+commands.deny = ["orb_events_start"]

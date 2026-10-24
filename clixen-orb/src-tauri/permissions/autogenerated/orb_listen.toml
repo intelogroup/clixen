@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-orb-listen"
+description = "Enables the orb_listen command without any pre-configured scope."
+commands.allow = ["orb_listen"]
+
+[[permission]]
+identifier = "deny-orb-listen"
+description = "Denies the orb_listen command without any pre-configured scope."
+commands.deny = ["orb_listen"]

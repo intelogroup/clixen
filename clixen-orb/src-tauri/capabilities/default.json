@@ -23,6 +23,9 @@
     "allow-orb-prompt-done",
     "allow-orb-cursor-fly",
     "allow-orb-debug",
-    "allow-orb-cancel"
+    "allow-orb-cancel",
+    "allow-orb-events-start",
+    "allow-orb-listen",
+    "allow-orb-feed-audio"
   ]
 }
