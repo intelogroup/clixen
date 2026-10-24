@@ -1,9 +1,15 @@
-"""Lean agent mode for the Clixen orb (chat_id starting "orb").
+"""Lean agent mode for the Clixen orb (chat_id starting "orb") and for voice.
 
 The orb drives the user's own screen, so it gets the screen tools plus a few lookups and a short
 prompt written for that job, instead of the chat coordinator's ~84 tools and ~3.5k-token prompt.
+Voice surfaces (chat_id "voice_agent") get the same tool set with spoken-reply rules appended,
+because they were silently falling through to the coordinator profile.
 Telegram, WhatsApp and the web UI are untouched: they keep the full orchestrator.
 """
+
+from __future__ import annotations
+
+import os
 
 ORB_CHAT_PREFIX = "orb"
 
@@ -53,6 +59,67 @@ When done: one short plain paragraph. What you did, what you verified, anything 
 
 def is_orb_chat(chat_id) -> bool:
     return isinstance(chat_id, str) and chat_id.startswith(ORB_CHAT_PREFIX)
+
+
+# Voice surfaces (the orb's mic, PTT, the wake listener, brabble_hook) all write
+# history under voice.agent.VOICE_CHAT_ID. That value does not start with "orb",
+# so the lean-profile gate below used to miss it entirely and every spoken turn
+# ran the chat coordinator's ~84-tool, ~17k-token prompt instead of this one —
+# measured at 16_466-16_992 prompt tokens per round on the voice path versus
+# 5_533 on the orb path, i.e. ~0.3-0.5 s of extra first-token latency on every
+# round of every spoken turn, plus far worse tool selection.
+VOICE_CHAT_IDS = frozenset({"voice_agent", "brabble_voice"})
+
+
+def is_voice_chat(chat_id) -> bool:
+    return isinstance(chat_id, str) and chat_id in VOICE_CHAT_IDS
+
+
+def voice_extra_tool_names() -> frozenset[str]:
+    """Extra tools voice may use on top of the orb set.
+
+    Empty by default (the orb set is the fastest and the most predictable), but
+    settable per machine with CLIXEN_VOICE_EXTRA_TOOLS="set_reminder,get_current_time"
+    so the "should voice also answer non-screen asks?" experiment is a config
+    change, not a code change.
+    """
+    raw = os.environ.get("CLIXEN_VOICE_EXTRA_TOOLS", "")
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
+# Tools voice does not get, even though the orb does. `get_current_time` is pure
+# round-waste for a spoken turn: the current date and time are already injected as
+# a context block, but with the tool present the model called it for "What is
+# 2+2?", "Say hello" and "What time is it?" alike — each call a whole extra round
+# (+0.8-1.0 s) and it ate the entire prompt-size win measured 2026-10-24.
+VOICE_EXCLUDED_TOOLS = frozenset({"get_current_time"})
+
+
+def voice_tools(tools: list) -> list:
+    """The orb's screen tools, minus voice's known round-wasters, plus whatever
+    extras the machine opted into."""
+    wanted = (TOOL_NAMES | voice_extra_tool_names()) - VOICE_EXCLUDED_TOOLS
+    return [t for t in tools if t.get("function", {}).get("name") in wanted]
+
+
+# Spoken replies are heard, not read: they need their own length and formatting
+# rules, and an explicit "answer first" rule. Without it the orb's screen
+# protocol ("observe before you act", "do the task yourself") made the lean
+# prompt *slower* for plain questions: measured 2026-10-24, "What is 2+2?" and
+# "Say hello in one short sentence." each spent a whole extra round on
+# get_current_time/observe, which ate the entire prompt-size win.
+VOICE_PROMPT_HEAD = """SPEAKING ALOUD
+Your reply is spoken by a TTS voice: one or two short sentences, plain words, no markdown, no lists, no tables, no emoji, no URLs read out loud. Answer the question first, then at most one clarifying detail.
+
+ANSWER DIRECTLY WHEN YOU CAN
+If the question can be answered from your own knowledge, or from the context blocks below (time, date, memory, screen), answer immediately and call no tool. Do not observe the screen, read the clock or plan a task to say "four" or "hello". The current date and time are already given below, so there is no clock to read. Use tools only when the user asked you to do something on their screen or the answer is not knowable without one.
+"""
+
+
+def voice_prompt(*blocks: str) -> str:
+    """The spoken-reply rules first (they are the strongest signal), then context,
+    then the orb's screen protocol for tasks that do need it."""
+    return "\n".join([VOICE_PROMPT_HEAD] + [b for b in blocks if b] + [PROMPT])
 
 
 def lean_tools(tools: list) -> list:

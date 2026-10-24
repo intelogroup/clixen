@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from clients.cloud_client import _StreamLeakFilter
+from clients.cloud_client import _LEAK_HOLDBACK, _StreamLeakFilter
 
 
 def test_leak_marker_in_single_chunk_is_stripped():
@@ -67,10 +67,42 @@ def test_hybrid_dsml_xml_tags_fully_stripped():
     assert "before" in joined and "after" in joined
 
 
+def test_short_reply_is_emitted_immediately_not_at_flush():
+    """Regression (measured 2026-10-24, voice path): the fixed 80-char holdback
+    meant a 32-char reply produced exactly one on_token at stream close -- 2.478 s
+    in, where the provider's first delta landed at 1.427 s -- so TTS could not
+    start until the whole turn was finished.
+    """
+    out = []
+    f = _StreamLeakFilter(out.append)
+    f.feed("Four.")
+    assert out == ["Four."]
+
+
+def test_hold_is_bounded_by_the_marker_window():
+    for n in (0, 1, 5, 79, 80, 81, 200):
+        assert _StreamLeakFilter._hold_len("x" * n) == 0
+        assert _StreamLeakFilter._hold_len("x" * n + "<") <= _LEAK_HOLDBACK
+
+
+def test_prose_with_an_angle_bracket_is_delayed_not_lost():
+    out = []
+    f = _StreamLeakFilter(out.append)
+    f.feed("if a < b then")
+    # The text before the opener streams; everything from the opener is held.
+    assert out == ["if a "]
+    f.feed(" x" * 45)
+    f.flush()
+    assert "if a < b then" in "".join(out)
+
+
 if __name__ == "__main__":
     test_leak_marker_in_single_chunk_is_stripped()
     test_leak_marker_split_across_chunks_is_stripped()
     test_normal_text_passes_through_unmodified()
     test_flush_with_empty_buffer_emits_nothing()
     test_hybrid_dsml_xml_tags_fully_stripped()
+    test_short_reply_is_emitted_immediately_not_at_flush()
+    test_hold_is_bounded_by_the_marker_window()
+    test_prose_with_an_angle_bracket_is_delayed_not_lost()
     print("ok")
