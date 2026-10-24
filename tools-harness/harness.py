@@ -756,7 +756,7 @@ def _run_impl(
                 # rolling summary still carries older context; ponytail: leaves a
                 # transient 4-turn gap between the 6-turn window and the 10-turn
                 # fold threshold, self-heals as the convo grows past 10.
-                _keep = _VOICE_KEEP_RECENT if chat_id == "brabble_voice" else KEEP_RECENT_TURNS
+                _keep = _VOICE_KEEP_RECENT if orb_agent.is_voice_chat(chat_id) else KEEP_RECENT_TURNS
                 history = trim_to_budget(raw_history, orchestrator_model, query, chat_id=chat_id, keep_recent=_keep)
 
         # Set the ContextVar for subagents
@@ -826,7 +826,7 @@ def _run_impl(
                 "Synthesize: what changed, why it matters, and what (if anything) "
                 "the user should do."
             )
-        if chat_id == "brabble_voice":
+        if orb_agent.is_voice_chat(chat_id):
             # 2026-07-11: brabble_hook.py's _clean_for_tts() strips bold/italic/
             # code/heading markers but not table pipes or horizontal rules, so a
             # markdown table (observed: gold-price query, "| Item | Value |"
@@ -999,6 +999,12 @@ def _run_impl(
         if orb_agent.is_orb_chat(chat_id):  # the orb drives the user's screen: lean tools and prompt, not the chat coordinator's
             orchestrator_tools = orb_agent.lean_tools(orchestrator_tools)
             orchestrator_system_prompt = orb_agent.system_prompt(_orch_plan_block, _orch_mem_block, _dt_line)
+        elif orb_agent.is_voice_chat(chat_id):
+            # Spoken turns were running the coordinator's ~17k-token prompt because
+            # voice_agent does not match the "orb" prefix: same lean tool set here,
+            # plus rules for text that is about to be read out loud.
+            orchestrator_tools = orb_agent.voice_tools(orchestrator_tools)
+            orchestrator_system_prompt = orb_agent.voice_prompt(_orch_plan_block, _orch_mem_block, _dt_line)
 
         # Model-driven callers (orb, web UI: no intent passed) get no classifier, no forced tool, no
         # pre-guard and no verify retries: the model picks its tools from the full list. Telegram and
@@ -1067,7 +1073,7 @@ def _run_impl(
             except Exception:
                 _log.warning("agent inbox poll failed", exc_info=True)
 
-        _round_timeout = round_timeout or (28.0 if chat_id == "brabble_voice" else None)
+        _round_timeout = round_timeout or (28.0 if orb_agent.is_voice_chat(chat_id) else None)
         _max_orchestrator_rounds = 2 if context_only else 30  # a Gmail compose-and-send by screen takes ~25 calls; 12 cut every run off mid-task
         result = local_chat(
             user_message=query,
@@ -1141,7 +1147,7 @@ def _run_impl(
                         round_timeout=_round_timeout,
                     )
 
-        if chat_id == "brabble_voice":
+        if orb_agent.is_voice_chat(chat_id):
             _trimmed = _voice_trim_reply(result, query)
             if _trimmed != result:
                 _log.info(
@@ -2264,7 +2270,7 @@ def _run_impl(
     )
     # Voice-originated subagents inherit CURRENT_CHAT_ID (read-only) from the
     # orchestrator's context; stateless subagents never re-set it. Cap their rounds.
-    if max_rounds is None and CURRENT_CHAT_ID.get(None) == "brabble_voice":
+    if max_rounds is None and orb_agent.is_voice_chat(CURRENT_CHAT_ID.get(None)):
         _max_rounds = min(_max_rounds, _VOICE_MAX_ROUNDS)
     _optimized_opts = _get_optimized_opts(intent, routed_model)
 

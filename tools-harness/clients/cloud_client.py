@@ -243,6 +243,10 @@ def _is_deepseek_thinking(real_model: str) -> bool:
 # {0,60} body) — buffer this many trailing chars before emitting so a marker
 # split across two SSE chunks still gets caught. See _StreamLeakFilter.
 _LEAK_HOLDBACK = 80
+# Every alternative in _LEAK_TOKEN_RE begins with one of these, which is what
+# makes an adaptive hold possible: only text from the last opener onwards can
+# still turn into a marker. See _StreamLeakFilter._hold_len.
+_LEAK_OPENERS = ("<", "｜")
 
 
 # force_tool_choice sentinel: tool_choice="required" instead of one named tool.
@@ -265,9 +269,33 @@ class _StreamLeakFilter:
         self._on_token = on_token
         self._buf = ""
 
+    @staticmethod
+    def _hold_len(buf: str) -> int:
+        """Trailing chars that must stay buffered before this emission.
+
+        Holding back a *fixed* 80 chars cost real time on short replies: a
+        32-char answer never crosses the window, so nothing reached on_token
+        until flush() — measured on the voice path as a single on_token at
+        2.478 s where the provider's first delta landed at 1.427 s, which also
+        meant TTS could not start until the whole turn was done. Only a suffix
+        beginning at the last opener can still become a marker, so hold from
+        there and emit the rest immediately.
+        """
+        start = max(0, len(buf) - _LEAK_HOLDBACK)
+        # Earliest opener inside the window, not the latest: a marker can begin
+        # at an earlier '<' and still be growing past a later '｜' (that is
+        # exactly the "<｜｜DSML｜｜tool_calls>" shape), so holding from the last
+        # opener would emit a marker fragment.
+        openers = [idx for idx in (buf.rfind(ch) for ch in _LEAK_OPENERS) if idx >= start]
+        if not openers:
+            # No opener inside the marker window: this text cannot begin a
+            # marker, so all of it is safe to emit now.
+            return 0
+        return len(buf) - min(openers)
+
     def feed(self, text: str) -> None:
         self._buf += text
-        safe_len = len(self._buf) - _LEAK_HOLDBACK
+        safe_len = len(self._buf) - self._hold_len(self._buf)
         if safe_len <= 0:
             return
         cleaned = _LEAK_TOKEN_RE.sub("", self._buf[:safe_len])
