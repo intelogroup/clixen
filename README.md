@@ -375,6 +375,27 @@ Deeper reference docs for how the agent stack actually works, split out of `CLAU
 
 ---
 
+## The orb's tool surface
+
+The orb and voice run a **lean profile** (`orb_agent.py`) instead of the chat coordinator's ~345-tool,
+~17k-token prompt. The allowlist is the contract; `tests/voice/test_orb_toolset.py` enforces it.
+
+Rules that came out of auditing the surface against the running system (2026-10-24):
+
+| Rule | Why |
+|---|---|
+| `lean_tools()` / `voice_tools()` select from **`ALL_TOOLS`**, never filter a channel list | Filtering the orchestrator's list silently dropped allowlisted tools that only lived in per-intent lists — "read my last email" called `get_screen_context` twice instead of `get_latest_email`, and took 8 rounds |
+| No tool in the allowlist that routes to **local Ollama** (`ask_calendar_agent`, `ask_tasks_agent`, `ask_email_agent`) | With Ollama down — the normal state — each one burned a full round and answered "Failed to connect to Ollama". The direct `list_calendar_events` / `list_tasks` / `get_latest_email` tools hit the Google API instead: one call, no local model |
+| Every tool `observe()` names in its "no accessibility tree" hint must be granted | It told the model to use `get_screen_context` / `click_text` while neither was in the allowlist: on canvas UIs the orb was blind and out of options |
+| The prompt may only name granted tools | Same failure class, one level up |
+| Boot preflight prints **accessibility** and **ollama** state (`core.py::_preflight`) | Both degrade silently at call time; these two lines make "why can't it see / why did that fail?" answerable from the log |
+
+Dropped for lack of use (7,520 logged calls): `recall_about` (0 calls), `contacts_resolve` (0 calls —
+and, since no messaging tool was ever granted beside it, resolving a handle led nowhere), `dock` (3),
+`space` (2), `close_tabs` (2, and it closes *every* tab).
+
+---
+
 ## Active Fleet & Models
 
 **Cloud-first (2026-07)**: the main agent (`harness.py` and the LangGraph local-agent) defaults

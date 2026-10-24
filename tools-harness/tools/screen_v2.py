@@ -363,10 +363,13 @@ TABS_SCHEMA = {
         "description": (
             "Lists, switches to, or closes the user's browser tabs by part of a title or URL (Chrome-family browsers). "
             "list shows every tab in every window. switch brings the first match to the front. close closes every matching tab "
-            "(match is required; use close_tabs to close all). Use it when an extension or link opened a stray tab in front of the page you need."
+            "(match is required for switch/close). Use it when an extension or link opened a stray tab in front of the page you need."
         ),
         "parameters": {"type": "object", "properties": {
-            "action": {"type": "string", "enum": ["list", "switch", "close"]}, "match": {"type": "string"}, "app": {"type": "string"}}, "required": ["action"]},
+            "action": {"type": "string", "enum": ["list", "switch", "close"],
+                       "description": "Defaults to list when omitted."},
+            "match": {"type": "string", "description": "Part of a tab title or URL."},
+            "app": {"type": "string", "description": "Defaults to Google Chrome."}}},
     },
 }
 

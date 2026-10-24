@@ -1043,7 +1043,11 @@ def _run_impl(
             _log.info("[orb] screen block: %s", _screen[:160] or "(none)")
 
         if orb_agent.is_orb_chat(chat_id):  # the orb drives the user's screen: lean tools and prompt, not the chat coordinator's
-            orchestrator_tools = orb_agent.lean_tools(orchestrator_tools)
+            # Selected from ALL_TOOLS, not from orchestrator_tools: filtering the
+            # orchestrator list silently dropped any allowlisted tool that the
+            # orchestrator list happened not to carry (the email/tasks/calendar
+            # data tools live only in per-intent lists) — see orb_agent.lean_tools.
+            orchestrator_tools = orb_agent.lean_tools(ALL_TOOLS)
             orchestrator_system_prompt = orb_agent.system_prompt_with_screen(
                 _screen_ctx(), _orch_plan_block, _orch_mem_block, _dt_line
             )
@@ -1051,7 +1055,7 @@ def _run_impl(
             # Spoken turns were running the coordinator's ~17k-token prompt because
             # voice_agent does not match the "orb" prefix: same lean tool set here,
             # plus rules for text that is about to be read out loud.
-            orchestrator_tools = orb_agent.voice_tools(orchestrator_tools)
+            orchestrator_tools = orb_agent.voice_tools(ALL_TOOLS)
             orchestrator_system_prompt = orb_agent.voice_prompt(
                 *([_screen] if _screen else []), _orch_plan_block, _orch_mem_block, _dt_line
             )
