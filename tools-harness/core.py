@@ -186,8 +186,52 @@ def _make_thread(name: str) -> threading.Thread:
     return threading.Thread(target=_TARGETS[name], daemon=True, name=name)
 
 
+def _preflight() -> None:
+    """One loud line per capability that silently degrades when unavailable.
+
+    Both of these fail *quietly* at call time, which is how they went unnoticed:
+    without Accessibility, observe() returns "Elements: none exposed" and the orb
+    looks like it simply could not see; without Ollama, every local-routed
+    subagent (ask_calendar_agent was the worst offender, 113 calls) answered
+    "Failed to connect to Ollama" only after burning a full round. Printing the
+    state at boot makes the log answer "why can't it see / why did that fail?"
+    without a reproduction.
+    """
+    # Accessibility (TCC) — required by observe/act/ax_context.
+    try:
+        import ApplicationServices as _AS
+
+        trusted = bool(_AS.AXIsProcessTrusted())
+        print(
+            "preflight: accessibility "
+            + ("granted (observe/act can read the screen)" if trusted else
+               "NOT GRANTED — observe() will report no elements; enable this "
+               "python in System Settings > Privacy & Security > Accessibility")
+        )
+    except Exception as exc:  # pyobjc missing: the screen tools are already broken
+        print(f"preflight: accessibility UNAVAILABLE ({exc}) — screen tools will fail")
+
+    # Ollama — the local model behind the subagents that route local.
+    try:
+        import urllib.request
+
+        url = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/") + "/api/tags"
+        with urllib.request.urlopen(url, timeout=1.5) as r:
+            up = r.status == 200
+        print(
+            "preflight: ollama " + ("up (local subagents available)" if up else
+                                    f"answered {url} without 200 — local subagents will fail")
+        )
+    except Exception:
+        print(
+            "preflight: ollama DOWN — local-routed subagents (calendar, tasks, vision) "
+            "will fail; the orb uses their direct tool equivalents instead"
+        )
+
+
 def main():
     print("Starting Clixen Core (consolidated)...")
+    _preflight()
 
     threads: dict[str, threading.Thread] = {}
     last_restart: dict[str, float] = {}
