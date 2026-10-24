@@ -78,9 +78,17 @@ def test_encode_typed_values():
     assert turso_client._encode(None) == {"type": "null"}
     assert turso_client._encode(True) == {"type": "integer", "value": "1"}
     assert turso_client._encode(7) == {"type": "integer", "value": "7"}
-    assert turso_client._encode(1.5) == {"type": "float", "value": "1.5"}
+    # floats must be JSON numbers (f64); integers must be strings (i64 precision)
+    assert turso_client._encode(1.5) == {"type": "float", "value": 1.5}
     assert turso_client._encode("hi") == {"type": "text", "value": "hi"}
     assert turso_client._encode(b"\x00\xff") == {"type": "blob", "base64": "AP8="}
+
+
+def test_encode_non_finite_floats_become_null():
+    """JSON has no NaN/Infinity literal — Hrana would 400 the whole batch."""
+    assert turso_client._encode(float("nan")) == {"type": "null"}
+    assert turso_client._encode(float("inf")) == {"type": "null"}
+    assert turso_client._encode(float("-inf")) == {"type": "null"}
 
 
 def test_decode_round_trip():

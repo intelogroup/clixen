@@ -201,7 +201,14 @@ def _get_session() -> requests.Session:
 
 
 def _encode(value) -> dict:
-    """Python value -> Hrana typed value."""
+    """Python value -> Hrana typed value.
+
+    Hrana's wire format is asymmetric: `integer` carries the i64 as a *string*
+    (JSON numbers lose 64-bit precision), but `float` must be a real JSON
+    number (f64) — sending it as a string is rejected with
+    `invalid type: string ..., expected f64`. Learned the hard way exporting
+    confirmations.db's REAL timestamp column.
+    """
     if value is None:
         return {"type": "null"}
     if isinstance(value, bool):
@@ -209,7 +216,9 @@ def _encode(value) -> dict:
     if isinstance(value, int):
         return {"type": "integer", "value": str(value)}
     if isinstance(value, float):
-        return {"type": "float", "value": repr(value)}
+        if value != value or value in (float("inf"), float("-inf")):  # NaN/inf: JSON has no literal
+            return {"type": "null"}
+        return {"type": "float", "value": value}
     if isinstance(value, (bytes, bytearray, memoryview)):
         return {"type": "blob", "base64": base64.b64encode(bytes(value)).decode()}
     return {"type": "text", "value": str(value)}
