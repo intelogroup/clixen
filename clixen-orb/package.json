@@ -10,7 +10,8 @@
     "build": "tauri build",
     "typecheck": "tsc -p . --noEmit",
     "typecheck:js": "tsc -p . --noEmit --checkJs",
-    "test:web": "node --test test/*.test.js"
+    "test:web": "node --test test/*.test.js",
+    "test:ui": "../.venv/bin/python test/orb_ui.py"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

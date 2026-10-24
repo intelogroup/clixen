@@ -44,6 +44,29 @@ Auth uses the per-install localhost token from the macOS Keychain
 > to show and will kill the app the moment it reaches for the mic. The bundled
 > `.app` carries the plist and works.
 
+## Tests
+
+```bash
+npm run test:web        # pure renderer logic (node --test)
+npm run test:ui         # orb UI harness (Playwright): mic, resampler, TTS, half-duplex, gestures
+../.venv/bin/python test/cursor_overlay.py   # cursor sprite overlay
+(cd src-tauri && cargo test)                 # Rust units + ACL/capability config
+```
+
+`test/tauri_mock.py` runs the **real** renderer in headless Chromium with only
+the Tauri IPC boundary mocked: the bunny's mic chip → `orb_listen` →
+`orb_feed_audio`, the 48k→16k resampler (a 1 kHz tone must stay 1 kHz in
+960-byte frames), and a typed prompt → `orb_send_text` → backend audio frame →
+WebAudio playback, including that back-to-back TTS clips are played strictly in
+sequence rather than overlapping. It also covers half-duplex: with the mic chip
+on, a reply still plays while the mic keeps its frame clock running but forwards
+silence, so the orb cannot transcribe its own voice. `npm run test:ui -- --headed`
+opens a visible window and plays the injected clip through your speakers.
+
+The mock deliberately bypasses the ACL, so `cargo test` remains the guard for
+capability/command registration; real WKWebView autoplay and TCC mic behaviour
+still need the bundled app.
+
 ## Interaction
 
 | Gesture | Effect |
