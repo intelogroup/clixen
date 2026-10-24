@@ -49,7 +49,11 @@ from tools.websearch import search as _websearch
 from tools.query_guard import check_all as _guard_check
 from tools.stt import get_stt, set_stt_backend, STTBackend
 from voice import session as voice_session
-from voice.agent import VOICE_CHAT_ID as _VOICE_CHAT_ID, get_agent as _get_voice_agent
+from voice.agent import (
+    VOICE_CHAT_ID as _VOICE_CHAT_ID,
+    get_agent as _get_voice_agent,
+    strip_progress_labels as _strip_progress_labels,
+)
 from store.conversation import get as conv_get, clear as conv_clear
 from clients.router import warm_classifier
 from store import upload_store, automation_store, workflow_store
@@ -1552,7 +1556,10 @@ async def voice_process(
                     tail = _visible_flush()
                     if tail:
                         yield f"data: {json.dumps({'type': 'token', 'text': tail})}\n\n"
-                        sent_buf += tail
+                        # Progress labels are for the caption, never for the voice
+                        # (same rule as voice.agent.strip_progress_labels; this
+                        # endpoint keeps its own TTS loop, so it has to apply it).
+                        sent_buf += _strip_progress_labels(tail)
                     if use_tts and sent_buf.strip():
                         wav = await asyncio.to_thread(_synthesize, sent_buf.strip())
                         if wav:
@@ -1562,7 +1569,7 @@ async def voice_process(
                 if visible:
                     yield f"data: {json.dumps({'type': 'token', 'text': visible})}\n\n"
                 if use_tts:
-                    sent_buf += visible if visible else ""
+                    sent_buf += _strip_progress_labels(visible)
                     ready, sent_buf = _sentence_boundary(sent_buf)
                     if ready:
                         wav = await asyncio.to_thread(_synthesize, ready)
