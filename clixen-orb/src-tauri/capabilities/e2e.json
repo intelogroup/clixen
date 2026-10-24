@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "e2e-capability",
+  "description": "WebDriver grants for the E2E suite (`npm run test:e2e`). The wdio plugins are registered only under cfg(debug_assertions), so in a release build these permissions resolve to commands that do not exist — the capability grants nothing.",
+  "windows": [
+    "orb",
+    "caption",
+    "cursor"
+  ],
+  "permissions": [
+    "wdio:default",
+    "wdio-webdriver:default"
+  ]
+}

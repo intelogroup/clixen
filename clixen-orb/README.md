@@ -37,6 +37,13 @@ npm run release      # build app + dmg, then verify signature, entitlements, che
 Tauri build leaves one mounted and the next DMG step then dies with
 `couldn't unmount … Resource busy`.
 
+> **Toolchain.** Make sure `cargo`/`rustc` resolve to rustup, not Homebrew
+> (`which -a cargo`). With Homebrew's rustc first in `PATH`, a *release* build
+> dies compiling the first proc-macro crate with
+> `dlopen(…/libserde_derive-*.dylib): mis-aligned LINKEDIT string pool`, while
+> debug builds are unaffected. Run `PATH="$HOME/.cargo/bin:$PATH" npm run release`
+> if Homebrew shadows rustup.
+
 The backend must be up (`tools-harness/core.py`, `http://127.0.0.1:9234`).
 Override the address with `CLIXEN_BACKEND_URL`.
 
@@ -67,6 +74,47 @@ sequence rather than overlapping. It also covers half-duplex: with the mic chip
 on, a reply still plays while the mic keeps its frame clock running but forwards
 silence, so the orb cannot transcribe its own voice. `npm run test:ui -- --headed`
 opens a visible window and plays the injected clip through your speakers.
+
+### End-to-end against the real app
+
+```bash
+npm run build:e2e       # tauri build --debug + the e2e capability overlay
+npm run test:e2e        # WebdriverIO drives the bundled debug app
+```
+
+This is the only suite that runs the actual WKWebView with real IPC. It is
+[WebdriverIO](https://webdriver.io/docs/desktop-testing/tauri/) with
+`@wdio/tauri-service` and the **embedded** driver, which is how macOS is
+supported — `tauri-driver` itself has no WKWebView driver.
+
+Two things are deliberate:
+
+* **A debug bundle, never a release one.** `tauri-plugin-wdio-webdriver` is
+  registered under `cfg(debug_assertions)`, so a shipped build can never open a
+  local server that evaluates JS in the orb. `tauri build --debug` still produces
+  a real `.app`, so `Info.plist` and the microphone permission path are intact.
+* **The E2E capability is injected, not shipped.** `src-tauri/tauri.e2e.conf.json`
+  adds `e2e-capability` (which grants `wdio:default`) via `--config`, so the
+  shipped config keeps exactly two capabilities and
+  `security_config.rs::only_the_two_capabilities_are_enabled_*` stays green.
+  Granting `wdio:default` in a release build would hand the webview a generic
+  execute surface — the thing that test exists to prevent.
+
+What it asserts today: window geometry, `orb_status` reaching the backend,
+`orb_caption` crossing into the caption webview, ACL denial
+(`lifecycle_lock not allowed on window "orb"`, naming the capability that *does*
+allow it), and that a synthesized drag is a no-op.
+
+Two layers it cannot reach, both covered elsewhere:
+
+* **AppKit input.** W3C `/actions` deliver **zero** pointer events to this panel
+  (it is a non-activating `NSPanel` that never becomes key). The chip gesture is
+  therefore covered by `test/orb_ui.py` and by the Quartz-based native checks;
+  the spec carries an `it.skip` documenting the exact evidence.
+* **`getUserMedia`.** The debug binary is a different signature from the
+  installed app, so macOS raises a fresh TCC prompt that would wedge the run.
+  Mic permission is exercised by the installed release build instead.
+
 
 The mock deliberately bypasses the ACL, so `cargo test` remains the guard for
 capability/command registration; real WKWebView autoplay and TCC mic behaviour

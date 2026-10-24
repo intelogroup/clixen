@@ -1319,9 +1319,19 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_nspanel::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    // WebDriver is a debug-build-only affordance: `tauri build --debug` is what
+    // the E2E suite drives. A release build must never open a local HTTP server
+    // that can evaluate JS in the orb.
+    #[cfg(debug_assertions)]
+    let builder = builder
+        .plugin(tauri_plugin_wdio::init())
+        .plugin(tauri_plugin_wdio_webdriver::init());
+
+    builder
         .setup(|app| {
             let handle = app.handle().clone();
             if let Err(e) = setup_orb_window(&handle) {
