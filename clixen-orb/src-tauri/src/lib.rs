@@ -371,6 +371,19 @@ fn orb_prompt_done(app: AppHandle) {
     if let Some(cap) = app.get_webview_window("caption") {
         let _ = cap.set_ignore_cursor_events(true);
         let _ = cap.hide();
+        // The prompt had to take key status to receive typing; hand it back. An
+        // active app whose key window is a hidden strip leaves the visible orb
+        // panel unable to accept clicks — it paints, animates, and ignores you.
+        unsafe {
+            use tauri_nspanel::objc2::msg_send;
+            use tauri_nspanel::objc2::runtime::AnyObject;
+            if let Ok(ns) = cap.ns_window() {
+                let _: () = msg_send![ns as *mut AnyObject, resignKeyWindow];
+            }
+        }
+    }
+    if let Ok(panel) = app.get_webview_panel("orb") {
+        panel.make_key_window();
     }
 
     let prev = PREVIOUS_APP.lock().ok().and_then(|mut g| g.take());
@@ -656,9 +669,14 @@ fn urlencode(s: &str) -> String {
 
 /// Frontend debug trace: the webview console isn't attached to any terminal, so
 /// gesture instrumentation logs through here (visible when run from a shell).
+///
+/// The timestamp is seconds since this process started: without it, a click that
+/// arrived late and a click that never arrived look identical in the log.
 #[tauri::command]
 fn orb_debug(msg: String) {
-    eprintln!("[orb:js] {msg}");
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    let t0 = START.get_or_init(std::time::Instant::now);
+    eprintln!("[orb:js] +{:.2}s {msg}", t0.elapsed().as_secs_f64());
 }
 
 /// Backend tools (`tools-harness/tools/orb_cursor.py`) drop the click target here.
@@ -801,6 +819,298 @@ static PASS_THROUGH: AtomicBool = AtomicBool::new(false);
 static PINNED: AtomicBool = AtomicBool::new(true);
 static LAST_MOVE: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 
+/// Dump the flags that decide whether a click can ever reach the webview.
+///
+/// `ignoresMouseEvents` is the whole ballgame: when it is true the window is
+/// still painted, still floats, still animates — and silently drops every
+/// click. Nothing else in the UI changes, so a stuck value looks exactly like
+/// "the bunny is on screen but I can't click it".
+fn log_click_state(window: &WebviewWindow, when: &str) {
+    use tauri_nspanel::objc2::msg_send;
+    use tauri_nspanel::objc2::runtime::AnyObject;
+    use tauri_nspanel::objc2_foundation::{NSPoint, NSRect};
+    let Ok(nsw) = window.ns_window() else { return };
+    let nsw = nsw as *mut AnyObject;
+    unsafe {
+        let ignores: bool = msg_send![nsw, ignoresMouseEvents];
+        let accepts_moved: bool = msg_send![nsw, acceptsMouseMovedEvents];
+        let key: bool = msg_send![nsw, isKeyWindow];
+        let visible: bool = msg_send![nsw, isVisible];
+        let level: i64 = msg_send![nsw, level];
+
+        // Deeper state: a window can be visible, clickable on paper and still
+        // drop every event if its content view is gone, its sheet/modal is up,
+        // or hit-testing lands on nothing.
+        let frame: NSRect = msg_send![nsw, frame];
+        let content: *mut AnyObject = msg_send![nsw, contentView];
+        let content_desc = if content.is_null() {
+            "nil".to_string()
+        } else {
+            let frame: NSRect = msg_send![content, frame];
+            format!(
+                "{} ({:.0},{:.0} {:.0}x{:.0})",
+                (*(content as *const AnyObject))
+                    .class()
+                    .name()
+                    .to_string_lossy(),
+                frame.origin.x,
+                frame.origin.y,
+                frame.size.width,
+                frame.size.height
+            )
+        };
+        let content_view: *mut AnyObject = msg_send![nsw, contentView];
+        let hit_desc = match tauri_nspanel::objc2::exception::catch(
+            std::panic::AssertUnwindSafe(|| {
+                if content_view.is_null() {
+                    return "nil".to_string();
+                }
+                // NSWindow's own hitTest: throws here, so ask the content view —
+                // which is the thing that decides whether the click reaches the
+                // webview anyway.
+                let bounds: NSRect = msg_send![content_view, bounds];
+                let centre = NSPoint::new(bounds.size.width / 2.0, bounds.size.height / 2.0);
+                let hit: *mut AnyObject = msg_send![content_view, hitTest: centre];
+                if hit.is_null() {
+                    "nil".to_string()
+                } else {
+                    (*(hit as *const AnyObject))
+                        .class()
+                        .name()
+                        .to_string_lossy()
+                        .to_string()
+                }
+            }),
+        ) {
+            Ok(s) => s,
+            Err(_) => "exception".to_string(),
+        };
+        let sheet: *mut AnyObject = msg_send![nsw, attachedSheet];
+        let responder: *mut AnyObject = msg_send![nsw, firstResponder];
+        let modal = match tauri_nspanel::objc2::MainThreadMarker::new() {
+            Some(mtm) => {
+                let app = tauri_nspanel::objc2_app_kit::NSApplication::sharedApplication(mtm);
+                let w: *mut AnyObject = msg_send![&*app, modalWindow];
+                !w.is_null()
+            }
+            None => false,
+        };
+        eprintln!(
+            "[orb] window {when}: ignoresMouse={ignores} acceptsMouseMoved={accepts_moved} \
+             key={key} visible={visible} level={level} pass_through={} frame={:.0}x{:.0} \
+             content={content_desc} hitTest={hit_desc} sheet={} modal={} responder={}",
+            PASS_THROUGH.load(Ordering::Relaxed),
+            frame.size.width,
+            frame.size.height,
+            !sheet.is_null(),
+            modal,
+            if responder.is_null() {
+                "nil".to_string()
+            } else {
+                (*(responder as *const AnyObject))
+                    .class()
+                    .name()
+                    .to_string_lossy()
+                    .to_string()
+            }
+        );
+    }
+}
+
+/// Re-assert `ignoresMouseEvents` against ⌃⇧P, forever.
+///
+/// The flag can only be flipped by the pass-through shortcut, but a single
+/// desync (or a stray toggle the user forgot) is invisible and permanent from
+/// then on. A 1.5s reconcile is cheap and turns a mystery into a log line.
+fn spawn_click_watchdog(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let (Some(w), Ok(panel)) = (handle.get_webview_window("orb"), handle.get_webview_panel("orb"))
+            else {
+                return;
+            };
+            if !w.is_visible().unwrap_or(true) {
+                return;
+            }
+            let want = PASS_THROUGH.load(Ordering::Relaxed);
+            let Ok(nsw) = w.ns_window() else { return };
+            let ignores: bool = unsafe {
+                use tauri_nspanel::objc2::msg_send;
+                msg_send![nsw as *mut tauri_nspanel::objc2::runtime::AnyObject, ignoresMouseEvents]
+            };
+            if ignores != want {
+                eprintln!("[orb] click watchdog: ignoresMouse={ignores} -> {want}");
+                panel.set_ignores_mouse_events(want);
+                log_click_state(&w, "after repair");
+            }
+            // A non-activating panel only becomes key when the app is active, and
+            // an active app with a visible-but-not-key panel is the one state where
+            // clicks can be dropped on the floor (keyboard still works, so the UI
+            // looks alive). Our app being active means it already owns the
+            // keyboard, so taking key status steals nothing.
+            if let Some(mtm) = tauri_nspanel::objc2::MainThreadMarker::new() {
+                let app = tauri_nspanel::objc2_app_kit::NSApplication::sharedApplication(mtm);
+                if app.isActive() {
+                    let is_key: bool = unsafe {
+                        use tauri_nspanel::objc2::msg_send;
+                        msg_send![nsw as *mut tauri_nspanel::objc2::runtime::AnyObject, isKeyWindow]
+                    };
+                    if !is_key {
+                        eprintln!("[orb] click watchdog: app active but panel not key -> makeKeyWindow");
+                        panel.make_key_window();
+                        log_click_state(&w, "after key");
+                    }
+                }
+            }
+        });
+    });
+}
+
+/// Log every mouse-down the app receives, and which window got it.
+///
+/// This is the missing half of "the bunny is on screen but dead": a click the app
+/// never sees (a window/routing problem) and a click AppKit delivers but WebKit
+/// swallows (a view problem) look identical from the outside, and they need
+/// opposite fixes.
+/// Route clicks into the panel, and keep the panel key.
+///
+/// An orb click only reaches the webview when the panel is the key window. Two
+/// things take that away: the typed prompt focuses the caption strip (fixed in
+/// `orb_prompt_done`), and AppKit itself will not key a non-activating panel of
+/// an active app as part of handling a click. So the click is claimed here,
+/// *before* AppKit dispatches it, and the panel is made key first — otherwise the
+/// event reaches the window and is dropped, which looks exactly like a frozen UI:
+/// it paints, it animates, it ignores you, and nothing is logged.
+///
+/// Claiming key status is safe: a non-activating panel does not activate the app,
+/// so a background app keeps the keyboard. When our app *is* active it already
+/// owns the keyboard, so there is nothing to steal.
+fn install_click_router(window: &WebviewWindow, app: AppHandle) {
+    use block2::RcBlock;
+    use std::ptr::NonNull;
+    use tauri_nspanel::objc2::msg_send;
+    use tauri_nspanel::objc2::runtime::AnyObject;
+    use tauri_nspanel::objc2_app_kit::{NSEvent, NSEventMask};
+    use tauri_nspanel::objc2_foundation::NSPoint;
+
+    let nsw = match window.ns_window() {
+        Ok(ns) => ns as *mut AnyObject,
+        Err(_) => return,
+    };
+    let orb_num: isize = unsafe { msg_send![nsw, windowNumber] };
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+        let e = unsafe { event.as_ref() };
+        let p: NSPoint = e.locationInWindow();
+        let num = tauri_nspanel::objc2::MainThreadMarker::new()
+            .and_then(|mtm| e.window(mtm))
+            .map(|w| w.windowNumber())
+            .unwrap_or(-1);
+        let ours = num == orb_num;
+        if ours {
+            if let Ok(panel) = app.get_webview_panel("orb") {
+                let is_key: bool = unsafe { msg_send![nsw, isKeyWindow] };
+                if !is_key {
+                    panel.make_key_window();
+                    if debug_enabled() {
+                        eprintln!("[orb] click on a non-key panel -> keyed it first");
+                    }
+                }
+            }
+        }
+        if debug_enabled() {
+            eprintln!(
+                "[orb] NSEvent mouseDown ({:.0},{:.0}) window={num} orb={orb_num}{}",
+                p.x,
+                p.y,
+                if ours { "  <- the orb" } else { "" }
+            );
+        }
+        event.as_ptr()
+    });
+    unsafe {
+        if let Some(token) = NSEvent::addLocalMonitorForEventsMatchingMask_handler(
+            NSEventMask::LeftMouseDown,
+            &handler,
+        ) {
+            std::mem::forget(token); // removeMonitor is never needed
+        }
+    }
+    std::mem::forget(handler); // must outlive the app
+}
+
+/// Make the webview accept the very first click while the app is inactive.
+///
+/// A non-activating panel never activates its app, so *every* click arrives with
+/// the app inactive — and AppKit's default for that case is to treat the click as
+/// an activation attempt: it reaches the window (`sendEvent:`), then is dropped
+/// before the view's `mouseDown:` runs. `acceptsFirstMouse:` returning YES is the
+/// documented opt-out, and `WKWebView` inherits NO from `NSView`, so it has to be
+/// added to the class at runtime (we do not own the view).
+///
+/// This is the difference between "the orb is dead" and "the orb works": the
+/// window keeps painting, hover state freezes, and nothing is logged either way.
+fn install_accepts_first_mouse(window: &WebviewWindow) -> bool {
+    use std::ffi::c_void;
+    use tauri_nspanel::objc2::msg_send;
+    use tauri_nspanel::objc2::runtime::AnyObject;
+
+    extern "C" fn accepts(_: *mut AnyObject, _: *mut AnyObject, _: *mut AnyObject) -> bool {
+        true
+    }
+    extern "C" {
+        fn class_replaceMethod(
+            cls: *mut AnyObject,
+            name: *mut AnyObject,
+            imp: *const c_void,
+            types: *const std::os::raw::c_char,
+        ) -> *mut c_void;
+        fn sel_registerName(name: *const std::os::raw::c_char) -> *mut AnyObject;
+        fn class_getName(cls: *mut AnyObject) -> *const std::os::raw::c_char;
+    }
+
+    let Ok(nsw) = window.ns_window() else { return false };
+    let nsw = nsw as *mut AnyObject;
+    let mut installed = false;
+    unsafe {
+        let content: *mut AnyObject = msg_send![nsw, contentView];
+        if content.is_null() {
+            return false;
+        }
+        // The webview sits under WryWebViewParent; patch both so a future wry
+        // reshuffle cannot silently undo this.
+        let subviews: *mut AnyObject = msg_send![content, subviews];
+        let count: usize = if subviews.is_null() { 0 } else { msg_send![subviews, count] };
+        for i in 0..count {
+            let view: *mut AnyObject = msg_send![subviews, objectAtIndex: i];
+            if view.is_null() {
+                continue;
+            }
+            let cls: *mut AnyObject = msg_send![view, class];
+            // replaceMethod, not addMethod: WKWebView already implements
+            // acceptsFirstMouse: (returning NO), and adding cannot change that.
+            class_replaceMethod(
+                cls,
+                sel_registerName(c"acceptsFirstMouse:".as_ptr()),
+                accepts as *const c_void,
+                c"B@:@".as_ptr(),
+            );
+            {
+                if debug_enabled() {
+                    let name = class_getName(cls);
+                    eprintln!(
+                        "[orb] acceptsFirstMouse -> YES on {}",
+                        std::ffi::CStr::from_ptr(name).to_string_lossy()
+                    );
+                }
+            }
+            installed = true;
+        }
+    }
+    installed
+}
+
 fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let window: WebviewWindow = app.get_webview_window("orb").ok_or("orb window missing")?;
 
@@ -875,6 +1185,11 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     panel.set_floating_panel(true);
+    // Hover must land while another app still owns the keyboard. Without
+    // `acceptsMouseMovedEvents` an unfocused, non-key window receives no
+    // mouse-moved stream at all: the chips never fade in, so the only visible
+    // affordances on the orb cannot be clicked.
+    panel.set_accepts_mouse_moved_events(true);
     // Status level + full-screen-auxiliary is what lets the orb ride above a
     // browser tab, a terminal, and a full-screen video alike.
     panel.set_level(PanelLevel::Status.value());
@@ -889,6 +1204,10 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             .value(),
     );
     let _ = panel.show();
+    install_click_router(&window, app.clone());
+    install_accepts_first_mouse(&window);
+    log_click_state(&window, "startup");
+    spawn_click_watchdog(app.clone());
 
     setup_cursor_overlay(app, &window);
     spawn_cursor_watcher(app.clone());
@@ -927,6 +1246,12 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 } else {
                     panel.show();
+                    // Coming back from hidden, re-assert the click state so a
+                    // stale flag can never resurrect an unclickable bunny.
+                    panel.set_ignores_mouse_events(PASS_THROUGH.load(Ordering::Relaxed));
+                    if let Some(w) = _app.get_webview_window("orb") {
+                        log_click_state(&w, "shown");
+                    }
                 }
             }
         },
@@ -946,6 +1271,9 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             PASS_THROUGH.store(next, Ordering::Relaxed);
             if let Ok(panel) = _app.get_webview_panel("orb") {
                 panel.set_ignores_mouse_events(next);
+                if let Some(w) = _app.get_webview_window("orb") {
+                    log_click_state(&w, "pass-through toggle");
+                }
             }
         },
     )?;
@@ -968,6 +1296,20 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     PanelLevel::Floating.value()
                 });
+            }
+        },
+    )?;
+
+    // ⌃⇧D — dump the orb window's click state to stderr. The one-line answer to
+    // "why is the bunny on screen but not clickable?".
+    app.global_shortcut().on_shortcut(
+        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyD),
+        |_app, _shortcut, event| {
+            if event.state() != ShortcutState::Pressed {
+                return;
+            }
+            if let Some(w) = _app.get_webview_window("orb") {
+                log_click_state(&w, "shortcut ctrl+shift+d");
             }
         },
     )?;
