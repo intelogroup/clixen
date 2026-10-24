@@ -30,6 +30,9 @@ SENSITIVE_KEYS = (
     "FIRECRAWL_API_KEY", "SERPAPI_API_KEY", "BRAVE_API_KEY", "BRAVE_SEARCH_API_KEY",
     "RAPIDAPI_KEY", "GOOGLE_MAPS_API_KEY", "OLLAMA_API_KEY", "NCBI_API_KEY",
     "APIFY_API_TOKEN", "FAL_KEY",
+    # Turso (libSQL) database token. TURSO_DATABASE_URL stays in .env — it is an
+    # endpoint hostname, not a secret. Both are read by tools/turso_client.py.
+    "TURSO_AUTH_TOKEN",
 )
 
 

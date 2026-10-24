@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import uuid
 from store import dbclose
@@ -13,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "science_scout.db"
+
+_log = logging.getLogger("science_scout_store")
 
 _CREATE = """
 CREATE TABLE IF NOT EXISTS niche_perf (
@@ -112,6 +115,67 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ── Turso replica mirror ───────────────────────────────────────────────────
+# Every write below commits to local SQLite first, then mirrors the *same*
+# statement to the Turso database (store/turso_client.py). `_mirror` swallows
+# every error: local SQLite is the source of truth, so a machine with no
+# network (or with Turso down / the breaker open) keeps scanning exactly as
+# before. `TURSO_DISABLE=1` is the hard off switch.
+#
+# These statements live in constants so the local execute() and the mirror send
+# byte-identical SQL — if they drift, the replica diverges silently.
+
+_SQL_QUERY_USAGE = (
+    "INSERT INTO query_usage(query, last_scan, uses) VALUES (?, ?, 1) "
+    "ON CONFLICT(query) DO UPDATE SET last_scan=excluded.last_scan, uses=uses+1"
+)
+_SQL_TOUCH_PAPER = "UPDATE raw_papers SET last_seen = ? WHERE id = ?"
+_SQL_INSERT_PAPER = (
+    "INSERT OR IGNORE INTO raw_papers "
+    "(id, niche, title, snippet, extracted_claim, url, content_hash, "
+    "embedding_id, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+_SQL_INSERT_CLAIM = (
+    "INSERT INTO claims (id, summary, evidence_level, evidence_count, niches_json, "
+    "status, embedding_id, first_seen, last_seen) VALUES (?, ?, ?, 1, ?, 'active', ?, ?, ?)"
+)
+_SQL_BUMP_CLAIM_WITH_LEVEL = (
+    "UPDATE claims SET evidence_count = ?, niches_json = ?, evidence_level = ?, "
+    "last_seen = ? WHERE id = ?"
+)
+_SQL_BUMP_CLAIM = "UPDATE claims SET evidence_count = ?, niches_json = ?, last_seen = ? WHERE id = ?"
+_SQL_LINK = (
+    "INSERT INTO paper_claim_links (paper_id, claim_id, decision, created_at) VALUES (?, ?, ?, ?)"
+)
+_SQL_SET_META = "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+_SQL_NICHE_PERF = (
+    "INSERT INTO niche_perf (niche, scans, hits, misses, last_scan) VALUES (?, 1, ?, ?, ?) "
+    "ON CONFLICT(niche) DO UPDATE SET scans=scans+1, hits=hits+excluded.hits, "
+    "misses=misses+excluded.misses, last_scan=excluded.last_scan"
+)
+_SQL_SUPPRESSED_ALERT = (
+    "INSERT INTO suppressed_alerts (source, finding, reason, created_at) VALUES (?, ?, ?, ?)"
+)
+_SQL_PROMPT = (
+    "INSERT INTO subagent_prompts (name, version, text, created_at, created_by) "
+    "VALUES (?, ?, ?, ?, ?)"
+)
+
+
+def _mirror(sql: str, params: tuple) -> None:
+    """Replicate a just-committed local write to the Turso replica.
+
+    Best-effort by contract: returns None, never raises, and is a no-op when
+    TURSO_* is unset or the circuit breaker is open.
+    """
+    try:
+        from store import turso_client
+
+        turso_client.mirror(sql, params)
+    except Exception as exc:  # noqa: BLE001 — mirroring must never break a scan
+        _log.warning("turso mirror hook failed: %s: %s", type(exc).__name__, exc)
+
+
 def content_hash(title: str, url: str) -> str:
     normalized = (title.strip() + "\n" + url.strip()).lower()
     return hashlib.sha256(normalized.encode()).hexdigest()
@@ -164,12 +228,11 @@ def select_query_batch(queries: list[str], scan_number: int, count: int = 3,
             remaining.sort(key=lambda q: usage.get(q.casefold(), {}).get("last_scan", -1))
             selected.extend(remaining[:count - len(selected)])
         for query in selected:
-            conn.execute(
-                "INSERT INTO query_usage(query, last_scan, uses) VALUES (?, ?, 1) "
-                "ON CONFLICT(query) DO UPDATE SET last_scan=excluded.last_scan, uses=uses+1",
-                (query, scan_number),
-            )
-        return selected
+            conn.execute(_SQL_QUERY_USAGE, (query, scan_number))
+    # Mirror only after the local commit (the `with` block commits on exit).
+    for query in selected:
+        _mirror(_SQL_QUERY_USAGE, (query, scan_number))
+    return selected
 
 
 def recent_query_usage(limit: int = 30) -> list[dict]:
@@ -239,9 +302,11 @@ def find_by_content_hash(chash: str) -> dict | None:
 
 
 def touch_paper(paper_id: str) -> None:
+    now = _now()
     with _conn() as conn:
-        conn.execute("UPDATE raw_papers SET last_seen = ? WHERE id = ?", (_now(), paper_id))
+        conn.execute(_SQL_TOUCH_PAPER, (now, paper_id))
         conn.commit()
+    _mirror(_SQL_TOUCH_PAPER, (now, paper_id))
 
 
 def insert_paper(
@@ -249,16 +314,14 @@ def insert_paper(
     extracted_claim: str = "", embedding_id: str = "",
 ) -> None:
     now = _now()
+    params = (
+        paper_id, niche, title, snippet, extracted_claim, url,
+        content_hash(title, url), embedding_id, now, now,
+    )
     with _conn() as conn:
-        conn.execute(
-            """INSERT OR IGNORE INTO raw_papers
-               (id, niche, title, snippet, extracted_claim, url, content_hash,
-                embedding_id, first_seen, last_seen)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (paper_id, niche, title, snippet, extracted_claim, url,
-             content_hash(title, url), embedding_id, now, now),
-        )
+        conn.execute(_SQL_INSERT_PAPER, params)
         conn.commit()
+    _mirror(_SQL_INSERT_PAPER, params)
 
 
 # ── claims ───────────────────────────────────────────────────────────────
@@ -270,15 +333,11 @@ def create_claim(
         evidence_level = "Speculative"
     claim_id = uuid.uuid4().hex
     now = _now()
+    params = (claim_id, summary, evidence_level, json.dumps(niches), embedding_id, now, now)
     with _conn() as conn:
-        conn.execute(
-            """INSERT INTO claims
-               (id, summary, evidence_level, evidence_count, niches_json,
-                status, embedding_id, first_seen, last_seen)
-               VALUES (?, ?, ?, 1, ?, 'active', ?, ?, ?)""",
-            (claim_id, summary, evidence_level, json.dumps(niches), embedding_id, now, now),
-        )
+        conn.execute(_SQL_INSERT_CLAIM, params)
         conn.commit()
+    _mirror(_SQL_INSERT_CLAIM, params)
     return claim_id
 
 
@@ -291,18 +350,16 @@ def bump_claim(claim_id: str, niche: str, evidence_level: str | None = None) -> 
         niches = set(json.loads(row["niches_json"]))
         niches.add(niche)
         new_count = row["evidence_count"] + 1
+        now = _now()
         if evidence_level and evidence_level in VALID_EVIDENCE_LEVELS:
-            conn.execute(
-                """UPDATE claims SET evidence_count = ?, niches_json = ?,
-                   evidence_level = ?, last_seen = ? WHERE id = ?""",
-                (new_count, json.dumps(sorted(niches)), evidence_level, _now(), claim_id),
-            )
+            sql = _SQL_BUMP_CLAIM_WITH_LEVEL
+            params = (new_count, json.dumps(sorted(niches)), evidence_level, now, claim_id)
         else:
-            conn.execute(
-                "UPDATE claims SET evidence_count = ?, niches_json = ?, last_seen = ? WHERE id = ?",
-                (new_count, json.dumps(sorted(niches)), _now(), claim_id),
-            )
+            sql = _SQL_BUMP_CLAIM
+            params = (new_count, json.dumps(sorted(niches)), now, claim_id)
+        conn.execute(sql, params)
         conn.commit()
+    _mirror(sql, params)
 
 
 def get_claim(claim_id: str) -> dict | None:
@@ -323,12 +380,11 @@ def list_active_claims(limit: int = 200) -> list[dict]:
 # ── paper_claim_links (append-only) ─────────────────────────────────────
 
 def link(paper_id: str, claim_id: str, decision: str) -> None:
+    params = (paper_id, claim_id, decision, _now())
     with _conn() as conn:
-        conn.execute(
-            "INSERT INTO paper_claim_links (paper_id, claim_id, decision, created_at) VALUES (?, ?, ?, ?)",
-            (paper_id, claim_id, decision, _now()),
-        )
+        conn.execute(_SQL_LINK, params)
         conn.commit()
+    _mirror(_SQL_LINK, params)
 
 
 def list_links_by_decision(decision: str, since: str, limit: int = 100) -> list[dict]:
@@ -350,12 +406,11 @@ def get_meta(key: str) -> str | None:
 
 
 def set_meta(key: str, value: str) -> None:
+    params = (key, value)
     with _conn() as conn:
-        conn.execute(
-            "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (key, value),
-        )
+        conn.execute(_SQL_SET_META, params)
         conn.commit()
+    _mirror(_SQL_SET_META, params)
 
 
 # ── config overrides (auto-tunable knobs, JSON-encoded via meta) ──────────
@@ -417,12 +472,11 @@ def active_claims_fingerprint() -> str:
 # ── suppressed_alerts (persisted so the audit can review what got buried) ──
 
 def log_suppressed_alert(source: str, finding: str, reason: str = "") -> None:
+    params = (source, finding, reason, _now())
     with _conn() as conn:
-        conn.execute(
-            "INSERT INTO suppressed_alerts (source, finding, reason, created_at) VALUES (?, ?, ?, ?)",
-            (source, finding, reason, _now()),
-        )
+        conn.execute(_SQL_SUPPRESSED_ALERT, params)
         conn.commit()
+    _mirror(_SQL_SUPPRESSED_ALERT, params)
 
 
 def list_suppressed_alerts(since: str, limit: int = 100) -> list[dict]:
@@ -437,18 +491,10 @@ def list_suppressed_alerts(since: str, limit: int = 100) -> list[dict]:
 # ── niche performance tracking ─────────────────────────────────────────
 
 def record_niche_perf(niche: str, had_finding: bool) -> None:
-    now = _now()
+    params = (niche, 1 if had_finding else 0, 0 if had_finding else 1, _now())
     with _conn() as conn:
-        conn.execute(
-            """INSERT INTO niche_perf (niche, scans, hits, misses, last_scan)
-               VALUES (?, 1, ?, ?, ?)
-               ON CONFLICT(niche) DO UPDATE SET
-                 scans=scans+1,
-                 hits=hits+excluded.hits,
-                 misses=misses+excluded.misses,
-                 last_scan=excluded.last_scan""",
-            (niche, 1 if had_finding else 0, 0 if had_finding else 1, now),
-        )
+        conn.execute(_SQL_NICHE_PERF, params)
+    _mirror(_SQL_NICHE_PERF, params)
 
 
 def top_niches(limit: int = 10) -> list[dict]:
@@ -490,12 +536,11 @@ def set_prompt(name: str, text: str, created_by: str = "human") -> int:
             "SELECT MAX(version) AS v FROM subagent_prompts WHERE name = ?", (name,)
         ).fetchone()
         next_version = (row["v"] or 0) + 1
-        conn.execute(
-            "INSERT INTO subagent_prompts (name, version, text, created_at, created_by) VALUES (?, ?, ?, ?, ?)",
-            (name, next_version, text, _now(), created_by),
-        )
+        params = (name, next_version, text, _now(), created_by)
+        conn.execute(_SQL_PROMPT, params)
         conn.commit()
-        return next_version
+    _mirror(_SQL_PROMPT, params)
+    return next_version
 
 
 def rollback_prompt(name: str, to_version: int) -> bool:
