@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Pure renderer logic + the Playwright harness. Everything here is mocked at
+  # the Tauri IPC boundary, so it runs on a plain Linux runner.
+  orb-web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clixen-orb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: clixen-orb/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:web
+      - run: python3 -m pip install --upgrade pip playwright
+      - run: python3 -m playwright install --with-deps chromium
+      # package.json's test:ui honours $PYTHON so CI does not need the uv venv.
+      - run: PYTHON=python3 npm run test:ui
+
+  # The crate is macOS-only (NSPanel, objc2), and tauri-build needs the web
+  # bundle to exist before cargo compiles.
+  orb-rust:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: clixen-orb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: clixen-orb/package-lock.json
+      - run: npm ci
+      - run: npm run build:web
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: clixen-orb/src-tauri
+      # Includes the ACL test that walks every #[tauri::command] and asserts it
+      # is registered in build.rs and granted by a capability.
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

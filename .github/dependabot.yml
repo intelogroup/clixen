@@ -1,0 +1,64 @@
+version: 2
+
+# Weekly, grouped: one PR per ecosystem instead of one per package. Security
+# updates ignore `schedule` and land immediately — that is what closed the 144
+# alerts, so keeping the signal low-noise matters more than the cadence.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      root-js:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /clixen-orb
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      orb-js:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /tools-harness
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      harness-js:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /google-mcp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      google-mcp-js:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /clixen-orb/src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      rust:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

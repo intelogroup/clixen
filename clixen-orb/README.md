@@ -30,7 +30,12 @@ clixen-orb/
 npm install
 npm run dev          # Tauri dev server (Vite on :1420, app on :1420)
 npm run build        # → src-tauri/target/release/bundle/macos/Clixen Orb.app
+npm run release      # build app + dmg, then verify signature, entitlements, checksum
 ```
+
+`npm run release` also ejects stale `rw.*.dmg` scratch images first: a killed
+Tauri build leaves one mounted and the next DMG step then dies with
+`couldn't unmount … Resource busy`.
 
 The backend must be up (`tools-harness/core.py`, `http://127.0.0.1:9234`).
 Override the address with `CLIXEN_BACKEND_URL`.
