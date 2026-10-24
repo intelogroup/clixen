@@ -107,3 +107,18 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "live" in item.keywords:
             item.add_marker(skip_live)
+
+
+@pytest.fixture(autouse=True)
+def _disable_turso_mirror(monkeypatch):
+    """Keep the deterministic suite off the live Turso replica.
+
+    store/science_scout_store.py mirrors every write to Turso whenever
+    TURSO_DATABASE_URL is set — and it is set in tools-harness/.env. Without
+    this guard any test that writes a claim would hit the real database: slow,
+    flaky with no network, and it would pollute the replica with test rows.
+    Tests that exercise mirroring patch store.turso_client.mirror directly, so
+    they are unaffected.
+    """
+    monkeypatch.setenv("TURSO_DISABLE", "1")
+
