@@ -33,6 +33,19 @@ jobs:
       # package.json's test:ui honours $PYTHON so CI does not need the uv venv.
       - run: PYTHON=python3 npm run test:ui
 
+  # The VAD/session logic needs only numpy, onnxruntime and webrtcvad — no
+  # macOS, no torch, no docling. The speech fixture is committed, so these run
+  # on Linux instead of skipping for lack of a system voice.
+  voice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip numpy onnxruntime pytest webrtcvad-wheels httpx
+      - run: PYTHONPATH=tools-harness python -m pytest tools-harness/tests/voice/test_vad.py tools-harness/tests/voice/test_session.py -q
+
   # The crate is macOS-only (NSPanel, objc2), and tauri-build needs the web
   # bundle to exist before cargo compiles.
   orb-rust:

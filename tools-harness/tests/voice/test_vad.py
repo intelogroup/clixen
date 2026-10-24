@@ -38,8 +38,24 @@ SILENCE = b"\x00" * FRAME_BYTES
 SPEECH = np.full(FRAME_SAMPLES, 6000, dtype="<i2").tobytes()
 
 
+FIXTURE = Path(__file__).resolve().parent / "fixtures" / "speech_16k.wav"
+
+
+def _read_wav(path: Path) -> np.ndarray:
+    with wave.open(str(path)) as handle:
+        raw = handle.readframes(handle.getnframes())
+    return np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+
+
 def _tts_pcm(text: str) -> np.ndarray | None:
-    """16 kHz mono float32 speech, synthesized with the system voice."""
+    """16 kHz mono float32 speech.
+
+    A committed fixture first, so the test is identical on every machine and in
+    CI (no dependence on which system voices are installed); the system voice is
+    only used when the fixture is missing.
+    """
+    if FIXTURE.exists():
+        return _read_wav(FIXTURE)
     if not (shutil.which("say") and shutil.which("afconvert")):
         return None
     with tempfile.TemporaryDirectory() as tmp:
@@ -49,9 +65,7 @@ def _tts_pcm(text: str) -> np.ndarray | None:
             ["afconvert", "-f", "WAVE", "-d", "LEI16@16000", "-c", "1", str(aiff), str(wav)],
             check=True, capture_output=True,
         )
-        with wave.open(str(wav)) as handle:
-            raw = handle.readframes(handle.getnframes())
-    return np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+        return _read_wav(wav)
 
 
 def _frames(pcm: np.ndarray) -> list[bytes]:
