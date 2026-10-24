@@ -8,6 +8,13 @@ version = "0.1.0"
 description = "Local LLM tools harness, chat UI, and deterministic search agent."
 requires-python = ">=3.12"
 dependencies = [
+  # The orb drives the user's own screen: observe/act/ax_context import AppKit,
+  # Quartz and ApplicationServices directly (tools/screen_act.py, tools/ax_context.py).
+  # Without these the screen tools fail with "No module named 'AppKit'" while the
+  # Chrome-extension tools keep working, so the breakage is easy to miss.
+  "pyobjc-framework-cocoa>=11,<12; sys_platform == 'darwin'",
+  "pyobjc-framework-quartz>=11,<12; sys_platform == 'darwin'",
+  "pyobjc-framework-applicationservices>=11,<12; sys_platform == 'darwin'",
   "apscheduler>=3.10,<4",
   "beautifulsoup4>=4.14,<5",
   "ddgs>=9,<10",
