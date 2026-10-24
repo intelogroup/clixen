@@ -71,3 +71,68 @@ def test_voice_prompt_puts_the_answer_first_rule_ahead_of_the_screen_protocol():
 def test_orb_prompt_is_unchanged():
     """The orb keeps its own prompt: the spoken rules are voice-only."""
     assert "SPEAKING ALOUD" not in orb_agent.system_prompt()
+
+
+# ── screen context (B1): the orb starts a turn knowing where it is ──────────
+
+
+def test_screen_block_is_one_compact_line():
+    block = orb_agent.screen_block({
+        "app": "Google Chrome",
+        "window": "USPS Tracking | USPS",
+        "url": "https://tools.usps.com/go/TrackConfirmAction",
+        "focus_role": "AXTextField",
+        "focus_label": "Search",
+        "focus_value": "",
+        "popovers": [],
+    })
+    assert block.startswith("SCREEN (snapshot taken for this turn")
+    assert "app=Google Chrome" in block
+    assert "url=https://tools.usps.com" in block
+    assert 'focus=AXTextField "Search"' in block
+    assert "\n" not in block, "one line: it is prepended to every spoken turn"
+
+
+def test_screen_block_is_empty_when_the_snapshot_failed():
+    assert orb_agent.screen_block({}) == ""
+    assert orb_agent.screen_block({"app": ""}) == ""
+
+
+def test_screen_block_trims_long_values():
+    block = orb_agent.screen_block({"app": "A", "window": "w" * 300, "url": "u" * 400})
+    assert len(block) < 300
+
+
+def test_the_orb_prompt_carries_the_screen_block_when_present():
+    prompt = orb_agent.system_prompt_with_screen({"app": "Ghostty"}, "TIME: now")
+    assert "app=Ghostty" in prompt
+    assert "TIME: now" in prompt
+    assert orb_agent.PROMPT in prompt
+
+
+def test_the_orb_prompt_omits_the_block_when_unavailable():
+    prompt = orb_agent.system_prompt_with_screen({}, "TIME: now")
+    assert "SCREEN (" not in prompt
+    assert orb_agent.PROMPT in prompt
+
+
+def test_screen_context_can_be_switched_off(monkeypatch):
+    import harness
+
+    monkeypatch.setenv("CLIXEN_SCREEN_CONTEXT", "0")
+    assert harness._screen_ctx() == {}
+
+
+def test_screen_context_is_fail_safe(monkeypatch):
+    import harness
+
+    monkeypatch.delenv("CLIXEN_SCREEN_CONTEXT", raising=False)
+    monkeypatch.setattr(harness, "_screen_ctx_cache", {"at": 0.0, "ctx": {}})
+
+    import tools.ax_context as axc
+
+    def boom():
+        raise RuntimeError("AX is angry")
+
+    monkeypatch.setattr(axc, "front_context", boom)
+    assert harness._screen_ctx() == {}, "an AX failure must degrade to no block"

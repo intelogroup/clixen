@@ -27,6 +27,7 @@ TOOL_NAMES = frozenset({
 PROMPT = """You are Clixen, the agent behind the floating orb. A pixel bunny shows the user what you do: it follows every click and keystroke you make on their real Mac screen. Do the task yourself, to the end.
 
 YOUR SCREEN TOOLS
+- The turn starts with a SCREEN block: app, window, url, and what has focus, read live for this turn. It is authoritative for "what app is in front", "what page/window is this", "what URL is this" — answer those straight from it and do not call observe() for them. observe is only for element ids to click, or when the page changed mid-task.
 - observe(): what is on screen now: app, title, URL, focus, overlays in the way, and numbered elements (ids look like e3.14) with role, label and the value of text fields.
 - act(target, action, text, expect): click / type / key / scroll one thing. target is an element id from observe, copied exactly (or its label). It returns what changed: {ok, effect: {focus, title, appeared, gone}} or {ok:false, error: {code, hint, candidates}}. A click that changed nothing has warning "no_effect". Extension side panels are closed for you.
 - wait_for(expect, timeout): wait until the screen shows something (a page loaded, a notice). tabs(action, match): list, switch to, or close tabs by title/URL; use it when an extension or link opened a stray tab in front. app_task(name, args): known jobs end to end (gmail.send).
@@ -112,14 +113,47 @@ VOICE_PROMPT_HEAD = """SPEAKING ALOUD
 Your reply is spoken by a TTS voice: one or two short sentences, plain words, no markdown, no lists, no tables, no emoji, no URLs read out loud. Answer the question first, then at most one clarifying detail.
 
 ANSWER DIRECTLY WHEN YOU CAN
-If the question can be answered from your own knowledge, or from the context blocks below (time, date, memory, screen), answer immediately and call no tool. Do not observe the screen, read the clock or plan a task to say "four" or "hello". The current date and time are already given below, so there is no clock to read. Use tools only when the user asked you to do something on their screen or the answer is not knowable without one.
+If the question can be answered from your own knowledge, or from the context blocks below (time, date, memory, screen), answer immediately and call no tool. Do not observe the screen, read the clock or plan a task to say "four" or "hello". The current date and time are already given below, so there is no clock to read. When a SCREEN block is present it already says which app and window are in front, which page is open and what has focus — answer from it, and call observe only when you need element ids to click. Use tools only when the user asked you to do something on their screen or the answer is not knowable without one.
 """
+
+
+def screen_block(ctx: dict) -> str:
+    """One compact line describing what is in front, or '' when unknown.
+
+    Injected into the orb/voice prompt so "what app is in front?" and "what page
+    is this?" are answered from context instead of costing an observe() round.
+    Kept terse on purpose: it is prepended to every spoken turn, so it is a
+    latency cost as well as a context win.
+    """
+    if not ctx or not ctx.get("app"):
+        return ""
+    bits = [f"app={ctx['app']}"]
+    if ctx.get("window"):
+        bits.append(f'window="{ctx["window"][:80]}"')
+    if ctx.get("url"):
+        bits.append(f"url={ctx['url'][:120]}")
+    focus = ctx.get("focus_label") or ctx.get("focus_value")
+    if focus:
+        role = ctx.get("focus_role") or "element"
+        bits.append(f'focus={role} "{focus[:60]}"')
+    if ctx.get("popovers"):
+        bits.append("popovers=" + "; ".join(p[:40] for p in ctx["popovers"][:3]))
+    return (
+        "SCREEN (snapshot taken for this turn, no tool call needed): "
+        + " | ".join(bits)
+    )
 
 
 def voice_prompt(*blocks: str) -> str:
     """The spoken-reply rules first (they are the strongest signal), then context,
     then the orb's screen protocol for tasks that do need it."""
     return "\n".join([VOICE_PROMPT_HEAD] + [b for b in blocks if b] + [PROMPT])
+
+
+def system_prompt_with_screen(ctx: dict, *blocks: str) -> str:
+    """The orb's prompt with the screen snapshot prepended ('' when unavailable)."""
+    block = screen_block(ctx)
+    return system_prompt(*(  ([block] if block else []) + list(blocks)))
 
 
 def lean_tools(tools: list) -> list:

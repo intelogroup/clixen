@@ -259,6 +259,37 @@ def front_url(app: str = "") -> str:
     return str(url) if url else ""
 
 
+
+def front_context() -> dict:
+    """A cheap snapshot of what is in front: app, window, URL, focus.
+
+    Only the primitives that do NOT walk the element tree (`window_title`,
+    `front_url`, `focused_field`, `popovers`), so this costs a few AX calls and
+    no tab/AXChildren traversal — measured well under 100 ms. That is the point:
+    the model can be told where it is for free, instead of spending a whole tool
+    round on `observe()` just to find out.
+
+    Fail-safe by design: any AX/AppKit problem returns {} and the caller simply
+    omits the block. Never raises.
+    """
+    try:
+        _pid, app = _target_app()
+        if not app:
+            return {}
+        role, value = focused_field() or ("", "")
+        return {
+            "app": app,
+            "window": window_title() or "",
+            "url": front_url() or "",
+            "focus_role": role,
+            "focus_label": focused_label() or "",
+            "focus_value": (value or "")[:120],
+            "popovers": popovers(),
+        }
+    except Exception:  # noqa: BLE001 - a context nicety must never break a turn
+        return {}
+
+
 def tab_count(pid: int) -> int:
     """Tabs across all of one app instance's windows (0 when its windows have no tab strip)."""
     el = _ax_app(pid)

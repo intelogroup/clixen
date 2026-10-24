@@ -12,6 +12,7 @@ import os
 import logging
 import re
 import threading
+import time
 import uuid
 from pathlib import Path
 from dotenv import load_dotenv
@@ -41,6 +42,44 @@ from clients.router import classify_message, model_for_intent, reasoning_effort_
 
 
 MAX_ROUNDS = ollama_client.MAX_ROUNDS
+
+# ── cheap screen context for the orb/voice prompts ─────────────────────────
+# The orb exists to act on the user's screen, so it should start every turn
+# knowing what is in front instead of paying an observe() round (~1 s) to find
+# out. Memoised for a couple of seconds because one turn runs several LLM rounds
+# and the AX read should happen once, not per round.
+_SCREEN_CTX_TTL_S = 2.0
+_screen_ctx_lock = threading.Lock()
+_screen_ctx_cache: dict = {"at": 0.0, "ctx": {}}
+
+
+def _screen_ctx(ttl: float = _SCREEN_CTX_TTL_S) -> dict:
+    """Front-window snapshot (app, window, url, focus), or {} when unavailable.
+
+    Never raises and never blocks a turn: tools.ax_context.front_context() is
+    itself fail-safe and only reads the cheap attributes (no element-tree walk).
+    Set CLIXEN_SCREEN_CONTEXT=0 to switch it off.
+    """
+    if os.environ.get("CLIXEN_SCREEN_CONTEXT", "1") == "0":
+        return {}
+    now = time.monotonic()
+    with _screen_ctx_lock:
+        if _screen_ctx_cache["ctx"] and now - _screen_ctx_cache["at"] < ttl:
+            return _screen_ctx_cache["ctx"]
+    t_read = time.monotonic()
+    try:
+        from tools import ax_context
+
+        ctx = ax_context.front_context()
+    except Exception:  # noqa: BLE001 - context is a nicety, not a requirement
+        ctx = {}
+    read_ms = (time.monotonic() - t_read) * 1000
+    if os.environ.get("CLIXEN_ORB_DEBUG") == "1":
+        _log.info("[screen-ctx] %.0f ms app=%r url=%r window=%r",
+                  read_ms, ctx.get("app"), ctx.get("url"), ctx.get("window"))
+    with _screen_ctx_lock:
+        _screen_ctx_cache.update(at=now, ctx=ctx)
+    return ctx
 
 
 def local_chat(**kwargs):
@@ -996,15 +1035,26 @@ def _run_impl(
             orchestrator_tools = [t for t in orchestrator_tools
                                   if t["function"]["name"] != "ask_deep_research"]
 
+        _screen = ""
+        if orb_agent.is_orb_chat(chat_id) or orb_agent.is_voice_chat(chat_id):
+            # One cheap AX read per turn (memoised ~2 s) instead of an observe()
+            # round: log it so "did the orb know where it was?" is answerable.
+            _screen = orb_agent.screen_block(_screen_ctx())
+            _log.info("[orb] screen block: %s", _screen[:160] or "(none)")
+
         if orb_agent.is_orb_chat(chat_id):  # the orb drives the user's screen: lean tools and prompt, not the chat coordinator's
             orchestrator_tools = orb_agent.lean_tools(orchestrator_tools)
-            orchestrator_system_prompt = orb_agent.system_prompt(_orch_plan_block, _orch_mem_block, _dt_line)
+            orchestrator_system_prompt = orb_agent.system_prompt_with_screen(
+                _screen_ctx(), _orch_plan_block, _orch_mem_block, _dt_line
+            )
         elif orb_agent.is_voice_chat(chat_id):
             # Spoken turns were running the coordinator's ~17k-token prompt because
             # voice_agent does not match the "orb" prefix: same lean tool set here,
             # plus rules for text that is about to be read out loud.
             orchestrator_tools = orb_agent.voice_tools(orchestrator_tools)
-            orchestrator_system_prompt = orb_agent.voice_prompt(_orch_plan_block, _orch_mem_block, _dt_line)
+            orchestrator_system_prompt = orb_agent.voice_prompt(
+                *([_screen] if _screen else []), _orch_plan_block, _orch_mem_block, _dt_line
+            )
 
         # Model-driven callers (orb, web UI: no intent passed) get no classifier, no forced tool, no
         # pre-guard and no verify retries: the model picks its tools from the full list. Telegram and
