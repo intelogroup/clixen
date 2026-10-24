@@ -64,6 +64,7 @@ def _setup_handler_registry() -> None:
         health_check,
         inbox_monitor_attachments,
         memory_verify,
+        nightly_backup,
         reddit_intel,
         science_scout,
         study_usmle_daily,
@@ -83,6 +84,7 @@ def _setup_handler_registry() -> None:
     handler_registry.register("health_check", health_check.handle)
     handler_registry.register("inbox.monitor_attachments", inbox_monitor_attachments.handle)
     handler_registry.register("memory_verify", memory_verify.handle)
+    handler_registry.register("nightly_backup", nightly_backup.handle)
     handler_registry.register("reddit_intel", reddit_intel.handle)
     handler_registry.register("science_scout", science_scout.handle)
     handler_registry.register("study.usmle_daily", study_usmle_daily.handle)

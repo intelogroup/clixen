@@ -41,23 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from store import turso_client  # noqa: E402
-
-# SQLite files that hold real state. Order is irrelevant; discovery is by glob.
-DEFAULT_GLOBS = [
-    "store/*.db",
-    "data/*.sqlite",
-    "jobs/*.db",
-    "reminders.db",
-    "tools/_tool_failures.db",
-    "data/tsdata/catalog.db",
-]
-
-# Excluded from discovery unless named explicitly with --db. catalog.db is a
-# local time-series catalog (2.7M rows of `observations`): bulk measurements,
-# not agent state. Exporting it would dominate runtime and replica size.
-DEFAULT_EXCLUDES = {
-    "data/tsdata/catalog.db",
-}
+from store.db_inventory import discover_dbs  # noqa: E402
 
 MANIFEST_DDL = """
 CREATE TABLE IF NOT EXISTS _export_manifest (
@@ -96,30 +80,66 @@ def target_prefix(db_path: Path) -> str:
     return namespace(db_path.stem) + "__"
 
 
-def discover_dbs(explicit: list[str], include_science_scout: bool) -> list[Path]:
-    if explicit:
-        candidates = [Path(p) if Path(p).is_absolute() else ROOT / p for p in explicit]
-    else:
-        candidates = []
-        for pattern in DEFAULT_GLOBS:
-            candidates.extend(sorted(ROOT.glob(pattern)))
-    out: list[Path] = []
-    seen: set[Path] = set()
-    for path in candidates:
-        path = path.resolve()
-        if path in seen or not path.is_file() or path.stat().st_size < 4096:
+def load_manifest() -> dict[tuple[str, str], dict]:
+    """(source_db, source_table) -> last exported rows/hash, for incremental skips."""
+    try:
+        rows = turso_client.query(
+            "select source_db, source_table, rows, sha256 from _export_manifest"
+        )
+    except turso_client.TursoError:
+        return {}
+    return {(r["source_db"], r["source_table"]): r for r in rows}
+
+
+def ensure_columns(conn: sqlite3.Connection, table: str, target: str) -> list[str]:
+    """Add columns that exist locally but not yet remotely.
+
+    `CREATE TABLE IF NOT EXISTS` is a no-op once the table exists, so a store
+    that gains a column would otherwise fail every nightly INSERT with
+    "table has no column named X" and silently stop replicating. ALTER TABLE
+    ADD COLUMN can't carry NOT NULL without a default, so those are added
+    nullable and the next copy fills them.
+    """
+    local = {r[1]: r for r in conn.execute(f'PRAGMA table_info("{table}")')}
+    try:
+        remote = {r["name"] for r in turso_client.query(f'PRAGMA table_info("{target}")')}
+    except turso_client.TursoError:
+        return []  # table absent — the CREATE statements will make it
+    if not remote:
+        return []
+    added: list[str] = []
+    for name, row in local.items():
+        if name in remote:
             continue
-        if path.name == "science_scout.db" and not include_science_scout:
-            continue  # already mirrored live by store/science_scout_store.py
-        try:
-            rel = path.relative_to(ROOT).as_posix()
-        except ValueError:
-            rel = path.name
-        if rel in DEFAULT_EXCLUDES:
-            continue
-        seen.add(path)
-        out.append(path)
-    return out
+        decl = (row[2] or "").strip()
+        ddl = f'ALTER TABLE "{target}" ADD COLUMN "{name}"'
+        if decl:
+            ddl += f" {decl}"
+        if row[4] is not None:  # dflt_value
+            ddl += f" DEFAULT {row[4]}"
+        turso_client.execute(ddl)
+        added.append(name)
+    return added
+
+
+def _is_current(
+    conn: sqlite3.Connection, db_name: str, table: str, target: str,
+    manifest: dict[tuple[str, str], dict],
+) -> bool:
+    """True when the manifest hash matches local rows AND the remote count agrees."""
+    entry = manifest.get((db_name, table))
+    if not entry:
+        return False
+    cols = _columns(conn, table)
+    local_hash, local_n = canonical_hash(cols, _read_local(conn, table, cols))
+    if entry.get("rows") != local_n or entry.get("sha256") != local_hash:
+        return False
+    try:
+        remote_n = turso_client.query(f'select count(*) as c from "{target}"')[0]["c"]
+    except turso_client.TursoError:
+        return False
+    return remote_n == local_n
+
 
 
 def _objects(conn: sqlite3.Connection):
@@ -268,38 +288,148 @@ def _manifest_upsert(source_db: str, source_table: str, target: str, rows: int, 
     )
 
 
-def export_db(db_path: Path, batch_size: int, truncate: bool, verify_only: bool) -> bool:
+def export_db(
+    db_path: Path,
+    batch_size: int,
+    truncate: bool,
+    verify_only: bool,
+    incremental: bool = False,
+    manifest: dict[tuple[str, str], dict] | None = None,
+    quiet: bool = False,
+) -> dict:
+    """Copy one database. Returns per-db stats; per-table problems don't raise."""
     prefix = target_prefix(db_path)
+    manifest = manifest or {}
+    stats = {
+        "db": db_path.name, "tables": 0, "rows": 0, "skipped": 0,
+        "mismatch": 0, "unverified": 0, "raced": 0, "rebuilt": 0,
+        "added_columns": {},
+    }
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         table_map, _indexes, statements, skipped = plan_schema(conn, prefix)
         tables = [t for t in _names(conn, "table") if t in table_map]
-        print(f"\n== {db_path.name}  ({len(tables)} tables, prefix {prefix!r})")
-        if skipped:
-            print(f"   skipped (not mappable): {skipped}")
+        if not quiet:
+            print(f"\n== {db_path.name}  ({len(tables)} tables, prefix {prefix!r})")
+            if skipped:
+                print(f"   skipped (not mappable): {skipped}")
         if not verify_only:
             turso_client.execute_batch([(s, ()) for s in statements])
-        ok = True
         for table in tables:
             target = table_map[table]
+            stats["tables"] += 1
+            exported_sha = None
+            exported_rows = None
             if not verify_only:
+                if incremental and not truncate and _is_current(
+                    conn, db_path.name, table, target, manifest
+                ):
+                    stats["skipped"] += 1
+                    if not quiet:
+                        print(f"   {table:24s} unchanged — skipped")
+                    continue
+                added = ensure_columns(conn, table, target)
+                if added:
+                    stats["added_columns"][f"{db_path.name}:{table}"] = added
+                    if not quiet:
+                        print(f"   {table:24s} +columns {added}")
                 if truncate:
                     turso_client.execute(f'DELETE FROM "{target}"')
-                rows, sha = export_table(conn, table, target, batch_size)
-                _manifest_upsert(db_path.name, table, target, rows, sha)
-                print(f"   {table:24s} -> {target:44s} {rows:6d} rows")
+                exported_rows, exported_sha = export_table(conn, table, target, batch_size)
+                _manifest_upsert(db_path.name, table, target, exported_rows, exported_sha)
+                stats["rows"] += exported_rows
+                if not quiet:
+                    print(f"   {table:24s} -> {target:44s} {exported_rows:6d} rows")
+
+            # A live table (event_log, workflow_instances, notifications) can be
+            # written while we copy it. Re-hash locally: if it moved, the remote
+            # difference is our own race, not drift — don't fail the run for it.
+            if exported_sha is not None:
+                cols = _columns(conn, table)
+                now_sha, now_n = canonical_hash(cols, _read_local(conn, table, cols))
+                if (now_sha, now_n) != (exported_sha, exported_rows):
+                    stats["raced"] += 1
+                    if not quiet:
+                        print(f"   {table:24s} changed mid-copy — verify skipped")
+                    continue
+
             try:
                 match, local_n, remote_n, local_h, remote_h = verify_table(conn, table, target)
             except turso_client.TursoError as exc:
-                print(f"   {table:24s} -> {target:44s} UNREADABLE: {exc}")
-                ok = False
+                stats["unverified"] += 1
+                if not quiet:
+                    print(f"   {table:24s} -> {target:44s} UNREADABLE: {exc}")
                 continue
-            ok &= match
-            detail = "MATCH" if match else f"MISMATCH {local_h[:8]}/{remote_h[:8]}"
-            print(f"      verify local={local_n} remote={remote_n} {detail}")
-        return ok
+
+            # Capped/evicting tables (event_log keeps 2000, oldest evicted) leave
+            # ghost rows behind after an incremental INSERT OR REPLACE. Rebuild
+            # that table once instead of reporting drift forever.
+            if (not match and not verify_only and not truncate
+                    and local_n != remote_n):
+                turso_client.execute(f'DELETE FROM "{target}"')
+                export_table(conn, table, target, batch_size)
+                stats["rebuilt"] += 1
+                if not quiet:
+                    print(f"   {table:24s} rebuild (remote had {remote_n}, local {local_n})")
+                try:
+                    match, local_n, remote_n, local_h, remote_h = verify_table(conn, table, target)
+                except turso_client.TursoError:
+                    match = False
+
+            if not match:
+                stats["mismatch"] += 1
+                if not quiet:
+                    print(f"      verify local={local_n} remote={remote_n} "
+                          f"MISMATCH {local_h[:8]}/{remote_h[:8]}")
+            elif not quiet:
+                print(f"      verify local={local_n} remote={remote_n} MATCH")
+        return stats
     finally:
         conn.close()
+
+
+def run_export(
+    dbs,
+    *,
+    batch_size: int = 300,
+    truncate: bool = False,
+    verify_only: bool = False,
+    incremental: bool = False,
+    quiet: bool = False,
+) -> dict:
+    """Aggregate export over many databases — shared by the CLI and the nightly job."""
+    if not turso_client.enabled():
+        return {"success": False, "error": f"Turso disabled: {turso_client.disabled_reason()}"}
+    manifest = {} if verify_only else load_manifest()
+    if not verify_only:
+        turso_client.execute(MANIFEST_DDL)
+
+    totals = {
+        "success": True, "databases": 0, "tables": 0, "rows": 0,
+        "skipped": 0, "mismatch": 0, "unverified": 0, "raced": 0, "rebuilt": 0,
+        "added_columns": {}, "errors": [],
+    }
+    for db_path in dbs:
+        try:
+            stats = export_db(
+                db_path, batch_size, truncate, verify_only, incremental, manifest, quiet
+            )
+        except Exception as exc:  # noqa: BLE001 — one bad DB must not stop the rest
+            totals["errors"].append(f"{db_path.name}: {type(exc).__name__}: {exc}")
+            continue
+        totals["databases"] += 1
+        for key in ("tables", "rows", "skipped", "mismatch", "unverified", "raced", "rebuilt"):
+            totals[key] += stats[key]
+        totals["added_columns"].update(stats["added_columns"])
+
+    if totals["errors"] or totals["mismatch"] or totals["unverified"]:
+        totals["success"] = False
+        totals["error"] = (
+            totals["errors"][0] if totals["errors"] else
+            f"{totals['mismatch']} table(s) mismatched, {totals['unverified']} unreadable"
+        )
+    return totals
+
 
 
 def main() -> int:
@@ -314,6 +444,8 @@ def main() -> int:
     ap.add_argument("--yes", action="store_true", help="required with --truncate")
     ap.add_argument("--include-science-scout", action="store_true",
                     help="also snapshot store/science_scout.db (already mirrored live)")
+    ap.add_argument("--incremental", action="store_true",
+                    help="skip tables whose manifest hash matches local rows")
     args = ap.parse_args()
 
     if args.truncate and not args.yes:
@@ -323,36 +455,54 @@ def main() -> int:
         print(f"Turso not configured: {turso_client.disabled_reason()}", file=sys.stderr)
         return 1
 
-    dbs = discover_dbs(args.db or [], args.include_science_scout)
+    dbs = discover_dbs(
+        args.db or [],
+        include_live_mirrored=args.include_science_scout,
+    )
     print(f"target: {turso_client._db_url()}")
     print(f"{turso_client.ping()}  |  {len(dbs)} database(s) to export")
     if not dbs:
         print("nothing to export", file=sys.stderr)
         return 1
 
-    try:
-        if not args.verify_only:
-            turso_client.execute(MANIFEST_DDL)
-        ok = True
+    if args.dry_run:
         for db_path in dbs:
-            if args.dry_run:
-                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-                try:
-                    table_map, _, statements, _ = plan_schema(conn, target_prefix(db_path))
-                    print(f"\n== {db_path.name}: {len(statements)} objects, "
-                          f"{len(table_map)} tables -> prefix {target_prefix(db_path)!r}")
-                    for t, target in sorted(table_map.items()):
-                        n = conn.execute(f'select count(*) from "{t}"').fetchone()[0]
-                        print(f"   {t:24s} -> {target:44s} {n:6d} rows")
-                finally:
-                    conn.close()
-                continue
-            ok &= export_db(db_path, max(1, args.batch_size), args.truncate, args.verify_only)
-        print("\nRESULT:", "all tables match" if ok else "MISMATCH/errors — see above")
-        return 0 if ok else 1
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            try:
+                table_map, _, statements, _ = plan_schema(conn, target_prefix(db_path))
+                print(f"\n== {db_path.name}: {len(statements)} objects, "
+                      f"{len(table_map)} tables -> prefix {target_prefix(db_path)!r}")
+                for t, target in sorted(table_map.items()):
+                    n = conn.execute(f'select count(*) from "{t}"').fetchone()[0]
+                    print(f"   {t:24s} -> {target:44s} {n:6d} rows")
+            finally:
+                conn.close()
+        return 0
+
+    try:
+        totals = run_export(
+            dbs,
+            batch_size=max(1, args.batch_size),
+            truncate=args.truncate,
+            verify_only=args.verify_only,
+            incremental=args.incremental,
+        )
     except turso_client.TursoError as exc:
         print(f"Turso error: {exc} (code={exc.code})", file=sys.stderr)
         return 1
+
+    for line in totals.get("errors", []):
+        print(f"error: {line}", file=sys.stderr)
+    print(
+        f"\nRESULT: databases={totals['databases']} tables={totals['tables']} "
+        f"rows={totals['rows']} skipped={totals['skipped']} "
+        f"rebuilt={totals['rebuilt']} raced={totals['raced']} "
+        f"mismatch={totals['mismatch']} unverified={totals['unverified']}"
+    )
+    if totals.get("added_columns"):
+        print("added columns:", totals["added_columns"])
+    print("STATUS:", "OK" if totals["success"] else f"FAILED — {totals.get('error', '')}")
+    return 0 if totals["success"] else 1
 
 
 if __name__ == "__main__":

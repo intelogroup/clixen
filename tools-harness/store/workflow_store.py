@@ -771,6 +771,17 @@ _BUILTIN_WORKFLOWS = [
         "config":        {"poll_hours": 12},
         "dedupe_key":    "world_monitor",
     },
+    {
+        "automation_id": "nightly_backup",
+        "task_name":     "Nightly local snapshots + Turso replica refresh",
+        "trigger_type":  "schedule",
+        "action_type":   "notification",
+        # 04:17 — after the 8pm scouts finish, before the morning jobs, and
+        # offset from every other cron minute so backups never contend with a scan.
+        "schedule":      _cron_schedule("17 4 * * *"),
+        "config":        {"keep_snapshots": 7},
+        "dedupe_key":    "nightly_backup",
+    },
 ]
 
 

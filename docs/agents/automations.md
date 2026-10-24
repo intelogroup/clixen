@@ -7,7 +7,7 @@ Background work runs through `jobs/worker.py`'s `main()`, inside `core.py`'s `ta
 **2. `workflow_store`** (`store/workflow_store.py`, SQLite) — durable, recurring/scheduled automations. Already uses APScheduler's `CronTrigger` internally for correct cron-math (next-fire-time, timezone handling via IANA names resolved from `USER_TIMEZONE`/`TZ`/`/etc/localtime`) — it is NOT a from-scratch reimplementation, it's a mature data layer built on top of a real scheduling library.
 - `claim_due_workflows(limit=10)`: atomically claims active instances whose `next_run_at` has passed, advances recurring ones to their next fire time (or pauses one-shot instances with no next run), and — if a workflow is >15 minutes overdue (e.g. process was down) — reschedules from *now* rather than replaying the missed interval, to avoid a cascade of backlogged fires. Returns full instance dicts.
 - Each claimed instance is dispatched via `jobs/handler_registry.dispatch(instance)`, which looks up `instance["automation_id"]` and calls the registered `handle(instance) -> dict`. Result persisted via `update_workflow_instance(id, last_result=result)`.
-- **14 builtin automations** seeded idempotently on every `chat_ui.py` startup (`seed_builtins()`, `store/workflow_store.py:_BUILTIN_WORKFLOWS`): `email.watch_sender`, `email.daily_summary`, `email.attachment_archive`, `inbox.monitor_attachments`, `briefing.morning`, `study.usmle_daily`, `tech_brief`, `golden.queries`, `health_check`, `reddit_intel`, `subagent_audit`, `daily_digest`, `science_scout`, `world_monitor` — each with its own dedicated handler file under `jobs/handlers/`, registered by exact id in `worker.py:_setup_handler_registry()`.
+- **15 builtin automations** seeded idempotently on every `chat_ui.py` startup (`seed_builtins()`, `store/workflow_store.py:_BUILTIN_WORKFLOWS`): `email.watch_sender`, `email.daily_summary`, `email.attachment_archive`, `inbox.monitor_attachments`, `briefing.morning`, `study.usmle_daily`, `tech_brief`, `golden.queries`, `health_check`, `reddit_intel`, `subagent_audit`, `daily_digest`, `science_scout`, `world_monitor`, `nightly_backup` — each with its own dedicated handler file under `jobs/handlers/`, registered by exact id in `worker.py:_setup_handler_registry()`.
 - **User/LLM-created automations** (via `tools/automation_tools.py:create_automation`, exposed through `ask_automation_agent` — reachable from Web UI, Telegram, WhatsApp, and voice/Brabble, since the orchestrator's tool list is channel-agnostic) all share **one** `automation_id`: `"user.automation"`. One generic handler (`jobs/handlers/user_automation.py`) reads `action_type`/`config` directly off the instance row — not off the automation_id — to decide what to do: `telegram` → `tools/telegram_send.send_telegram()`, `notification` → `workflow_store.add_notification()`, `http_webhook` → `requests.post(config["url"], json=config.get("payload"))`, `email` → `EXECUTORS["send_email"]`.
 
 **Bug history (2026-07), fixed and verified live against the running process (not just unit tests)**:
@@ -63,6 +63,30 @@ Background work runs through `jobs/worker.py`'s `main()`, inside `core.py`'s `ta
 - **CPython gotcha that cost a test failure**: `Connection.__exit__` commits through the C API, so it does **not** call a Python-level `commit()` override. `MirroredConnection.__exit__` flushes explicitly; without that, every store using `with _conn() as conn:` silently mirrored *nothing*.
 - **Limits**: only `execute`/`executemany` are intercepted — a `cursor()`-based caller bypasses the mirror. Both stores verified `conn.execute`-only before enabling.
 - **Tests**: `tests/test_mirrored_connection.py` (buffer-on-commit, rollback discard, namespacing, DDL/SELECT exclusion, mirror-failure isolation, plus a real `world_monitor_store.save_raw_scan` round trip).
+
+## Nightly backup: snapshots + incremental replica refresh (2026-10-24)
+
+`automation_id: "nightly_backup"` → `jobs/handlers/nightly_backup.py`, cron **`17 4 * * *`** (04:17 local, off-peak, offset from every scout). Two steps, one alert path — the handler returns `{"success": bool}`, and `jobs/worker.py:_dispatch_workflow` already telegrams on `success=False`, so a bad night becomes a message instead of silent drift.
+
+**1. Local snapshots — the actual restore story**
+`scripts/db_snapshot.py` writes `data/backups/<YYYY-MM-DD>/<store>.db` for every store in `store/db_inventory.py`, then rotates to the newest `keep_snapshots` (default 7) day-directories and runs `PRAGMA integrity_check` on each copy.
+- Uses the **sqlite3 backup API**, not `shutil.copy`: consistent under live WAL writers, and the copy is `VACUUM`ed so it opens compact.
+- **The Turso replica is not a backup** — no history, up to a day stale. Snapshots are what recover a deleted/corrupted `.db`.
+- `data/backups/` is gitignored via the existing `data/` rule.
+
+**2. Incremental Turso refresh**
+`scripts/turso_export_all.py --incremental`, driven by `_export_manifest` (rows + canonical SHA-256 per table):
+- Table unchanged (hash matches **and** remote `count(*)` agrees) → skipped, no network write. A typical night skips ~36 of 41 tables.
+- **Capped/evicting tables self-heal**: `event_log` (2,000 max), `plans` (200), `trace_runs` (200), `trace_entries` leave ghost rows under `INSERT OR REPLACE`, so a count mismatch triggers one `DELETE` + recopy (`rebuilt=` in the stats) instead of failing forever.
+- **Race guard**: after copying a table the exporter re-hashes it locally; if a daemon wrote during the copy, verification is skipped (`raced=`) rather than reported as drift. Without this, live tables failed the nightly job every single night.
+- **Schema drift**: `ensure_columns()` compares `PRAGMA table_info` local vs remote and issues `ALTER TABLE ADD COLUMN` for new columns — otherwise the day a store gains a column, every nightly INSERT fails with "table has no column named X" and replication stops silently.
+
+**Ops**
+- The instance is seeded by `seed_builtins()` on `chat_ui.py` startup; after adding it, call `workflow_store.seed_builtins()` directly (or restart chat_ui) or the row won't exist.
+- The worker must be restarted to register the handler (`registered 19 handler(s)` after this change).
+- `instance["config"]`: `keep_snapshots` (7), `skip_snapshots`, `skip_turso` (offline/no-credential hosts).
+- Baseline run: 22 DBs / 41.6 MB snapshotted, 41 tables reconciled with 0 mismatches, 3 rebuilt, 36 skipped.
+
 
 
 
