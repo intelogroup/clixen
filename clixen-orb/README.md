@@ -83,6 +83,36 @@ npm run test:e2e        # WebdriverIO drives the bundled debug app
 ```
 
 This is the only suite that runs the actual WKWebView with real IPC. It is
+### What the orb stacks above
+
+Verified against WindowServer (`CGWindowListCopyWindowInfo`), with Chrome and a
+terminal open behind it:
+
+| Case | Result |
+|---|---|
+| Normal windows of any app (layer 0) | orb above — nothing overlaps it |
+| The Dock (20) / menu bar (24) | orb above |
+| Its own cursor overlay (5) / caption (5) | orb above |
+| Other Spaces (⌃→) | still visible — `canJoinAllSpaces` works |
+| Pinned, ⌃⇧O → floating | level 25 → 4, both above app windows |
+| **Another app's full-screen Space** | **orb is ordered out** |
+
+The full-screen case is an OS limit, not a level bug. With Chrome full screen the
+panel is not on screen at level 25, 101 (popUpMenu), 500 (dragging) or 1000
+(screen saver), and re-fronting it with `orderFrontRegardless` from the watchdog
+does not pull it back either. The runtime mask is what it should be —
+`collectionBehavior=0x141` = `CanJoinAllSpaces | IgnoresCycle |
+FullScreenAuxiliary` — and `canJoinAllSpaces` demonstrably works for ordinary
+Spaces, so only the full-screen Space refuses another app's panel.
+
+It returns the instant the full-screen app is dismissed. macOS hides its own
+menu bar and Dock there too, so the orb behaves like the rest of the system UI.
+The useful consequence: nothing is lost while it is hidden — the SSE stream,
+the caption and the backend turn keep running.
+
+`[orb] window …: collectionBehavior=0x141 …` in the ⌃⇧D dump exists so this can be
+re-checked on any future macOS release without guesswork.
+
 [WebdriverIO](https://webdriver.io/docs/desktop-testing/tauri/) with
 `@wdio/tauri-service` and the **embedded** driver, which is how macOS is
 supported — `tauri-driver` itself has no WKWebView driver.

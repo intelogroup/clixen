@@ -817,6 +817,16 @@ fn setup_cursor_overlay(app: &AppHandle, orb: &WebviewWindow) {
 
 static PASS_THROUGH: AtomicBool = AtomicBool::new(false);
 static PINNED: AtomicBool = AtomicBool::new(true);
+/// Level while pinned: 25 = NSStatusWindowLevel, i.e. above normal windows (0),
+/// the Dock (20) and the menu bar (24).
+///
+/// Another app's full-screen Space is a hard limit, not a level problem: the
+/// panel is ordered out of it at 25, 101 (popUpMenu), 500 (dragging) and 1000
+/// (screen saver), and re-fronting it from the watchdog does not pull it back
+/// either. `canJoinAllSpaces` still works for ordinary Spaces, so the orb
+/// follows the user between desktops and only disappears while some other app
+/// is full screen — where macOS itself hides the menu bar and Dock.
+const PINNED_LEVEL: i64 = 25;
 static LAST_MOVE: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 
 /// Dump the flags that decide whether a click can ever reach the webview.
@@ -837,6 +847,12 @@ fn log_click_state(window: &WebviewWindow, when: &str) {
         let key: bool = msg_send![nsw, isKeyWindow];
         let visible: bool = msg_send![nsw, isVisible];
         let level: i64 = msg_send![nsw, level];
+        // Collection behaviour decides whether the panel follows the user into
+        // other Spaces and, crucially, whether it can ride above a full-screen
+        // app. Printing the raw mask is the only way to tell "we never set it"
+        // from "AppKit ignored it".
+        let behavior: usize = msg_send![nsw, collectionBehavior];
+        let mask: usize = msg_send![nsw, styleMask];
 
         // Deeper state: a window can be visible, clickable on paper and still
         // drop every event if its content view is gone, its sheet/modal is up,
@@ -897,7 +913,8 @@ fn log_click_state(window: &WebviewWindow, when: &str) {
         };
         eprintln!(
             "[orb] window {when}: ignoresMouse={ignores} acceptsMouseMoved={accepts_moved} \
-             key={key} visible={visible} level={level} pass_through={} frame={:.0}x{:.0} \
+             key={key} visible={visible} level={level} collectionBehavior=0x{behavior:x} \
+             styleMask=0x{mask:x} pass_through={} frame={:.0}x{:.0} \
              content={content_desc} hitTest={hit_desc} sheet={} modal={} responder={}",
             PASS_THROUGH.load(Ordering::Relaxed),
             frame.size.width,
@@ -1190,9 +1207,18 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // mouse-moved stream at all: the chips never fade in, so the only visible
     // affordances on the orb cannot be clicked.
     panel.set_accepts_mouse_moved_events(true);
-    // Status level + full-screen-auxiliary is what lets the orb ride above a
-    // browser tab, a terminal, and a full-screen video alike.
-    panel.set_level(PanelLevel::Status.value());
+    // Status level (25) is above normal windows, the Dock (20) and the menu bar
+    // (24) — but it does NOT survive another app's full-screen Space: measured
+    // with a running Chrome full-screen window, the panel was ordered out at
+    // level 25, 101 (popUpMenu) and 500 (dragging). Only >= 1000 — screen-saver
+    // level — stays on screen there, which is the behaviour we want: the orb
+    // rides above any page, app or full-screen video.
+    //
+    // `canJoinAllSpaces` + `fullScreenAuxiliary` are still set (runtime mask
+    // 0x141 = CanJoinAllSpaces | IgnoresCycle | FullScreenAuxiliary) because they
+    // are what make the panel follow the user between ordinary Spaces; the
+    // full-screen Space of another app additionally needs the level.
+    panel.set_level(PINNED_LEVEL);
     panel.set_has_shadow(false);
     panel.set_opaque(false);
     panel.set_hides_on_deactivate(false);
@@ -1278,7 +1304,8 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
 
-    // ⌃⇧O — ride above full-screen apps (Status) vs. just above windows (Floating).
+    // ⌃⇧O — pin: above everything, including another app's full-screen Space
+    // (level 1000) vs. merely above ordinary windows (floating, level 4).
     app.global_shortcut().on_shortcut(
         Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyO),
         |_app, _shortcut, event| {
@@ -1292,7 +1319,7 @@ fn setup_orb_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             PINNED.store(pinned, Ordering::Relaxed);
             if let Ok(panel) = _app.get_webview_panel("orb") {
                 panel.set_level(if pinned {
-                    PanelLevel::Status.value()
+                    PINNED_LEVEL
                 } else {
                     PanelLevel::Floating.value()
                 });
