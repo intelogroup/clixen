@@ -75,6 +75,7 @@ dependencies = [
   "fastmcp>=2.14.1",
   "mlx-audio>=0.5.3",
   "parakeet-mlx>=0.5.3",
+  "webrtcvad-wheels>=2.0.14.post1",
 ]
 
 [project.optional-dependencies]
