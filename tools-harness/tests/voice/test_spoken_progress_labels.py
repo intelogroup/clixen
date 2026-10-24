@@ -10,7 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from voice.agent import strip_progress_labels, _PROGRESS_LABEL_RE  # noqa: E402
+from voice.tts import SpeechStream, _PROGRESS_LABEL_RE, strip_progress_labels  # noqa: E402
+from voice.agent import strip_progress_labels as agent_strip  # noqa: E402
 from voice import tts  # noqa: E402
 
 
@@ -49,6 +50,26 @@ def test_a_sentence_containing_an_ellipsis_is_not_treated_as_a_label():
 
 def test_the_pattern_is_anchored_to_a_leading_emoji():
     assert _PROGRESS_LABEL_RE.match("Running observe…") is None
+
+
+def test_agent_reexports_the_shared_implementation():
+    """One implementation, two import sites: the re-export must not drift."""
+    assert agent_strip is strip_progress_labels
+
+
+def test_speech_stream_never_hands_a_label_to_synthesis():
+    stream = SpeechStream()
+    assert stream.feed("\n\n⚙️ Running observe…") == ""
+    assert stream.feed("Ghostty is in front. ") == ""
+    assert stream.feed("That is all. ") == "Ghostty is in front."
+    assert stream.flush() == "That is all."
+
+
+def test_speech_stream_applies_the_label_strip_before_splitting():
+    """The label and the first sentence can share a token; the sentence still wins."""
+    stream = SpeechStream()
+    assert stream.feed("\n\n⚙️ Running observe…Ghostty is in front. ") == ""
+    assert stream.feed("Done now. ") == "Ghostty is in front."
 
 
 def test_a_whole_turn_never_synthesizes_the_label(monkeypatch):

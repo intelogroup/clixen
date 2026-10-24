@@ -27,7 +27,6 @@ from __future__ import annotations
 import base64
 import os
 import queue
-import re
 import threading
 import uuid
 import logging
@@ -45,26 +44,10 @@ VOICE_CHAT_ID = "voice_agent"
 
 DEFAULT_TURN_TIMEOUT = 300.0
 
-# Tool-progress labels ("⚙️ Running observe…", "🔍 Searching the web…") are pushed
-# onto the same on_token channel the caption renders, and cloud_client prefixes
-# them with "\n\n". tts.strip_for_speech removes the emoji but keeps the words, so
-# a spoken turn literally said "Running observe… Ghostty is in front." before every
-# answer (confirmed live 2026-10-24). Keep them for the caption, drop them from
-# speech.
-_PROGRESS_LABEL_RE = re.compile(r"^\s*(?:⚙️|🔍|🌐|📂|📄|✏️|🧠|📧|🖱️)\s[^…]*…\s*")
-
-
-def strip_progress_labels(text: str) -> str:
-    """Speech-side view of a token chunk: the label prefix removed, the rest kept.
-
-    Matched as a *prefix* rather than a whole chunk: cloud_client emits the label
-    as its own on_token, but a content delta can share the chunk (observed live:
-    "\\n\\n⚙️ Running observe…Ghostty is in front." arrived as one string, and
-    parakeet transcribing the synthesized audio confirmed the label was spoken).
-    """
-    if not text:
-        return ""
-    return _PROGRESS_LABEL_RE.sub("", text)
+# Kept as module-level names for callers/tests that already import them from
+# here; the implementation lives in voice.tts (single speech pipeline, see
+# tts.SpeechStream for why).
+strip_progress_labels = tts.strip_progress_labels
 
 
 @dataclass
@@ -227,7 +210,7 @@ class TurnRunner:
         thread.start()
 
         filter_token, flush_tail = self.token_filter or (lambda t: t, lambda: "")
-        sent = ""
+        speech = tts.SpeechStream()
         saw_token = False
         if self.tts_enabled:
             self.agent._prime_fillers()
@@ -257,20 +240,21 @@ class TurnRunner:
                 if token is None:
                     tail = flush_tail()
                     if tail:
-                        sent += strip_progress_labels(tail)
                         yield VoiceEvent("token", text=tail, turn_id=self.turn_id)
-                    if self.tts_enabled and sent.strip():
-                        wav = tts.synthesize_cached(sent.strip(), self.voice)
-                        if wav:
-                            yield VoiceEvent("audio", data=wav, turn_id=self.turn_id)
+                    if self.tts_enabled:
+                        # Everything still unsaid: whatever the held-back tail
+                        # completes, plus the last unterminated sentence.
+                        for text in ((speech.feed(tail) if tail else ""), speech.flush()):
+                            if text:
+                                wav = tts.synthesize_cached(text, self.voice)
+                                if wav:
+                                    yield VoiceEvent("audio", data=wav, turn_id=self.turn_id)
                     break
                 visible = filter_token(token)
                 if visible:
                     yield VoiceEvent("token", text=visible, turn_id=self.turn_id)
-                spoken = strip_progress_labels(visible)
-                if self.tts_enabled and spoken:
-                    sent += spoken
-                    ready, sent = tts.sentence_boundary(sent)
+                if self.tts_enabled:
+                    ready = speech.feed(visible)
                     if ready:
                         wav = tts.synthesize_cached(ready, self.voice)
                         if wav:

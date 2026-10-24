@@ -119,7 +119,62 @@ def sentence_boundary(buf: str) -> tuple[str, str]:
     return "", buf
 
 
-# ── synthesis ──────────────────────────────────────────────────────────────
+# ── spoken-text assembly ───────────────────────────────────────────────────
+
+# Tool-progress labels ("⚙️ Running observe…", "🔍 Searching the web…") are pushed
+# onto the same on_token channel the caption renders, and cloud_client prefixes
+# them with "\n\n". strip_for_speech removes the emoji but keeps the words, so a
+# spoken turn literally said "Running observe… Ghostty is in front." before every
+# tool-using answer (confirmed live 2026-10-24). They belong on screen only.
+_PROGRESS_LABEL_RE = re.compile(r"^\s*(?:⚙️|🔍|🌐|📂|📄|✏️|🧠|📧|🖱️)\s[^…]*…\s*")
+
+
+def strip_progress_labels(text: str) -> str:
+    """Speech-side view of a token chunk: the label prefix removed, the rest kept.
+
+    Matched as a *prefix* rather than a whole chunk: cloud_client emits the label
+    as its own on_token, but a content delta can share the chunk (observed live:
+    "\\n\\n⚙️ Running observe…Ghostty is in front." arrived as one string, and
+    parakeet transcribing the synthesised audio confirmed the label was spoken).
+    """
+    if not text:
+        return ""
+    return _PROGRESS_LABEL_RE.sub("", text)
+
+
+class SpeechStream:
+    """Turns a stream of visible tokens into the sentences that get spoken.
+
+    The one place that decides *what* is said, shared by both voice paths —
+    `voice.agent` (the orb's realtime loop) and `chat_ui.voice_process` (the
+    upload endpoint). Those were two hand-maintained copies of the same
+    accumulate-strip-split logic, and a progress-label fix applied to one of them
+    left the other still speaking "Running observe…" — this class exists so that
+    cannot happen again.
+
+    Synthesis is deliberately *not* here: callers own it (`to_thread` in the async
+    endpoint, direct in the agent thread). `feed()` returns the next sentence to
+    speak, or "" while the buffer is still incomplete.
+    """
+
+    def __init__(self) -> None:
+        self._buf = ""
+
+    @property
+    def pending(self) -> str:
+        return self._buf
+
+    def feed(self, token: str) -> str:
+        self._buf += strip_progress_labels(token)
+        ready, self._buf = sentence_boundary(self._buf)
+        return ready
+
+    def flush(self) -> str:
+        """Whatever is left at end of turn — the last, unterminated sentence."""
+        text = strip_progress_labels(self._buf).strip()
+        self._buf = ""
+        return text
+
 
 
 def _auth_headers() -> dict:
