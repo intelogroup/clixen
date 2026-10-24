@@ -36,3 +36,20 @@ Background work runs through `jobs/worker.py`'s `main()`, inside `core.py`'s `ta
 - **Backfill**: `scripts/turso_migrate_science_scout.py` (`--dry-run`, `--verify-only`, `--table`, `--batch-size`, `--truncate --yes`). Idempotent `INSERT OR REPLACE`, explicit ids preserved on the AUTOINCREMENT tables; verification compares a canonical SHA-256 per table plus row counts. 2026-10-24 baseline: all 8 tables matched (26,754 rows: 1,133 meta / 2,109 query_usage / 957 niche_perf / 7,548 raw_papers / 6,290 claims / 6,450 links / 2,267 suppressed_alerts).
 - **Gotchas**: (1) one round trip per multi-row `INSERT ... VALUES (..),(..)` — 250 single-row statements measured ~13 s vs <1 s for the multi-row form, and the script caps rows per statement by SQLite's ~32k variable limit; (2) `tests/conftest.py` has an autouse fixture setting `TURSO_DISABLE=1` so the suite never writes to the live replica; (3) like every store edit, the running `com.clixen.task_worker` must be restarted (`launchctl kickstart -k`) or the daemon keeps executing the pre-mirror module; (4) `paper_claim_links` is append-only with no natural key — a lost mirror write degrades the replica but is never retried, so `--verify-only` is the reconciliation tool.
 
+### Turso wire-format gotchas (cost real debugging time 2026-10-24)
+- **Integers are strings, floats are numbers.** Hrana's typed values are asymmetric: `{"type":"integer","value":"<i64 as string>"}` (JSON numbers lose 64-bit precision) but `{"type":"float","value":<f64 as JSON number>}`. Sending the float as a string is rejected with `JSON parse error: invalid type: string "…", expected f64` and fails the *whole* batch. Only surfaced on the first REAL column (confirmations.db `created_at`).
+- **REAL is not bit-identical across engines.** The same value reads back **1 ULP** off from Turso (`1786588681.3877919` vs `.387792`, ~2×10⁻⁷ s on epoch timestamps) even though `printf('%.17g')`/`typeof()` agree. Verification therefore normalizes floats to 12 significant digits before hashing; do not "fix" a REAL mismatch below that precision — it is not data loss.
+- **Live/capped tables race with the daemon.** `workflow_state__workflow_instances` (updated every few minutes) and `event_log__events` (capped at 2,000, oldest evicted) will mismatch a snapshot taken minutes earlier — counts can match while content drifts. Re-export with `--truncate --yes` for an exact cut; a non-truncated re-export leaves evicted rows behind.
+
+## Full local-store export to Turso (2026-10-24)
+
+`scripts/turso_export_all.py` snapshots every other local SQLite store into the same Turso database, namespaced `<db>__<table>` (colliding names like `meta`, `query_usage`, `subagent_prompts` exist in several stores; Turso's free plan also caps database count).
+
+- **Sources** (21 DBs, ~25k rows): `store/*.db`, `data/*.sqlite`, `jobs/*.db`, `reminders.db`, `tools/_tool_failures.db`. `store/science_scout.db` is skipped (already mirrored live) unless `--include-science-scout`.
+- **Excluded**: `data/tsdata/catalog.db` — a time-series catalog with 2,747,469 `observations` rows. Bulk measurements, not agent state; pass `--db data/tsdata/catalog.db` explicitly if ever needed.
+- **Schema generation**: reuses each local object's `sqlite_master.sql`, rewritten to the namespace (`CREATE TABLE IF NOT EXISTS <ns><table>`, indexes, `REFERENCES` retargeted). Unmappable objects (virtual tables, triggers) are skipped and reported.
+- **Manifest**: `_export_manifest(source_db, source_table, target_table, rows, sha256, exported_at)` records what was copied and the canonical hash — the drift-check ledger.
+- **Verify**: `--verify-only` re-hashes local vs remote per table (float-normalized), `RESULT:` line is the pass/fail gate (exit 1 on mismatch).
+- **This is a snapshot, not dual-write.** Only science scout writes through to Turso continuously; everything else needs a re-run to refresh (`--truncate --yes` for capped tables).
+
+

@@ -59,13 +59,20 @@ def _read_local(conn: sqlite3.Connection, table: str, order: str) -> tuple[list[
     return cols, [tuple(r) for r in rows]
 
 
+def _norm(value):
+    """REAL drifts 1 ULP between engines; compare at 12 significant digits."""
+    if isinstance(value, float):
+        return float(f"{value:.12g}")
+    return value
+
+
 def _canonical_hash(cols: list[str], rows) -> tuple[str, int]:
     """Order-independent digest over every value in the table."""
     digest = hashlib.sha256()
     lines = []
     for row in rows:
         values = row if isinstance(row, (list, tuple)) else [row.get(c) for c in cols]
-        lines.append(json.dumps(values, sort_keys=True, ensure_ascii=False, default=str))
+        lines.append(json.dumps([_norm(v) for v in values], sort_keys=True, ensure_ascii=False, default=str))
     for line in sorted(lines):
         digest.update(line.encode())
     return digest.hexdigest(), len(lines)
