@@ -69,7 +69,9 @@ CREATE TABLE IF NOT EXISTS query_usage (
 
 def _conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(exist_ok=True)
-    conn = dbclose.connect(str(DB_PATH))
+    # Writes also land in the Turso replica as world_monitor__<table>
+    # (store/dbclose.MirroredConnection); local SQLite stays authoritative.
+    conn = dbclose.connect_mirrored(str(DB_PATH), "world_monitor__")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     return conn

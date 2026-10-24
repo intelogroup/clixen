@@ -343,6 +343,22 @@ def mirror(sql: str, params: tuple | list = ()) -> bool:
         return False
 
 
+def mirror_batch(statements: list[tuple[str, tuple | list]]) -> bool:
+    """Best-effort replica write of N statements in one round trip.
+
+    Used by store/dbclose.MirroredConnection, which buffers a transaction's
+    writes and spills them on commit. Same contract as mirror(): never raises.
+    """
+    try:
+        if not statements or not enabled() or _circuit_open():
+            return False
+        execute_batch(statements)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("turso mirror batch failed (%d stmts): %s", len(statements), exc)
+        return False
+
+
 def ping() -> str:
     """Human-readable connectivity check (CLI / smoke tests)."""
     if not enabled():

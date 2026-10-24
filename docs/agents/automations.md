@@ -50,6 +50,19 @@ Background work runs through `jobs/worker.py`'s `main()`, inside `core.py`'s `ta
 - **Schema generation**: reuses each local object's `sqlite_master.sql`, rewritten to the namespace (`CREATE TABLE IF NOT EXISTS <ns><table>`, indexes, `REFERENCES` retargeted). Unmappable objects (virtual tables, triggers) are skipped and reported.
 - **Manifest**: `_export_manifest(source_db, source_table, target_table, rows, sha256, exported_at)` records what was copied and the canonical hash — the drift-check ledger.
 - **Verify**: `--verify-only` re-hashes local vs remote per table (float-normalized), `RESULT:` line is the pass/fail gate (exit 1 on mismatch).
-- **This is a snapshot, not dual-write.** Only science scout writes through to Turso continuously; everything else needs a re-run to refresh (`--truncate --yes` for capped tables).
+- **This is a snapshot, not dual-write.** `world_monitor.db`, `reddit_intel.db` and science scout write through live (see below); every other source needs a re-run to refresh (`--truncate --yes` for capped tables).
+
+## Connection-level mirroring for the other scouts (2026-10-24)
+
+`world_monitor_store` and `reddit_intel_store` dual-write too, but **without per-function wiring**: `_conn()` returns `dbclose.connect_mirrored(path, "<namespace>__")`, and `dbclose.MirroredConnection` intercepts `execute`/`executemany`, buffers every INSERT/UPDATE/DELETE, and flushes the batch to Turso **after** a successful commit. Science scout keeps its explicit `_mirror()` calls (already committed and proven); the connection layer is the pattern for any further store.
+
+- **Namespace matches the export**: targets are `world_monitor__<table>` / `reddit_intel__<table>`, exactly what `scripts/turso_export_all.py` created — so the snapshot and the live stream converge in one table, no migration needed when switching a store on.
+- **Transactional**: rolled-back transactions clear the buffer and are never replicated; one commit = one HTTP round trip (`turso_client.mirror_batch`).
+- **Best-effort**: a Turso failure logs and drops the batch — the local commit already landed and stays authoritative.
+- **DDL never mirrors**: `executescript()` (schema init) bypasses `execute()`, and CREATE/PRAGMA/SELECT don't match the write regex.
+- **CPython gotcha that cost a test failure**: `Connection.__exit__` commits through the C API, so it does **not** call a Python-level `commit()` override. `MirroredConnection.__exit__` flushes explicitly; without that, every store using `with _conn() as conn:` silently mirrored *nothing*.
+- **Limits**: only `execute`/`executemany` are intercepted — a `cursor()`-based caller bypasses the mirror. Both stores verified `conn.execute`-only before enabling.
+- **Tests**: `tests/test_mirrored_connection.py` (buffer-on-commit, rollback discard, namespacing, DDL/SELECT exclusion, mirror-failure isolation, plus a real `world_monitor_store.save_raw_scan` round trip).
+
 
 

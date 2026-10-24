@@ -98,7 +98,9 @@ _schema_ready_paths: set[str] = set()
 
 def _conn() -> sqlite3.Connection:
     path = str(DB_PATH)
-    conn = dbclose.connect(path)
+    # Writes also land in the Turso replica as reddit_intel__<table>
+    # (store/dbclose.MirroredConnection); local SQLite stays authoritative.
+    conn = dbclose.connect_mirrored(path, "reddit_intel__")
     conn.row_factory = sqlite3.Row
     if path not in _schema_ready_paths:
         conn.executescript(_CREATE)
