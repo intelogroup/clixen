@@ -69,6 +69,11 @@ listen("orb-caption", (ev) => {
   if (form.classList.contains("on")) return;
 
   if (!text) {
+    // Clear the node as well as fading: leaving the old string behind makes the
+    // DOM lie about what is on screen, which trips up anything reading it back
+    // (tests, accessibility tools) and would flash a stale reply if the window
+    // were ever shown again before the next render.
+    line.textContent = "";
     fade(0);
     return;
   }
