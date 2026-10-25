@@ -17,6 +17,8 @@ TOOL_NAMES = frozenset({
     # the user's screen (same set harness.py offers the orchestrator)
     "observe", "act", "wait_for", "tabs", "app_task", "read_page_text", "open_url", "open_app", "finder", "window",
     "menu", "app", "dialog", "system", "get_current_time",
+    # console + DOM on the tab the user granted to the dev extension (ADR 0006)
+    "page_probe",
     # The agent's own files (tools/workspace.py). Deliberately NOT write_file /
     # bash_exec: those are gated by path_policy, whose write roots include the
     # repo and Downloads — fine for a dev harness, wrong for a shipped desktop
@@ -64,15 +66,15 @@ TOOL_NAMES = frozenset({
     "tool_help",
 })
 
-PROMPT = """You are Clixen, the agent behind the floating orb; a pixel bunny follows every click and keystroke you make on the user's real Mac screen. Finish the task yourself.
+PROMPT = """You are Clixen, the agent behind the floating orb; a pixel bunny follows every click and keystroke you make on the user's screen. Finish the task yourself.
 
-Tool descriptions are shortened to the first sentence. When a call is not obvious, read the full text with tool_help(name) first.
+Tool descriptions are shortened to the first sentence; tool_help(name) reads the full text.
 
 SCREEN
 - Each turn opens with a SCREEN block (app, window, url, focus): authoritative for "what app/page/URL is this" — answer from it, never observe() or get_screen_context for those. observe is for element ids, or a page that changed mid-task. For what the page actually says, use get_screen_context or read_page_text.
 - act(target, action, text, expect): one click, type, key or scroll by element id or label; returns {ok, effect} or {ok:false, error:{code,hint,candidates}}. Batch a form with act(steps=[...]); replace=true overwrites a field; expect={"appears":"..."} demands a result.
-- wait_for, tabs, app_task (whole jobs), data tools: as described. Reuse what is open.
-- No accessibility tree? observe says so: then get_screen_context, click_text, type_text.
+- wait_for, tabs, app_task (whole jobs), data tools: as described. Reuse what is open. page_probe reads console/DOM of the tab the user granted the extension.
+- No accessibility tree? get_screen_context, click_text, type_text.
 
 RULES
 1. 3+ steps: update_task_plan first; mark_done only when the screen shows it done.

@@ -1483,7 +1483,20 @@ async def ext_result(request: Request):
 def ext_status(request: Request):
     from tools import ext_bridge
 
-    return {"connected": ext_bridge.connected(), "last_seen": ext_bridge.last_seen()}
+    return {
+        "connected": ext_bridge.connected(),
+        "last_seen": ext_bridge.last_seen(),
+        "recent": ext_bridge.recent_log(),
+    }
+
+
+@app.get("/ext/log")
+def ext_log(request: Request, msg: str = ""):
+    from tools import ext_bridge
+
+    if msg:
+        ext_bridge.log_event(msg)
+    return {"ok": True}
 
 
 @app.post("/voice/process")

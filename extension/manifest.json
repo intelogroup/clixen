@@ -7,7 +7,9 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "alarms",
+    "storage"
   ],
   "host_permissions": [
     "http://127.0.0.1/*",
@@ -21,5 +23,15 @@
     "default_title": "Clixen: connect this tab"
   },
   "icons": {},
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "token.local.json"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

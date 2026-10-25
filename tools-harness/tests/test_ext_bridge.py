@@ -7,6 +7,7 @@ arrives late is not silently dropped on the floor.
 """
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -90,3 +91,21 @@ def test_connection_window_expires():
     assert eb.connected()
     eb.reset_for_tests()
     assert not eb.connected()
+
+
+def test_a_suspended_worker_is_waited_for_not_failed(monkeypatch):
+    """Chrome suspends the MV3 worker after ~30 s. Once it has been seen, a call must
+    wait out the heartbeat instead of reporting a broken tool."""
+    eb.mark_seen()
+    eb.reset_for_tests()
+    eb._EVER_SEEN = True          # seen before, now asleep
+    assert eb.connected() is False
+    monkeypatch.setattr(eb, "WAKE_WAIT_S", 1.5)   # do not burn 34 s in a unit test
+    start = time.monotonic()
+    out = eb.probe("console", timeout=0.2)
+    assert "no answer" in out
+    assert time.monotonic() - start >= 1.2, "it gave up before the heartbeat could wake it"
+
+
+def test_never_seen_fails_fast_with_instructions():
+    assert "not connected" in eb.probe("console", timeout=0.2)

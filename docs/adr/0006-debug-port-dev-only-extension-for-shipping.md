@@ -50,3 +50,25 @@ audit reloads the page first. That is a property of CDP, not a bug to paper over
 - A console/network audit of the user's own tab becomes possible only through the
   extension, and only on demand — the standing-access alternative (host permissions
   + always-on content script) is rejected because it reads everything the user types.
+
+## Addendum: what the dev build taught us (2026-10-25)
+
+Verified end to end against a real Chromium + real page: the extension polls the core
+(`/ext/poll`), executes in the watched tab, and reports back; the orb called
+`page_probe` twice and got a real page error on the second call. Four findings worth
+recording, because each one is a trap for the shipped version too:
+
+1. **MV3 suspends the worker after ~30 s.** An alarm heartbeat is the only wake-up
+   Chrome guarantees, so the bridge is poll-on-heartbeat, not a live socket. A tool
+   call may therefore wait up to one tick; the core waits instead of failing.
+2. **`executeScript` runs in the ISOLATED world by default.** Patching `console`
+   there patches a copy the page never calls. Console capture needs `world: "MAIN"`.
+3. **A missing `storage` permission fails silently** — `chrome.storage` is undefined,
+   `config()` throws, and so does the code path that would have reported it. The
+   bridge now reports its own failures to `/ext/log`, which is how this was found.
+4. **`--load-extension` no longer works on stable Chrome (156).** Automated testing
+   needs Chrome for Testing or Playwright's Chromium; a human loading unpacked in
+   Developer mode is the supported path for real use.
+
+The permission model is unchanged and still the point: `activeTab` + `scripting`,
+so a tab is readable only after the user acts on it.

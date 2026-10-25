@@ -20,16 +20,36 @@ import threading
 import time
 
 _QUEUE: list[dict] = []
+_LOG: list[str] = []
 _RESULTS: dict[str, dict] = {}
 _LOCK = threading.Lock()
 _IDS = itertools.count(1)
 _LAST_SEEN = 0.0
+_EVER_SEEN = False
 DEFAULT_WAIT_S = 8.0
+# Chrome suspends an MV3 service worker after ~30 s idle, which silently stops the
+# poll loop. The extension re-arms a 30 s alarm as its heartbeat, so a command issued
+# while it is asleep is still served - on the next tick. Hence this ceiling when we
+# know the extension has been here before (measured 2026-10-25: answered at load,
+# timed out a minute later, before the heartbeat existed).
+WAKE_WAIT_S = 34.0
 CONNECTED_WINDOW_S = 30.0
 
 
 def _now() -> float:
     return time.time()
+
+
+def log_event(msg: str) -> None:
+    """The extension reports its own failures here (see /ext/log)."""
+    with _LOCK:
+        _LOG.append(f"{time.strftime('%H:%M:%S')} {msg[:300]}")
+        del _LOG[:-20]
+
+
+def recent_log() -> list[str]:
+    with _LOCK:
+        return list(_LOG)
 
 
 def connected() -> bool:
@@ -82,11 +102,16 @@ def wait_for(cmd_id: str, timeout: float = DEFAULT_WAIT_S) -> dict | None:
 def ask(action: str, args: dict | None = None, timeout: float = DEFAULT_WAIT_S) -> dict:
     """Queue a command and wait. Never raises; the caller gets a reason instead."""
     if not connected():
-        return {
-            "ok": False,
-            "error": "not connected: the Clixen extension has not polled the core. "
-                     "Load it (chrome://extensions > Load unpacked > extension/) and try again.",
-        }
+        if not _EVER_SEEN:
+            return {
+                "ok": False,
+                "error": "not connected: the Clixen extension has not polled the core. "
+                         "Load it (chrome://extensions > Load unpacked > extension/) and try again.",
+            }
+        # It has been here before, so Chrome has suspended the worker. Queue anyway
+        # and wait out the heartbeat: failing a call the extension can still serve
+        # would look like a broken tool when it is only asleep.
+        timeout = max(timeout, WAKE_WAIT_S)
     cmd_id = enqueue(action, args)
     result = wait_for(cmd_id, timeout)
     if result is None:
@@ -95,18 +120,20 @@ def ask(action: str, args: dict | None = None, timeout: float = DEFAULT_WAIT_S) 
 
 
 def reset_for_tests() -> None:
-    global _LAST_SEEN
+    global _LAST_SEEN, _EVER_SEEN
     with _LOCK:
         _QUEUE.clear()
         _RESULTS.clear()
         _LAST_SEEN = 0.0
+        _EVER_SEEN = False
 
 
 def mark_seen() -> None:
     """Tests and the poll endpoint use this to simulate a live extension."""
-    global _LAST_SEEN
+    global _LAST_SEEN, _EVER_SEEN
     with _LOCK:
         _LAST_SEEN = _now()
+        _EVER_SEEN = True
 
 
 EXT_PROBE_SCHEMA = {

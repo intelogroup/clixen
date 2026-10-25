@@ -33,6 +33,15 @@ tab you clicked it on.
 | `text` | `document.body.innerText` |
 | `click` | presses the visible control whose label matches, and says which one |
 
+## What it took to make this work (four real failures, measured)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `page_probe` timed out ~1 min after load | Chrome suspends the MV3 worker after ~30 s idle | 30 s `alarms` heartbeat + a bounded 25 s poll burst; the core waits out one tick instead of failing |
+| Nothing polled at all, silently | manifest never declared `storage`; `chrome.storage` was undefined, so `config()` threw — *and so did the error report* | `"storage"` added |
+| Two probes, zero entries, page logging every 4 s | `executeScript` defaults to the ISOLATED world, so we patched a `console` the page never uses | `world: "MAIN"` |
+| `--load-extension` produced no extension | Chrome 156 (stable) ignores that flag | load unpacked by hand, or run Chrome for Testing |
+
 ## Limits, stated plainly
 
 - **From injection onward.** The page hooks are installed when you click the button,

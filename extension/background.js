@@ -12,10 +12,32 @@
 
 const DEFAULT_CORE = "http://127.0.0.1:9234";
 let running = false;
+let reported = false;
+let polls = 0;
 
 async function config() {
   const { core, token } = await chrome.storage.local.get(["core", "token"]);
-  return { core: (core || DEFAULT_CORE).replace(/\/$/, ""), token: token || "" };
+  if (token) return { core: (core || DEFAULT_CORE).replace(/\/$/, ""), token };
+  // Dev builds ship a generated token.local.json (gitignored, mode 600) so the
+  // bridge works without a manual paste. A store build has no such file and the
+  // user enters the token once in Options.
+  try {
+    const res = await fetch(chrome.runtime.getURL("token.local.json"));
+    if (res.ok) {
+      const dev = await res.json();
+      return { core: (dev.core || DEFAULT_CORE).replace(/\/$/, ""), token: dev.token || "" };
+    }
+  } catch (e) {}
+  return { core: (core || DEFAULT_CORE).replace(/\/$/, ""), token: "" };
+}
+
+async function report(msg) {
+  try {
+    const { core, token } = await config();
+    await fetch(core + "/ext/log?msg=" + encodeURIComponent(String(msg).slice(0, 280)), {
+      headers: { "x-clixen-token": token },
+    });
+  } catch (e) {}
 }
 
 async function call(path, options = {}) {
@@ -36,6 +58,10 @@ async function inActiveTab(fn, args) {
     target: { tabId: tab.id },
     func: fn,
     args: [args || {}],
+    // MAIN world: the page's own console is what we must intercept. In the default
+    // ISOLATED world we would only patch a copy of console the page never uses
+    // (measured: two probes, zero entries, while the page logged every 4 s).
+    world: "MAIN",
   });
   return result ? result.result : null;
 }
@@ -160,19 +186,49 @@ async function pollOnce() {
 async function loop() {
   if (running) return;
   running = true;
-  while (running) {
+  const until = Date.now() + 25000; // stay awake for a burst, then let Chrome idle us
+  while (running && Date.now() < until) {
     try {
       await pollOnce();
+      reported = false;
+      polls += 1;
+      chrome.storage.local.set({ state: { polls, at: Date.now() } });
     } catch (e) {
-      // Core not running, token missing, or the tab is gone: back off, never spin.
+      // Core not running, stale token, or the tab is gone: say so once, then back
+      // off. Silence here is what made a dead poll invisible for minutes.
+      if (!reported) {
+        reported = true;
+        chrome.storage.local.set({ state: { polls, at: Date.now(), error: String(e).slice(0, 200) } });
+        await report("poll failed: " + String(e));
+      }
       await new Promise((r) => setTimeout(r, 1500));
     }
-    await new Promise((r) => setTimeout(r, 900));
+    await new Promise((r) => setTimeout(r, 700));
   }
+  running = false;
 }
 
-chrome.runtime.onStartup.addListener(loop);
-chrome.runtime.onInstalled.addListener(loop);
+// MV3 suspends the worker after ~30 s idle, which silently stops the poll loop
+// (measured: reported connected at load, then timed out a minute later). An alarm
+// is the only wake-up Chrome guarantees for an extension that isn't running, so
+// the heartbeat re-arms it and the loop exits when Chrome suspends us.
+function armHeartbeat() {
+  chrome.alarms.create("clixen-poll", { periodInMinutes: 0.5 });
+}
+
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === "clixen-poll") loop();
+});
+
+// Self-start rather than relying on an event: a module worker can miss onInstalled
+// at load (the event fires before top-level registration completes), which is
+// exactly what happened here - the worker never armed its alarm and never polled.
+report("extension started v0.1.0");
+armHeartbeat();
+loop();
+
+chrome.runtime.onStartup.addListener(() => { armHeartbeat(); loop(); });
+chrome.runtime.onInstalled.addListener(() => { armHeartbeat(); loop(); });
 chrome.action.onClicked.addListener(async () => {
   // The toolbar click IS the user gesture that grants this tab.
   await loop();

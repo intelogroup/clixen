@@ -93,3 +93,4 @@ frontier-reading-anchors-*.md
 *.zip
 *.webp
 tools-harness/evals/results/
+extension/token.local.json
