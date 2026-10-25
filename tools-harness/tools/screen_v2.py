@@ -311,6 +311,49 @@ def wait_for(expect: dict | None = None, timeout: float = 8.0, app: str = "") ->
 
 
 _CHROMES = {"google chrome", "chromium", "brave browser", "microsoft edge"}
+_SAFARI = {"safari"}
+
+
+def _family(app: str) -> str:
+    """Which AppleScript dialect `tabs` must speak: 'chrome' or 'safari'.
+
+    Safari is not a second tool, it is a second dictionary: tabs expose `name`
+    where Chrome exposes `title`, and switching is `current tab of window` where
+    Chrome takes `active tab index`. Everything else — the guard, the payload
+    shape, the errors — is shared, which is the point of one browser layer.
+    """
+    low = (app or "").lower()
+    if low in _CHROMES:
+        return "chrome"
+    if low in _SAFARI:
+        return "safari"
+    return ""
+
+
+def _list_script(app: str, family: str) -> str:
+    prop = "name" if family == "safari" else "title"
+    return (
+        f'tell application "{app}"\nset out to ""\n'
+        "repeat with wi from 1 to (count of windows)\n"
+        "repeat with ti from 1 to (count of tabs of window wi)\n"
+        f'set out to out & wi & "|" & ti & "|" & ({prop} of tab ti of window wi)'
+        ' & "|" & (URL of tab ti of window wi) & linefeed\n'
+        "end repeat\nend repeat\nreturn out\nend tell"
+    )
+
+
+def _switch_script(app: str, family: str, window: int, index: int) -> str:
+    if family == "safari":
+        return (
+            f'tell application "{app}"\n'
+            f"set current tab of window {window} to tab {index} of window {window}\n"
+            f"set index of window {window} to 1\nactivate\nend tell"
+        )
+    return (
+        f'tell application "{app}"\n'
+        f"set active tab index of window {window} to {index}\n"
+        f"set index of window {window} to 1\nactivate\nend tell"
+    )
 
 
 def _chrome_instances() -> list[str]:
@@ -340,13 +383,21 @@ def _chrome_instances() -> list[str]:
 
 
 def tabs(action: str = "list", match: str = "", app: str = "Google Chrome") -> str:
-    """List, switch to, or close browser tabs by a title or URL fragment. Chrome-family browsers only."""
-    if app.lower() not in _CHROMES:
-        return _err("unsupported_app", f"tabs works with {sorted(_CHROMES)}, not '{app}'.")
-    script = (f'tell application "{app}"\nset out to ""\nrepeat with wi from 1 to (count of windows)\nrepeat with ti from 1 to (count of tabs of window wi)\n'
-              'set out to out & wi & "|" & ti & "|" & (title of tab ti of window wi) & "|" & (URL of tab ti of window wi) & linefeed\n'
-              "end repeat\nend repeat\nreturn out\nend tell")
-    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=15)
+    """List, switch to, or close browser tabs by a title or URL fragment.
+
+    Works for the Chrome family and for Safari: same tool, same payload, different
+    AppleScript dialect (see `_family`). One browser layer with an `app=` argument,
+    never a per-browser tool family.
+    """
+    family = _family(app)
+    if not family:
+        return _err(
+            "unsupported_app",
+            "tabs works with Chrome-family browsers (Chrome, Chromium, Brave, Edge) and "
+            f"Safari, not '{app}'.",
+        )
+    r = subprocess.run(["osascript", "-e", _list_script(app, family)],
+                       capture_output=True, text=True, timeout=15)
     rows = []
     for line in r.stdout.splitlines():
         parts = line.split("|", 2)
@@ -369,13 +420,13 @@ def tabs(action: str = "list", match: str = "", app: str = "Google Chrome") -> s
         return any(w in tab_title.lower() for w in words) if words else True
 
     on_screen = not front_title or any(_overlaps(t["title"]) for t in rows)
-    instances = _chrome_instances()
+    instances = _chrome_instances() if family == "chrome" else []
     note = ""
     if not on_screen:
         note = (
-            f"another Chrome instance is in front ({front_title[:60]!r}) and AppleScript "
+            f"another {app} instance is in front ({front_title[:60]!r}) and AppleScript "
             f"enumerated a different one"
-            + (f"; {len(instances)} profiles are running" if len(instances) > 1 else "")
+            + (f"; {len(instances)} Chrome profiles are running" if len(instances) > 1 else "")
             + ". Use observe/read_page_text for the page you can see; tabs describes the "
               "other instance."
         )
@@ -398,8 +449,8 @@ def tabs(action: str = "list", match: str = "", app: str = "Google Chrome") -> s
         return _err("not_found", f"no open tab matches '{match}'.", candidates=[t["title"][:50] for t in rows][:8])
     if action == "switch":
         t = hits[0]
-        subprocess.run(["osascript", "-e", f'tell application "{app}"\nset active tab index of window {t["window"]} to {t["index"]}\n'
-                        f'set index of window {t["window"]} to 1\nactivate\nend tell'], capture_output=True, text=True, timeout=15)
+        subprocess.run(["osascript", "-e", _switch_script(app, family, t["window"], t["index"])],
+                       capture_output=True, text=True, timeout=15)
         return _out({"ok": True, "switched_to": t["title"], "url": t["url"]})
     if len(hits) > 8:
         return _err("too_many", f"'{match}' matches {len(hits)} tabs; use a more specific match.")
@@ -427,7 +478,7 @@ TABS_SCHEMA = {
     "function": {
         "name": "tabs",
         "description": (
-            "Lists, switches to, or closes the user's browser tabs by part of a title or URL (Chrome-family browsers). "
+            "Lists, switches to, or closes the user's browser tabs by part of a title or URL (Chrome family and Safari). "
             "list shows every tab in every window. switch brings the first match to the front. close closes every matching tab "
             "(match is required for switch/close). Use it when an extension or link opened a stray tab in front of the page you need."
         ),

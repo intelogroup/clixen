@@ -246,17 +246,47 @@ def focused_label(app: str = "") -> str:
     return _label(el) if el is not None else ""
 
 
+_APPLESCRIPT_URL = {
+    # Safari's AX tree exposes no AXURL on the web area, so the accessibility read
+    # returns "" and every "is this page on screen?" check answers No. Verified
+    # 2026-10-25: AX empty, AppleScript correct.
+    #
+    # Chrome is deliberately NOT in this table: AppleScript addresses one Chrome
+    # instance while AX sees whichever window is in front, and with two profiles
+    # running that made `tabs` describe a browser the user was not looking at.
+    "safari": 'tell application "{app}" to get URL of current tab of front window',
+}
+
+
+def _applescript_front_url(app: str) -> str:
+    script = _APPLESCRIPT_URL.get((app or "").lower())
+    if not script:
+        return ""
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["osascript", "-e", script.format(app=app)], capture_output=True, text=True, timeout=8
+        )
+        return out.stdout.strip()
+    except Exception:
+        return ""
+
+
 def front_url(app: str = "") -> str:
     """URL of the page in the target app's front window ('' when it is not a web page)."""
-    pid, _ = _target_app(app)
+    pid, name = _target_app(app)
     if pid is None:
         return ""
     el = _ax_app(pid)
     win = _get(el, "AXFocusedWindow") or _get(el, "AXMainWindow")
-    if win is None:
-        return ""
-    url = _get(_web_area(win), "AXURL")
-    return str(url) if url else ""
+    if win is not None:
+        url = _get(_web_area(win), "AXURL")
+        if url:
+            return str(url)
+    # Browsers whose AX tree carries no URL: ask the browser, but only where that
+    # cannot disagree with what is on screen (see _APPLESCRIPT_URL).
+    return _applescript_front_url(name or app)
 
 
 
