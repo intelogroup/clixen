@@ -120,17 +120,39 @@ fn debug_enabled() -> bool {
 }
 
 #[derive(Clone, Serialize)]
+#[derive(Default)]
 struct SseEvent {
-    /// One of: token | transcript | audio | done | error | partial | final | state
+    /// One of: token | transcript | audio | done | error | partial | final | state | action
     ///
     /// Serialised as `kind`, not `type` — the renderer switches on
     /// `payload.kind`, and a rename here silently drops every frame.
     kind: String,
     text: String,
+    /// Set for `audio` frames only; omitted otherwise (never `null` — the wire
+    /// shape is "absent", so a consumer can test presence rather than truthiness).
+    #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<String>,
     /// Set for `state` frames (listening | hearing | thinking | speaking | idle).
     #[serde(skip_serializing_if = "Option::is_none")]
     state: Option<String>,
+    /// Set for `action` frames: which tool is running, whether it started or
+    /// finished, and whether it worked.
+    ///
+    /// These were dropped on the floor at first: the struct carried only
+    /// kind/text/data/state, so the renderer received `kind=action` with nothing
+    /// in it and reported every action as a failure with an empty name. The
+    /// renderer animates the bunny off these, so a missing field is a silently
+    /// wrong animation rather than a visible error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ok: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ms: Option<u64>,
+    #[serde(rename = "error", skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 /// Split an SSE byte stream into events and relay each to the `orb` window.
@@ -178,6 +200,13 @@ async fn pump_sse(app: &AppHandle, resp: reqwest::Response) {
                     text,
                     data: v.get("data").and_then(|d| d.as_str()).map(String::from),
                     state: v.get("state").and_then(|s| s.as_str()).map(String::from),
+                    // Action frames: without these the renderer sees an `action`
+                    // event with no tool name and cannot tell start from finish.
+                    tool: v.get("tool").and_then(|t| t.as_str()).map(String::from),
+                    phase: v.get("phase").and_then(|p| p.as_str()).map(String::from),
+                    ok: v.get("ok").and_then(|o| o.as_bool()),
+                    ms: v.get("ms").and_then(|m| m.as_u64()),
+                    error: v.get("error").and_then(|e| e.as_str()).map(String::from),
                 };
 
                 if debug_enabled() {
@@ -627,8 +656,7 @@ async fn orb_cancel(app: AppHandle, chat_id: Option<String>) {
                 let _ = w.emit("orb-event", SseEvent {
                     kind: "cancel".into(),
                     text: format!("cancelled {}", chat_id),
-                    data: None,
-                    state: None,
+                    ..Default::default()
                 });
             }
         }
@@ -641,7 +669,7 @@ fn emit_error(app: &AppHandle, msg: String) {
     if let Some(w) = app.get_webview_window("orb") {
         let _ = w.emit(
             "orb-event",
-            SseEvent { kind: "error".into(), text: msg, data: None, state: None },
+            SseEvent { kind: "error".into(), text: msg, ..Default::default() },
         );
     }
 }
@@ -1450,7 +1478,7 @@ pub fn run() {
 }
 #[cfg(test)]
 mod tests {
-    use super::pick_monitor;
+    use super::{pick_monitor, SseEvent};
 
     #[test]
     fn picks_the_monitor_holding_the_point() {
@@ -1460,5 +1488,38 @@ mod tests {
         assert_eq!(pick_monitor(&rects, -10.0, 10.0), Some(2));
         assert_eq!(pick_monitor(&rects, 1512.0, 0.0), Some(1));
         assert_eq!(pick_monitor(&rects, 5000.0, 0.0), None);
+    }
+
+    /// The orb animates off these fields, so losing one is a silently wrong
+    /// animation rather than a visible error. The first version of `SseEvent`
+    /// carried only kind/text/data/state, so every action frame reached the
+    /// renderer nameless and was reported as a failure.
+    #[test]
+    fn action_frames_serialize_every_field_the_renderer_reads() {
+        let ev = SseEvent {
+            kind: "action".into(),
+            tool: Some("observe".into()),
+            phase: Some("done".into()),
+            ok: Some(false),
+            ms: Some(42),
+            error: Some("stale element".into()),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ev).unwrap();
+        assert_eq!(json["kind"], "action");
+        assert_eq!(json["tool"], "observe");
+        assert_eq!(json["phase"], "done");
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["ms"], 42);
+        assert_eq!(json["error"], "stale element");
+    }
+
+    #[test]
+    fn non_action_frames_do_not_grow_spurious_fields() {
+        let ev = SseEvent { kind: "token".into(), text: "hi".into(), ..Default::default() };
+        let json = serde_json::to_value(&ev).unwrap();
+        for absent in ["tool", "phase", "ok", "ms", "error", "data", "state"] {
+            assert!(json.get(absent).is_none(), "{absent} should be omitted");
+        }
     }
 }

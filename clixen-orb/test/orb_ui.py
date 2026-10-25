@@ -128,6 +128,35 @@ def test_text_in_audio_out(browser, base: str) -> None:
     page.close()
 
 
+def test_action_events_drive_the_bunny(browser, base: str) -> None:
+    """Tool events must animate the orb without a single rendered error.
+
+    This case exists because the first version of the handler referenced an
+    undefined identifier (``cfg.debug``) inside the switch: the event threw a
+    ReferenceError, the pose never cleared, and nothing in the build or the type
+    checker could see it — the file is plain JS. Firing the real event through the
+    real renderer is the only check that catches that class.
+    """
+    errs: list[str] = []
+    page = open_orb(browser, base, fake_mic=False, errors=errs)
+    page.mouse.click(*ORB_BODY)
+    page.wait_for_timeout(250)
+
+    fire_event(page, "orb-event", {"kind": "action", "phase": "started", "tool": "observe"})
+    fire_event(page, "orb-event", {"kind": "action", "phase": "done", "tool": "observe", "ok": True, "ms": 42})
+    fire_event(page, "orb-event", {"kind": "action", "phase": "started", "tool": "act"})
+    fire_event(page, "orb-event", {"kind": "action", "phase": "done", "tool": "act", "ok": False, "ms": 7, "error": "stale element"})
+    page.wait_for_timeout(400)
+
+    dbg = [a.get("msg", "") for a in calls(page, "orb_debug")]
+    check("action start is traced", "action start observe" in dbg, dbg[-6:])
+    check("action completion carries its duration", "action done observe 42ms" in dbg, dbg[-6:])
+    check("a failed action is reported as failed",
+          any("action failed act" in m for m in dbg), dbg[-6:])
+    check("no page errors (action events)", not errs, errs)
+    page.close()
+
+
 def test_speech_is_serialized(browser, base: str) -> None:
     """Two audio frames fired back-to-back must not play on top of each other."""
     errs: list[str] = []
@@ -254,6 +283,9 @@ def main() -> int:
             with serve_vite(5200) as base:
                 print("tap vs drag (trackpad jitter)")
                 test_tap_vs_drag(browser, base)
+            with serve_vite(5201) as base:
+                print("action events drive the bunny")
+                test_action_events_drive_the_bunny(browser, base)
         finally:
             browser.close()
     if FAILS:

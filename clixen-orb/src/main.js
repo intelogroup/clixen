@@ -1009,20 +1009,24 @@ listen("orb-event", (ev) => {
       // Before this the bunny animated off a scraped "⚙️ Running <tool>…" string in
       // the narration, so it could not know whether the call worked.
       const name = p.tool || "tool";
+      // `ok` is absent on a `started` frame; only an explicit false is a failure.
+      // The first version tested `!p.ok`, which silently reported every action as
+      // failed once the Rust pump turned out not to forward the field.
+      const failed = p.ok === false;
       if (!state.runningTools) state.runningTools = new Set();
       if (p.phase === "started") {
         state.runningTools.add(name);
         state.lastAction = name;
         setAction(true);
         state.mode = state.mode === "speaking" ? "speaking" : "thinking";
-        if (cfg.debug) console.log("[orb:js] action start", name);
+        dbg(`action start ${name}`);
       } else {
         state.runningTools.delete(name);
-        if (!p.ok) {
+        if (failed) {
           state.lastActionFailed = name;
-          if (cfg.debug) console.log("[orb:js] action failed", name, p.error || "");
-        } else if (cfg.debug) {
-          console.log("[orb:js] action done", name, `${p.ms || 0}ms`);
+          dbg(`action failed ${name}: ${p.error || ""}`);
+        } else {
+          dbg(`action done ${name} ${p.ms || 0}ms`);
         }
         // Only stop the action pose once nothing else is in flight — batched calls
         // arrive as several overlapping start/done pairs.
