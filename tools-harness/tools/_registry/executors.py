@@ -288,6 +288,9 @@ EXECUTORS = {
     "workspace_delete": lambda args: workspace_guarded(
         workspace_delete_entry, rel=args["path"]
     ),
+    "wikipedia_references": lambda args: wikipedia_references(
+        article=args["article"], limit=args.get("limit", 8)
+    ),
     "grep_files": lambda args: grep_files(
         pattern=args["pattern"],
         path=args.get("path", _HOME),

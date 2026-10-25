@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT))
 DIMENSIONS: dict[str, list[str]] = {
     "Screen control": ["test_ax_label_and_visibility.py", "test_eval_screen_actions_defs.py",
                        "voice/test_screen_epoch.py"],
-    "Web actions": ["test_fetch_url.py", "voice/test_orb_toolset.py"],
+    "Web actions": ["test_fetch_url.py", "voice/test_orb_toolset.py", "test_wikipedia_refs.py", "test_tabs_instances.py"],
     "Finder / user files": ["test_finder_actions.py"],
     "Agent workspace": ["test_workspace.py"],
     "Memory semantics": ["voice/test_memory_v2.py"],

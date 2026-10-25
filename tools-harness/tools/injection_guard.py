@@ -51,6 +51,8 @@ EXTERNAL_CONTENT_TOOLS = {
     # to itself earlier), so it crosses the same boundary: a memory that says
     # "ignore previous instructions" must read as quoted data, exactly like a page.
     "memory_recall",
+    # Parsed citation text is page content, same boundary as the page itself.
+    "wikipedia_references",
 }
 
 

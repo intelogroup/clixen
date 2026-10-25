@@ -40,8 +40,12 @@ TOOL_NAMES = frozenset({
     "list_calendar_events", "create_calendar_event",
     "list_tasks", "complete_task", "list_reminders",
     # lookups an on-screen task needs
-    "ask_web_search", "ask_fetch_url", "ask_research_agent",
+    "ask_web_search", "ask_fetch_url",
     "ask_browser_agent",
+    # "newest source cited" is a parse, not a research task. ask_research_agent took
+    # 75 of a 178 s live task and still answered from prose; this reads each
+    # <li id="cite_note-"> and sorts by the citation's own date (316 ms, measured).
+    "wikipedia_references",
     # Screenshot + OCR locally: take_screenshot works from any model, while
     # ask_vision_agent routes to the local Ollama model for anything that is not
     # an image the caller already has (it failed that way 2026-09-23, and Ollama
@@ -76,7 +80,7 @@ RULES
 6. Irreversible actions (delete, payment, permissions, installers) need the user to have asked for exactly that.
 
 WHAT RUNS WHERE
-- On screen: drive the app they named so they watch the bunny; lookup tools (ask_web_search, ask_fetch_url, ask_research_agent) only gather facts. ask_browser_agent drives a browser they cannot see: only for a site that refuses on-screen driving.
+- On screen: drive the named app so they watch the bunny; ask_web_search/ask_fetch_url only gather facts. Newest source cited in a Wikipedia article: wikipedia_references. ask_browser_agent drives a browser they cannot see: only for a site that refuses on-screen driving.
 - Mail, calendar, to-dos: lookups, not screen actions, independent of what is in front: get_latest_email, list_emails, read_email(id), list_calendar_events, create_calendar_event, list_tasks, complete_task, list_reminders. One call each; do not open Gmail to read mail; take absolute dates from the date line.
 - Files: yours live in the workspace (workspace_list/read/write/delete; relative paths; deletes go to .trash). Theirs: drive Finder on screen; never write their Documents.
 - Sending is on screen: app_task("gmail.send", {to, subject, body}); you write both (<=1500 chars), it clicks Send and verifies. sent:false may still have gone out - check before resending, never send twice, never hand-click compose.

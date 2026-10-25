@@ -328,6 +328,7 @@ ALL_TOOLS = [
     WORKSPACE_READ_SCHEMA,
     WORKSPACE_WRITE_SCHEMA,
     WORKSPACE_DELETE_SCHEMA,
+    WIKIPEDIA_REFERENCES_SCHEMA,
 ]
 
 # All tools available to the agent (superset — includes shell tools)

@@ -174,6 +174,29 @@ def _reuse_working_tab(app: str, url: str) -> bool:
     return r.returncode == 0
 
 
+def _confirm_visible(app: str, url: str, wait_s: float = 2.5) -> str:
+    """Say whether the page is actually on screen, or name what is there instead.
+
+    `open -a` hands the URL to LaunchServices, which picks an instance when more
+    than one is running (measured 2026-10-25: a normal profile plus an agent
+    profile with its own --user-data-dir). "Opened X" then reads as "X is on
+    screen" when sometimes nothing visible changed — the agent concludes the page
+    is missing and starts retrying. This turns the assumption into a check.
+    """
+    deadline = time.time() + wait_s
+    front = ""
+    while time.time() < deadline:
+        front = _front_url(app)
+        if same_page(front, url):
+            return " It is on screen now."
+        time.sleep(0.25)
+    return (
+        f" Warning: not confirmed on screen — {app}'s front window shows "
+        f"{front or 'nothing readable'}. Another profile may have handled it; "
+        "check with observe before assuming this page is open."
+    )
+
+
 def open_url(url: str, app: str = "Google Chrome") -> str:
     url = url.strip()
     if not valid_url(url):
@@ -185,14 +208,15 @@ def open_url(url: str, app: str = "Google Chrome") -> str:
         return f"{url} is already showing in {app}: not opened again."
     if _reuse_working_tab(app, url):
         point_at_app(app)
-        return f"Opened {url} in {app}, reusing the tab it opened earlier for this site (no new tab)."
+        return (f"Opened {url} in {app}, reusing the tab it opened earlier for this site "
+                f"(no new tab)." + _confirm_visible(app, url))
     before = _tab_list(app)
     err = _open(["-a", app, url])
     if err:
         return f"Error opening {url} in {app}: {err}"
     _remember_working_tab(app, before, url)
     point_at_app(app)  # the orb's cursor flies to the window we just raised
-    return f"Opened {url} in {app}."
+    return f"Opened {url} in {app}." + _confirm_visible(app, url)
 
 
 def open_app(name: str) -> str:

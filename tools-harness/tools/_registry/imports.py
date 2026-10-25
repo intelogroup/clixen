@@ -919,4 +919,12 @@ from tools.workspace import (
     guarded as workspace_guarded,
 )
 
+# Wikipedia citation parsing. The orb's "newest source cited" step used to be a
+# prose read of the reference list by ask_research_agent (75 s of a 178 s task);
+# this parses each <li id="cite_note-"> and sorts by the citation's own date.
+from tools.wikipedia_refs import (
+    WIKIPEDIA_REFERENCES_SCHEMA,
+    wikipedia_references,
+)
+
 # All available tool schemas (passed to ollama tools=[...])
