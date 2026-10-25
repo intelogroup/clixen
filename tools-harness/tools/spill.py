@@ -20,7 +20,23 @@ import re
 import time
 from pathlib import Path
 
-_SPILL_DIR = Path(__file__).resolve().parent.parent / ".spill"
+def _default_spill_dir() -> Path:
+    """Where oversized tool results are kept.
+
+    Was `tools-harness/.spill` — inside the source tree, which is read-only in a
+    signed .app, so spilling would fail in the shipped product. Now: an explicit
+    directory, else the app's data dir, else ~/.clixen (never the repo).
+    """
+    explicit = os.environ.get("CLIXEN_SPILL_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
+    data_dir = os.environ.get("CLIXEN_DATA_DIR")
+    if data_dir:
+        return Path(data_dir).expanduser() / "spill"
+    return Path.home() / ".clixen" / "spill"
+
+
+_SPILL_DIR = _default_spill_dir()
 
 # Credential shapes that are unmistakable regardless of the vault.
 _CREDENTIAL_PATTERNS = (

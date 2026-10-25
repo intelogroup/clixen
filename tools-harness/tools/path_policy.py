@@ -14,20 +14,24 @@ from pathlib import Path
 # ponytail: derived from file location, not a hardcoded repo name — the repo
 # has already been renamed once (gemma4llama -> clixen) and broke this check.
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
-# 2026-07-14: writes were fenced to WORKSPACE_ROOT only, so any local-agent
-# task touching a sibling project (e.g. "update todo.md in ~/Developer/brainex")
-# got rejected 3x across every path the model tried, burned its retry budget,
-# and reported the misleading "I don't have file tools at all" instead of the
-# real reason. DEV_ROOT widens writes to the whole dev-projects parent dir —
-# still excludes the rest of the filesystem (Documents, ~/.ssh, etc. stay
-# write-denied) and BLOCKED_PATTERNS still applies underneath it.
-DEV_ROOT = Path(__file__).resolve().parents[3]
-APP_DATA_DIR = (Path.home() / ".gemini/antigravity").resolve()
+# 2026-10-25: DEV_ROOT (~/Developer) and a hardcoded ~/.gemini/antigravity were
+# write roots here. Both are gone. DEV_ROOT existed because a local-agent task
+# touching a sibling repo got rejected; the cost was that a *shipped* desktop app
+# could write anywhere under the user's whole dev-projects folder, and the value
+# `parents[3]` means something different once the package is inside an .app.
+# Clixen is a visual-actions agent: it drives apps on screen and keeps its own
+# files in tools/workspace.py. Anything else that needs to write outside the
+# paths below has to be granted explicitly:
+#     CLIXEN_EXTRA_WRITE_ROOTS=/abs/path:/another  (empty by default)
 # 2026-08-04: canonical clixen-owned data home. NOT ~/Documents/~/Desktop —
 # those are iCloud-synced by default and TCC grants for them are all-or-nothing
 # (see THREAT_MODEL.md). Application Support is the conventional app-data
 # location and is not synced. Vault/index/conversation data should live here.
-CLIXEN_DATA_DIR = (Path.home() / "Library/Application Support/Clixen").resolve()
+# CLIXEN_HOME overrides it deliberately — NOT CLIXEN_DATA_DIR, which the desktop
+# app uses for a different thing (the mounted vault's data folder).
+CLIXEN_DATA_DIR = Path(
+    os.environ.get("CLIXEN_HOME") or (Path.home() / "Library/Application Support/Clixen")
+).expanduser().resolve()
 # Removable volumes (USB) are TCC-guarded locations on macOS (apps need consent
 # to access them) — legitimately private for clixen data. Allow them, but they
 # are presence-dependent: a USB drive may not always be mounted.
@@ -65,6 +69,25 @@ BLOCKED_PATTERNS = [
 ]
 
 
+def _extra_write_roots() -> list[Path]:
+    """Explicitly granted write roots: CLIXEN_EXTRA_WRITE_ROOTS=/abs/a:/abs/b.
+
+    Empty by default. The grant is resolved (so a symlink cannot smuggle a wider
+    root in) and never inherited from the caller's cwd.
+    """
+    raw = os.environ.get("CLIXEN_EXTRA_WRITE_ROOTS", "")
+    roots = []
+    for part in raw.split(":"):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            roots.append(Path(part).expanduser().resolve())
+        except Exception:
+            continue
+    return roots
+
+
 def is_safe_path(path_str: str, write: bool = False) -> bool:
     try:
         p = Path(path_str).expanduser().resolve()
@@ -85,10 +108,6 @@ def is_safe_path(path_str: str, write: bool = False) -> bool:
     if p_str == str(WORKSPACE_ROOT) or p_str.startswith(str(WORKSPACE_ROOT) + "/"):
         return True
 
-    # Always allow if under app data directory
-    if p_str == str(APP_DATA_DIR) or p_str.startswith(str(APP_DATA_DIR) + "/"):
-        return True
-
     # Clixen data home (Application Support/Clixen) — non-iCloud app data
     if p_str == str(CLIXEN_DATA_DIR) or p_str.startswith(str(CLIXEN_DATA_DIR) + "/"):
         return True
@@ -103,14 +122,17 @@ def is_safe_path(path_str: str, write: bool = False) -> bool:
         if p_str == str(tmp) or p_str.startswith(str(tmp) + "/"):
             return True
 
-    # For write operations outside workspace/app-data/tmp, allow the rest of the
-    # dev-projects directory (sibling repos) plus Downloads; everything else stays denied.
+    # Writes outside workspace/app-data/tmp: Downloads (a place the user expects
+    # a saved file to appear) plus any explicitly granted roots. Nothing else —
+    # no implicit dev-projects grant, so a shipped app cannot write into a user's
+    # Documents, Desktop or source folders by accident.
     if write:
-        if p_str == str(DEV_ROOT) or p_str.startswith(str(DEV_ROOT) + "/"):
-            return True
         downloads = HOME / "Downloads"
         if p_str == str(downloads) or p_str.startswith(str(downloads) + "/"):
             return True
+        for root in _extra_write_roots():
+            if p_str == str(root) or p_str.startswith(str(root) + "/"):
+                return True
         return False
 
     # For read operations, allow home directory but block hidden files/folders (except .config/g4l or .clixen)

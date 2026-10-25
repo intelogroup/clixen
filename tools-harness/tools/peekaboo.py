@@ -89,8 +89,18 @@ def _ensure_binary() -> str | None:
 
 def execute(mode: str = "screen", app: str = "") -> str:
     binary = _ensure_binary()
-    _DEFAULT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = _DEFAULT_DIR / f"shot-{int(time.time())}.png"
+    # Screenshots are the most sensitive thing the orb produces, so they belong
+    # in the workspace (encrypted at rest when the vault is mounted) rather than
+    # in a plain ~/.clixen folder. An unmounted vault is an error, not a silent
+    # write to the bare mountpoint.
+    from tools.workspace import WorkspaceError, prune_screenshots, screenshots_dir
+
+    try:
+        out_dir = screenshots_dir()
+    except WorkspaceError as exc:
+        return f"[error] {exc}"
+    prune_screenshots(keep=50)
+    out_path = out_dir / f"shot-{int(time.time())}.png"
 
     if not binary:
         if sys.platform != "darwin":

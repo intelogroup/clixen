@@ -29,9 +29,12 @@ def test_prompt_is_short_and_context_blocks_come_first():
     # descriptions are shortened) -> 3_000 after the prose was rewritten without
     # losing a rule (2_839 chars, measured 2026-10-25: same tool choice and same
     # answers on four task shapes, 4_767 -> 4_347 round-0 prompt tokens with
-    # fresh chat ids). 3_000 is the new floor so it cannot quietly grow back.
+    # fresh chat ids) -> 3_200 for the workspace line, which is the only place
+    # that tells the model its files live in its own folder and NOT in the
+    # user's Documents. Cheap at 231 chars: the alternative is a model that
+    # reaches for write_file (not granted) or writes into ~/Documents.
     # The orchestrator prompt is still ~13_800 chars.
-    assert len(orb_agent.PROMPT) < 3000
+    assert len(orb_agent.PROMPT) < 3200
 
 
 def test_the_orb_cannot_send_mail_behind_the_screen():

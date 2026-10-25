@@ -47,7 +47,17 @@ fn sidecar_config(vault_root: &std::path::Path) -> Option<SidecarConfig> {
     let port = std::env::var("CLIXEN_SIDECAR_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(9234);
     Some(SidecarConfig {
         cmd,
-        env: vec![("CLIXEN_DATA_DIR".into(), vault_root.join("data").to_string_lossy().into_owned())],
+        // Two different things, deliberately named apart:
+        //   CLIXEN_DATA_DIR  = <vault>/data      (index, conversations, db)
+        //   CLIXEN_WORKSPACE = <vault>/workspace (the agent's own files)
+        // tools/workspace.py resolves the workspace from the first of these env
+        // vars it finds, and refuses to touch anything unless the vault is
+        // actually mounted — writing into an unmounted mountpoint lands in the
+        // bare directory and vanishes on the next mount.
+        env: vec![
+            ("CLIXEN_DATA_DIR".into(), vault_root.join("data").to_string_lossy().into_owned()),
+            ("CLIXEN_WORKSPACE".into(), vault_root.join("workspace").to_string_lossy().into_owned()),
+        ],
         port,
         health_path: std::env::var("CLIXEN_SIDECAR_HEALTH").unwrap_or_else(|_| "/".into()),
         token: super::auth_token(),

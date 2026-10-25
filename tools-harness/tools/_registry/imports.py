@@ -903,4 +903,20 @@ from tools.x_bird import (
     x_user_tweets as x_bird_user_execute,
 )
 
+# The orb's own directory. Separate from filesystem/shell on purpose: those are
+# gated by path_policy, whose write roots are the repo, the dev-projects parent
+# and Downloads. The agent's own files belong in the app's workspace, so the
+# orb gets these four and nothing else with a file path in it.
+from tools.workspace import (
+    WORKSPACE_LIST_SCHEMA,
+    WORKSPACE_READ_SCHEMA,
+    WORKSPACE_WRITE_SCHEMA,
+    WORKSPACE_DELETE_SCHEMA,
+    list_entries as workspace_list_entries,
+    read_text as workspace_read_text,
+    write_text as workspace_write_text,
+    delete as workspace_delete_entry,
+    guarded as workspace_guarded,
+)
+
 # All available tool schemas (passed to ollama tools=[...])

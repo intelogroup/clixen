@@ -270,6 +270,24 @@ EXECUTORS = {
         offset=args.get("offset", 1),
         limit=args.get("limit", 200),
     ),
+    # The orb's own workspace (tools/workspace.py). Paths are workspace-relative
+    # and cannot leave the directory: resolve() rejects absolute paths, '..' and
+    # symlink escapes, and every failure comes back as a string, never a raise.
+    "workspace_list": lambda args: workspace_guarded(
+        workspace_list_entries, rel=args.get("path", "")
+    ),
+    "workspace_read": lambda args: workspace_guarded(
+        workspace_read_text,
+        rel=args["path"],
+        offset=args.get("offset", 1),
+        limit=args.get("limit", 200),
+    ),
+    "workspace_write": lambda args: workspace_guarded(
+        workspace_write_text, rel=args["path"], content=args["content"]
+    ),
+    "workspace_delete": lambda args: workspace_guarded(
+        workspace_delete_entry, rel=args["path"]
+    ),
     "grep_files": lambda args: grep_files(
         pattern=args["pattern"],
         path=args.get("path", _HOME),

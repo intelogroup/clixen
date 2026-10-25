@@ -17,6 +17,12 @@ TOOL_NAMES = frozenset({
     # the user's screen (same set harness.py offers the orchestrator)
     "observe", "act", "wait_for", "tabs", "app_task", "read_page_text", "open_url", "open_app", "finder", "window",
     "menu", "app", "dialog", "system", "get_current_time",
+    # The agent's own files (tools/workspace.py). Deliberately NOT write_file /
+    # bash_exec: those are gated by path_policy, whose write roots include the
+    # repo and Downloads — fine for a dev harness, wrong for a shipped desktop
+    # app whose job is visual actions. The orb gets one directory and nothing
+    # else with a file path in it.
+    "workspace_list", "workspace_read", "workspace_write", "workspace_delete",
     # Fallbacks for apps that expose no accessibility tree. observe()'s own
     # "no accessibility tree" message tells the model to use get_screen_context
     # or click_text — before 2026-10-24 neither was in this list, so the orb was
@@ -41,6 +47,9 @@ TOOL_NAMES = frozenset({
     # an image the caller already has (it failed that way 2026-09-23, and Ollama
     # is normally down here), so "take a screenshot" was unanswerable.
     "take_screenshot", "ocr_image",
+    # Same four in voice: "save this as a note" / "what's in my workspace" are
+    # spoken asks. Kept identical to TOOL_NAMES so the two surfaces cannot drift.
+    "workspace_list", "workspace_read", "workspace_write", "workspace_delete",
     # progress and memory
     "update_task_plan", "remember",
     # Every tool's description reaches the model shortened; this is how it reads
@@ -69,6 +78,7 @@ RULES
 WHAT RUNS WHERE
 - On screen: drive the app they named so they watch the bunny; lookup tools (ask_web_search, ask_fetch_url, ask_research_agent) only gather facts. ask_browser_agent drives a browser they cannot see: only for a site that refuses on-screen driving.
 - Mail, calendar, to-dos: lookups, not screen actions, independent of what is in front: get_latest_email, list_emails, read_email(id), list_calendar_events, create_calendar_event, list_tasks, complete_task, list_reminders. One call each; do not open Gmail to read mail; take absolute dates from the date line.
+- Files: yours live in the workspace (workspace_list/read/write/delete; relative paths; deletes go to .trash). Theirs: drive Finder on screen; never write their Documents.
 - Sending is on screen: app_task("gmail.send", {to, subject, body}); you write both (<=1500 chars), it clicks Send and verifies. sent:false may still have gone out - check before resending, never send twice, never hand-click compose.
 - Told to send something? That is authorization: check recipient, subject and body, send, then confirm.
 - Search results rarely carry today's date: use the latest, give their dates, never invent or refuse.

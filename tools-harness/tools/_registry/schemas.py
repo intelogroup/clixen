@@ -323,6 +323,11 @@ ALL_TOOLS = [
     ASK_SEND_MESSAGE_SCHEMA,
     MAKE_PHONE_CALL_SCHEMA,
     QUERY_RECENT_TRACES_SCHEMA,
+    # The orb's own directory (see tools/workspace.py)
+    WORKSPACE_LIST_SCHEMA,
+    WORKSPACE_READ_SCHEMA,
+    WORKSPACE_WRITE_SCHEMA,
+    WORKSPACE_DELETE_SCHEMA,
 ]
 
 # All tools available to the agent (superset — includes shell tools)
