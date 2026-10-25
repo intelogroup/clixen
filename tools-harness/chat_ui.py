@@ -1454,10 +1454,43 @@ def _make_visible_token_filter():
     return filter_token, flush
 
 
+# ── Dev extension bridge (ADR 0006) ──────────────────────────────────────────
+# The extension polls for one command at a time, executes it in the tab the user is
+# looking at, and posts the result back. Auth is the existing localhost token
+# middleware above, so nothing new is exposed. No inbound port, no native host.
+@app.get("/ext/poll")
+def ext_poll(request: Request):
+    from tools import ext_bridge
+
+    return {"command": ext_bridge.take()}
+
+
+@app.post("/ext/result")
+async def ext_result(request: Request):
+    from tools import ext_bridge
+
+    body = await request.json()
+    ext_bridge.put_result(
+        str(body.get("id", "")),
+        bool(body.get("ok")),
+        body.get("data"),
+        str(body.get("error", "")),
+    )
+    return {"ok": True}
+
+
+@app.get("/ext/status")
+def ext_status(request: Request):
+    from tools import ext_bridge
+
+    return {"connected": ext_bridge.connected(), "last_seen": ext_bridge.last_seen()}
+
+
 @app.post("/voice/process")
 async def voice_process(
     request: Request,
     file: UploadFile = File(...),
+
     chat_id: str = Form(default="web_ui"),
     tts: str = Form(default="0"),
     web_search: str = Form(default="0"),

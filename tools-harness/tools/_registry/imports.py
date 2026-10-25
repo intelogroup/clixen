@@ -933,4 +933,7 @@ from tools.wikipedia_refs import (
 # is a target rather than a tool, workflows live here and are read when needed.
 from tools.skills import LOAD_SKILL_SCHEMA, load_skill
 
+# Dev extension bridge (ADR 0006): console/DOM on the tab the user is watching.
+from tools.ext_bridge import EXT_PROBE_SCHEMA, probe as page_probe
+
 # All available tool schemas (passed to ollama tools=[...])

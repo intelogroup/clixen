@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Clixen Orb (dev bridge)",
+  "version": "0.1.0",
+  "description": "Dev-only bridge: lets the local Clixen core read console and DOM of the tab you are looking at, on demand.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Clixen: connect this tab"
+  },
+  "icons": {},
+  "options_page": "options.html"
+}

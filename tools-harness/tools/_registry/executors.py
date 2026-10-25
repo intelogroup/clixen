@@ -292,6 +292,11 @@ EXECUTORS = {
         article=args["article"], limit=args.get("limit", 8)
     ),
     "load_skill": lambda args: load_skill(args.get("name", "")),
+    "page_probe": lambda args: page_probe(
+        kind=args.get("kind", "dom"), level=args.get("level", ""),
+        limit=args.get("limit", 0), text=args.get("text", ""),
+        timeout=args.get("timeout", 8),
+    ),
     "grep_files": lambda args: grep_files(
         pattern=args["pattern"],
         path=args.get("path", _HOME),

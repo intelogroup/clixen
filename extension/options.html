@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Clixen bridge settings</title>
+<style>
+  body { font: 13px/1.5 -apple-system, system-ui, sans-serif; margin: 20px; max-width: 520px; }
+  label { display: block; margin-top: 14px; font-weight: 600; }
+  input { width: 100%; padding: 6px 8px; margin-top: 4px; font: inherit; }
+  p { color: #555; }
+  button { margin-top: 16px; padding: 6px 14px; font: inherit; }
+</style>
+<h2>Clixen bridge</h2>
+<p>Paste the local core token. It never leaves this machine.</p>
+<label>Core URL<input id="core" placeholder="http://127.0.0.1:9234"></label>
+<label>Token<input id="token" placeholder="from: security find-generic-password -s clixen.localhost.token -w"></label>
+<button id="save">Save</button> <span id="saved"></span>
+<script src="options.js"></script>

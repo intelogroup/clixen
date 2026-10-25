@@ -330,6 +330,7 @@ ALL_TOOLS = [
     WORKSPACE_DELETE_SCHEMA,
     WIKIPEDIA_REFERENCES_SCHEMA,
     LOAD_SKILL_SCHEMA,
+    EXT_PROBE_SCHEMA,
 ]
 
 # All tools available to the agent (superset — includes shell tools)
