@@ -470,6 +470,24 @@ def execute_tool(name: str, arguments: dict) -> str:
             f"results. Tell the user to approve via POST /chat/local-agent/confirm "
             f'{{"token": "{token}", "approved": true}} (or false to deny).'
         )
+    # Action class (tools/action_class.py). The command check above is about *what a
+    # shell command is*; this is about what the tool itself does. MONEY always parks
+    # for a human; WRITE parks only when approvals are switched on (the orb has no
+    # approval UI yet, so parking by default would wedge it). Either way the class is
+    # recorded, so the trail says "a write happened", not merely "workspace_write ran".
+    from tools import action_class
+
+    if action_class.requires_approval(name, arguments or {}):
+        from tools.confirmation import request_confirmation
+        token = request_confirmation(
+            name, arguments or {}, f"{action_class.of_call(name, arguments or {})} action"
+        )
+        return (
+            f"[awaiting confirmation] {name} is a {action_class.of_call(name, arguments or {})} "
+            f"action and needs human approval. Token: {token}. It has NOT executed — do not "
+            f"describe results. Approve via POST /chat/local-agent/confirm."
+        )
+    log.debug("[action] %s class=%s", name, action_class.of_call(name, arguments or {}))
     return _execute_raw(name, arguments)
 
 
