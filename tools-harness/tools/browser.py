@@ -107,7 +107,8 @@ def _get_page():
                 _browser = None
                 _page = _context.pages[0] if _context.pages else _context.new_page()
                 _page.set_viewport_size({"width": 1440, "height": 900})
-                _page.on("console", lambda _: None)
+                _page.on("console", _record_console)
+                _page.on("pageerror", _record_pageerror)
                 return _page
             except Exception as exc:
                 _log.info("Chrome profile locked (%s), using incognito", exc)
@@ -126,8 +127,30 @@ def _get_page():
         )
         _page = _context.new_page()
         _page.set_viewport_size({"width": 1440, "height": 900})
-        _page.on("console", lambda _: None)
+        _page.on("console", _record_console)
+        _page.on("pageerror", _record_pageerror)
         return _page
+
+
+# Console capture lives in tools/console_buffer.py so both drivers record into one
+# ring (this one and headed_browser.py). Thin wrappers keep the names the registry
+# imports, so adding a third driver cannot quietly drop console again.
+def _record_console(message) -> None:
+    from tools import console_buffer
+
+    console_buffer.record(message)
+
+
+def _record_pageerror(exc) -> None:
+    from tools import console_buffer
+
+    console_buffer.record_error(exc)
+
+
+def console_messages(limit: int = 50, level: str = "") -> str:
+    from tools import console_buffer
+
+    return console_buffer.messages(limit=limit, level=level)
 
 
 def _clean_snapshot(html: str, max_chars: int = 6000) -> str:
@@ -553,7 +576,31 @@ BROWSER_LOAD_SESSION_SCHEMA = {
     },
 }
 
+
+BROWSER_CONSOLE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "browser_console",
+        "description": (
+            "Recent console output and page errors from the browser this tool drives, "
+            "newest last. Use it to audit a site for JS errors instead of guessing. "
+            "This is the automation browser, not the Chrome window the user is watching."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "How many recent messages (default 50, max 200)"},
+                "level": {
+                    "type": "string",
+                    "description": "Only this level: error, warning, log, info, debug, pageerror",
+                },
+            },
+        },
+    },
+}
+
 ALL_BROWSER_SCHEMAS = [
+    BROWSER_CONSOLE_SCHEMA,
     BROWSER_NAVIGATE_SCHEMA,
     BROWSER_SNAPSHOT_SCHEMA,
     BROWSER_GET_URL_SCHEMA,
@@ -807,7 +854,8 @@ def browser_load_session(name: str = "default") -> str:
         )
         _page = _context.new_page()
         _page.set_viewport_size({"width": 1440, "height": 900})
-        _page.on("console", lambda _: None)
+        _page.on("console", _record_console)
+        _page.on("pageerror", _record_pageerror)
         return f"Session loaded: {path} ({name})"
     except Exception as e:
         return f"[browser error] load_session: {e}"

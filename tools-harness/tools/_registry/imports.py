@@ -431,6 +431,7 @@ from tools.browser import (
     browser_save_session,
     browser_load_session,
     browser_close,
+    console_messages,
 )
 from tools.headed_browser import (
     HEADED_BROWSER_SCHEMAS,

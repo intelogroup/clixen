@@ -231,7 +231,10 @@ def _launch_inner(headless: bool | None, url: str) -> str:
     _S.context.on("response", _on_response)
     _S.page = _S.context.pages[0] if _S.context.pages else _S.context.new_page()
     try:
-        _S.page.on("console", lambda _: None)
+        from tools import console_buffer
+
+        _S.page.on("console", console_buffer.record)
+        _S.page.on("pageerror", console_buffer.record_error)
     except Exception:
         pass
     if url:

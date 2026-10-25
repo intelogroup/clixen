@@ -40,6 +40,7 @@ DIMENSIONS: dict[str, list[str]] = {
     "Tool demand (promotion gate)": ["test_tool_demand.py"],
     "Skills (procedures on demand)": ["test_skills.py"],
     "Popups and consent banners": ["test_consent_banners.py"],
+    "Console capture": ["test_console_buffer.py"],
     "Voice pipeline": ["voice/test_vad.py", "voice/test_session.py", "voice/test_streaming_asr.py"],
 }
 

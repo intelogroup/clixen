@@ -758,6 +758,9 @@ EXECUTORS = {
         selector=args.get("selector", ""),
         timeout_s=args.get("timeout_s", 10),
     ),
+    "browser_console": lambda args: console_messages(
+        limit=args.get("limit", 50), level=args.get("level", "")
+    ),
     "browser_status": lambda args: browser_status(),
     "browser_capture": lambda args: browser_capture(
         path=args.get("path", ""),
