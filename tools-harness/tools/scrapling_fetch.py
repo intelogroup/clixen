@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
+from pathlib import Path
 from typing import Any
 
 _log = logging.getLogger("scrapling_fetch")
@@ -329,6 +331,38 @@ def _scrapling_stealthy_fetch(
     })
 
 
+def _adaptive_storage():
+    """Point scrapling's fingerprint DB at a writable, per-user place.
+
+    Its default is ``scrapling/elements_storage.db`` — *inside the installed
+    package*, which is read-only in a signed ``.app`` and replaced on upgrade, so
+    every saved selector would be lost. The library reads its module-level
+    ``__DEFAULT_DB_FILE__`` at call time, so we set that rather than pass a storage
+    instance: it insists on an ``lru_cache``-wrapped class and constructs it with the
+    default path anyway.
+
+    Order: CLIXEN_SCRAPLING_DIR, then the sidecar's data dir (the vault when the app
+    runs it), then the app's Application Support folder.
+    """
+    try:
+        import scrapling.parser as sp
+
+        override = os.environ.get("CLIXEN_SCRAPLING_DIR")
+        if override:
+            base = Path(override).expanduser()
+        else:
+            data_dir = os.environ.get("CLIXEN_DATA_DIR")
+            if data_dir:
+                base = Path(data_dir).expanduser() / "scrapling"
+            else:
+                base = Path.home() / "Library" / "Application Support" / "Clixen" / "scrapling"
+        base.mkdir(parents=True, exist_ok=True)
+        sp.__DEFAULT_DB_FILE__ = str(base / "elements_storage.db")
+        return str(base / "elements_storage.db")
+    except Exception:
+        return None
+
+
 def _scrapling_extract(
     html: str,
     selector: str,
@@ -346,6 +380,7 @@ def _scrapling_extract(
     if not selector:
         return _err("Empty selector")
 
+    _adaptive_storage()  # pins the fingerprint DB before the parser reads it
     kwargs: dict[str, Any] = {}
     if domain:
         kwargs["url"] = f"https://{domain}/"  # scrapling uses URL as storage key

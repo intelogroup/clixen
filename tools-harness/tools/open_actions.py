@@ -5,6 +5,7 @@ ask_browser_agent's job). Fence: http/https URLs only; apps must be installed.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -174,6 +175,29 @@ def _reuse_working_tab(app: str, url: str) -> bool:
     return r.returncode == 0
 
 
+def _chrome_profiles() -> list[str]:
+    """Distinct --user-data-dir values among running Chrome processes.
+
+    Two instances are normal here (a personal profile plus an agent profile). They
+    do NOT share tabs, and AppleScript addresses only one of them, so "opened the
+    page" can be true in a browser the user cannot see. Empty list means one
+    instance (or none) and therefore no ambiguity.
+    """
+    try:
+        out = subprocess.run(
+            ["/bin/ps", "-Ao", "args="], capture_output=True, text=True, timeout=10
+        ).stdout
+    except Exception:
+        return []
+    profiles = set()
+    for line in out.splitlines():
+        if "Google Chrome.app/Contents/MacOS/Google Chrome" not in line:
+            continue
+        match = re.search(r"--user-data-dir=(\S+)", line)
+        profiles.add(match.group(1) if match else "(default profile)")
+    return sorted(profiles) if len(profiles) > 1 else []
+
+
 def _confirm_visible(app: str, url: str, wait_s: float = 2.5) -> str:
     """Say whether the page is actually on screen, or name what is there instead.
 
@@ -181,7 +205,9 @@ def _confirm_visible(app: str, url: str, wait_s: float = 2.5) -> str:
     than one is running (measured 2026-10-25: a normal profile plus an agent
     profile with its own --user-data-dir). "Opened X" then reads as "X is on
     screen" when sometimes nothing visible changed — the agent concludes the page
-    is missing and starts retrying. This turns the assumption into a check.
+    is missing and starts retrying. This turns the assumption into a check, and
+    names the ambiguity when that is the cause, so the next attempt is informed
+    instead of blind.
     """
     deadline = time.time() + wait_s
     front = ""
@@ -190,6 +216,16 @@ def _confirm_visible(app: str, url: str, wait_s: float = 2.5) -> str:
         if same_page(front, url):
             return " It is on screen now."
         time.sleep(0.25)
+
+    profiles = _chrome_profiles()
+    if profiles:
+        return (
+            f" Warning: ambiguous_browser — {len(profiles)} Chrome instances are running "
+            f"({' vs '.join(profiles)}), and the visible one shows "
+            f"{front or 'nothing readable'}. The page most likely went to the other "
+            "profile. Ask the user which browser window to drive, or use the extension "
+            "bridge (page_probe) for the tab they granted. Do not retry the same open."
+        )
     return (
         f" Warning: not confirmed on screen — {app}'s front window shows "
         f"{front or 'nothing readable'}. Another profile may have handled it; "

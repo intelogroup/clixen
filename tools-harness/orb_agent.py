@@ -43,7 +43,12 @@ TOOL_NAMES = frozenset({
     "list_tasks", "complete_task", "list_reminders",
     # lookups an on-screen task needs
     "ask_web_search", "ask_fetch_url",
-    "ask_browser_agent",
+    # Scrapling, for sites whose markup moves under you: fast HTTP (curl_cffi,
+    # 90-165 ms measured) plus the adaptive parser, which saves a fingerprint on the
+    # first read and RELOCATES the element after a redesign. Replaces
+    # ask_browser_agent, which drove a browser the user could not see — the one thing
+    # this product exists to avoid.
+    "scrapling_fetch_and_extract", "scrapling_extract",
     # "newest source cited" is a parse, not a research task. ask_research_agent took
     # 75 of a 178 s live task and still answered from prose; this reads each
     # <li id="cite_note-"> and sorts by the citation's own date (316 ms, measured).
@@ -90,7 +95,7 @@ RULES
 6. Irreversible actions (delete, payment, permissions, installers) need the user to have asked for exactly that.
 
 WHAT RUNS WHERE
-- On screen: drive the named app so they watch the bunny; ask_web_search/ask_fetch_url only gather facts. Newest source cited: wikipedia_references. ask_browser_agent drives a browser they cannot see - only for a site that refuses on-screen driving.
+- On screen: drive the named app so they watch the bunny; ask_web_search/ask_fetch_url only gather facts. Newest source cited: wikipedia_references. Scrapling reads a page whose markup changed: scrapling_extract mode=auto_save first, mode=adaptive after a redesign.
 - Mail, calendar, to-dos: lookups, not screen actions, independent of what is in front: get_latest_email, list_emails, read_email(id), list_calendar_events, create_calendar_event, list_tasks, complete_task, list_reminders. One call each; do not open Gmail to read mail; take absolute dates from the date line.
 - Files: yours live in the workspace (workspace_list/read/write/delete; relative paths; deletes go to .trash). Theirs: drive Finder on screen; never write their Documents.
 - Sending is on screen: app_task("gmail.send", {to, subject, body}); you write both (<=1500 chars), it clicks Send and verifies. sent:false may still have gone out - check, never send twice, never hand-click compose.
