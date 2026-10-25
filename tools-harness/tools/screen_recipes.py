@@ -63,7 +63,61 @@ def _gmail_send(args: dict) -> str:
                        "note": "sent and confirmed" if confirmed_by else "Send was clicked but no proof of delivery was found; check the inbox before sending again."})
 
 
-RECIPES = {"gmail.send": _gmail_send}
+def _web_read(args: dict) -> str:
+    """Open a URL in the user's browser and read the page, in one call.
+
+    The model's own sequence for "open X and tell me Y" was open_url -> wait_for
+    -> read_page_text: three LLM rounds (~7.7 s measured 2026-10-25) to do what
+    is one procedure. The bunny still opens the page and the text still comes
+    from the page the user can see; only the round-trips go.
+    """
+    url = str(args.get("url", "")).strip()
+    if not url.startswith(("http://", "https://")):
+        return _fail("bad_args", f"'url' must be an absolute http(s) URL, got '{url}'.")
+    host = urllib.parse.urlparse(url).netloc.lower()
+    _open(url)
+    # Wait on the URL the browser is actually showing, not on the window title:
+    # Chrome's window title follows the frontmost tab only loosely (it reported a
+    # neighbouring tab in the first version of this recipe).
+    deadline = time.time() + 20
+    loaded = False
+    while time.time() < deadline:
+        try:
+            from tools import ax_context as ax
+
+            seen = (ax.front_url("Google Chrome") or "").lower()
+        except Exception:
+            seen = ""
+        if seen and host and host in seen:
+            loaded = True
+            break
+        time.sleep(0.4)
+    from tools.page_text import read_page_text
+
+    text = read_page_text(app="Google Chrome")
+    head = str(text).splitlines()[0] if text else ""
+    m = re.match(r"Page: (.+?) - ", head)
+    ok = bool(text) and "error" not in str(text)[:40].lower()
+    return json.dumps({
+        "ok": ok, "url": url, "loaded": loaded,
+        "title": (m.group(1) if m else ""),
+        "text": str(text)[:6000],
+    }, ensure_ascii=False)
+
+
+def _front_title() -> str:
+    try:
+        return v2._front_window()[1]  # (app, title)
+    except Exception:
+        try:
+            from tools import screen_act
+
+            return screen_act._front_window()[1]
+        except Exception:
+            return ""
+
+
+RECIPES = {"gmail.send": _gmail_send, "web.read": _web_read}
 
 
 def app_task(name: str = "", args: dict | None = None) -> str:
@@ -81,7 +135,9 @@ APP_TASK_SCHEMA = {
             "Runs a known job end to end on the user's screen, the bunny doing every click, and reports the evidence. "
             "name 'gmail.send': args {to, subject, body}: opens Gmail's pre-filled compose page, clicks Send, "
             "and confirms delivery with a read-only Gmail check for a message to that address. Prefer it over hand-clicking Gmail. You write the subject and body; it does the rest. "
-            "If it returns sent:false, check the inbox before trying again: it may still have gone out."
+            "If it returns sent:false, check the inbox before trying again: it may still have gone out. "
+            "name 'web.read': args {url}: opens the page in the user's browser, waits for it to load and returns its text. "
+            "Use it instead of open_url + wait_for + read_page_text when the job is 'open X and tell me Y'."
         ),
         "parameters": {"type": "object", "properties": {
             "name": {"type": "string", "enum": sorted(RECIPES)}, "args": {"type": "object"}}, "required": ["name", "args"]},

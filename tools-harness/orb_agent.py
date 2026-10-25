@@ -35,7 +35,12 @@ TOOL_NAMES = frozenset({
     "list_tasks", "complete_task", "list_reminders",
     # lookups an on-screen task needs
     "ask_web_search", "ask_fetch_url", "ask_research_agent",
-    "ask_vision_agent", "ask_browser_agent",
+    "ask_browser_agent",
+    # Screenshot + OCR locally: take_screenshot works from any model, while
+    # ask_vision_agent routes to the local Ollama model for anything that is not
+    # an image the caller already has (it failed that way 2026-09-23, and Ollama
+    # is normally down here), so "take a screenshot" was unanswerable.
+    "take_screenshot", "ocr_image",
     # progress and memory
     "update_task_plan", "remember",
 })
@@ -46,7 +51,7 @@ YOUR SCREEN TOOLS
 - The turn starts with a SCREEN block: app, window, url, focus, read live for this turn. It is authoritative for "what app is in front", "what page is this", "what URL is this" — answer those from it, do not call observe() or get_screen_context for them. observe is only for element ids to click, or when the page changed mid-task.
 - observe(): app, title, URL, focus, overlays in the way, and numbered elements (ids like e3.14) with role, label and text-field values.
 - act(target, action, text, expect): click / type / key / scroll one thing; target is an element id from observe copied exactly, or its label. Returns what changed: {ok, effect:{focus,title,appeared,gone}} or {ok:false, error:{code,hint,candidates}}; a click that changed nothing warns "no_effect". Extension side panels are closed for you.
-- wait_for(expect, timeout): wait until the screen shows something. tabs(action="list"|"switch"|"close", match): list, switch or close tabs by title or URL. app_task(name, args): known jobs end to end (gmail.send).
+- wait_for(expect, timeout): wait until the screen shows something. tabs(action="list"|"switch"|"close", match): list, switch or close tabs by title or URL. app_task(name, args): known jobs end to end.
 - No accessibility tree? Canvas UIs, games and some Electron views expose no elements and observe() says so. Then get_screen_context to look, click_text to click by label, type_text to type. Do not retry observe expecting a new answer.
 
 HOW YOU WORK

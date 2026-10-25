@@ -170,7 +170,7 @@ _ERR = "[screen error] "  # tools.registry.is_error_result reads this tag: the t
 _TERMINALS = ("terminal", "iterm", "ghostty", "warp", "alacritty", "kitty", "wezterm")
 
 
-def _guard(typing: bool = False) -> str | None:
+def _guard(typing: bool = False, acting_on: str = "") -> str | None:
     if _screen_locked():
         return _ERR + "Screen is locked."
     app, title = _front_window()
@@ -178,6 +178,11 @@ def _guard(typing: bool = False) -> str | None:
         return _ERR + "Front window is private or a password manager; not acting on it."
     if typing and any(t in app.lower() for t in _TERMINALS):
         return _ERR + f"Front app is a terminal ({app}); not typing into it."
+    if not acting_on:  # choose the app to act on implicitly -> it must be the app that was looked at
+        from tools import screen_epoch
+
+        if (moved := screen_epoch.changed_since_look(app, title)):
+            return _ERR + moved
     return None
 
 
@@ -328,7 +333,7 @@ def click_text(text: str, app: str = "") -> str:
         if not activate_app(app):
             subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)  # not running yet: launch it
             time.sleep(0.6)
-    if (why := _guard()):
+    if (why := _guard(acting_on=app)):
         return why
     try:
         hit = find_element(text)  # native accessibility position first: exact, no OCR
@@ -483,7 +488,7 @@ def scroll_page(direction: str = "down", pages: float = 1, app: str = "") -> str
         if not activate_app(app):
             subprocess.run(["/usr/bin/open", "-a", app], capture_output=True, timeout=10)  # not running yet: launch it
             time.sleep(0.6)
-    if (why := _guard()):
+    if (why := _guard(acting_on=app)):
         return why
     front, _ = _front_window()
     box = _front_bounds(front) if front else None

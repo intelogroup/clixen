@@ -110,6 +110,32 @@ def test_voice_gets_the_same_tools_as_the_orb_minus_the_clock():
     assert voice == set(orb_agent.TOOL_NAMES) - orb_agent.VOICE_EXCLUDED_TOOLS
 
 
+def test_screenshots_do_not_need_a_local_llm():
+    """take_screenshot/ocr_image work from any model; ask_vision_agent routes to
+    the local Ollama model unless the caller already holds an image, so with
+    Ollama down "take a screenshot" was unanswerable."""
+    assert {"take_screenshot", "ocr_image"} <= orb_agent.TOOL_NAMES
+    assert "ask_vision_agent" not in orb_agent.TOOL_NAMES
+
+
+def test_open_and_read_is_one_call_not_three():
+    """open_url -> wait_for -> read_page_text was 3 rounds / 7.7 s measured
+    2026-10-25; 'web.read' does the same procedure in one."""
+    from tools.screen_recipes import RECIPES
+
+    assert "web.read" in RECIPES
+    assert "web.read" in _SCHEMAS["app_task"]["parameters"]["properties"]["name"]["enum"]
+
+
+def test_web_read_rejects_a_url_that_is_not_absolute():
+    import json
+
+    from tools.screen_recipes import RECIPES
+
+    out = json.loads(RECIPES["web.read"]({"url": "example.com"}))
+    assert out["ok"] is False and out["error"]["code"] == "bad_args"
+
+
 def test_the_prompt_never_names_a_tool_the_orb_cannot_call():
     """Same failure class as observe's no-AX hint: the prompt told the model to
     use tools that were not granted, so it called them and got denied."""

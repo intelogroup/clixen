@@ -264,6 +264,11 @@ def get_screen_context() -> str:
         return "Front-most window is private/blocked; not captured."
 
     now = time.time()
+    # This is a screen read like observe(): record it so click_text/type_text can
+    # tell "I looked at Chrome" from "Chrome now has focus but I never looked".
+    from tools import screen_epoch
+
+    screen_epoch.note_look(state.get("app", ""), state.get("title", ""))
     recent = [
         f"- {int(now - h['ts'])}s ago: {h['app']} — {h['title']}"
         for h in state.get("history", [])[:-1]

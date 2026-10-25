@@ -389,6 +389,9 @@ Rules that came out of auditing the surface against the running system (2026-10-
 | Every tool `observe()` names in its "no accessibility tree" hint must be granted | It told the model to use `get_screen_context` / `click_text` while neither was in the allowlist: on canvas UIs the orb was blind and out of options |
 | The prompt may only name granted tools | Same failure class, one level up |
 | Boot preflight prints **accessibility** and **ollama** state (`core.py::_preflight`) | Both degrade silently at call time; these two lines make "why can't it see / why did that fail?" answerable from the log |
+| `click_text` / `type_text` refuse when the front app is not the app last *looked at* (`tools/screen_epoch.py`) | They have no element id to anchor on, unlike `act()` — look at Chrome, switch to Terminal, type, and the keystrokes land in the terminal. The guard turns that into "look again". An explicit `app=` argument is treated as intent and skips the check |
+| `take_screenshot` + `ocr_image` instead of `ask_vision_agent` | The vision subagent routes to the local Ollama model unless the caller already holds an image, so with Ollama down "take a screenshot" was unanswerable. Both verified working with Ollama off (412 KB PNG, real text back) |
+| `app_task("web.read", {url})` instead of `open_url` + `wait_for` + `read_page_text` | Those three calls are one procedure: measured 3 rounds / 7.7 s versus 1 round / 5.8 s. It polls the URL the browser is *showing*, not the window title, which lags behind the frontmost tab |
 
 Dropped for lack of use (7,520 logged calls): `recall_about` (0 calls), `contacts_resolve` (0 calls —
 and, since no messaging tool was ever granted beside it, resolving a handle led nowhere), `dock` (3),

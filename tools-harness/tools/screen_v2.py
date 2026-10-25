@@ -104,6 +104,12 @@ def observe(app: str = "", query: str = "") -> str:
 def _observe(app: str, query: str) -> str:
     title, els, items = _snapshot(app, query)
     rev = _register(items, title)
+    # Record what the model just saw. click_text/type_text have no element ids to
+    # anchor on, so this snapshot is what lets them refuse to type into a
+    # different app than the one that was actually looked at.
+    from tools import screen_epoch
+
+    screen_epoch.note_look(_state.get("app") or app, title)
     role, label = _focused()
     focus_id = next((_id(i) for i, it in enumerate(items) if it["fp"][0] == role and it["fp"][1] == label[:_LABEL_MAX]), None) if label else None
     rows = []
