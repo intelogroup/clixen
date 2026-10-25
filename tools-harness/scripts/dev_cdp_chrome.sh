@@ -26,7 +26,10 @@ while [ $# -gt 0 ]; do
     --port) PORT="${2:-}"; shift 2 ;;
     --print-env) echo "export CLIXEN_BROWSER_CDP_URL=http://127.0.0.1:${PORT}"; exit 0 ;;
     --kill)
-      if [ -f "${PROFILE}/DevToolsActivePort" ]; then
+      # Match the profile path, not DevToolsActivePort: that file is written into
+      # the profile only sometimes, which made --kill report "none" while the
+      # browser was still running (caught on the first use).
+      if pgrep -f "user-data-dir=${PROFILE}" >/dev/null 2>&1; then
         pkill -f "user-data-dir=${PROFILE}" 2>/dev/null || true
         echo "stopped the dev CDP Chrome (${PROFILE})"
       else
