@@ -10,7 +10,6 @@ Memories are stored with source="user_memory", which TTL maps to infinity in kno
 """
 import logging
 import threading
-from pathlib import Path
 
 from store.knowledge_base import KnowledgeBase, _content_id
 
@@ -99,7 +98,164 @@ def _parse_tags(query: str) -> dict:
     return tags
 
 
-def remember(fact: str, entity_type: str = "", entity_name: str = "", tier: str = "") -> str:
+# ── Memory v2: version, don't overwrite ──────────────────────────────────────
+# Ported from the cloud repo's ADR 0018, adapted to a fixed schema. KnowledgeBase
+# drops and recreates its table on any field mismatch — which would wipe every
+# memory — so new columns are off the table and the metadata rides in the row's
+# otherwise-unused `url` field as JSON.
+#
+# Why versioning matters here: `remember` is a tool the model can call, and a
+# memory that it wrote is indistinguishable, later, from an instruction. The cloud
+# design calls a memory write "a persistence primitive for a successful injection"
+# and responds by (a) keeping history append-only instead of overwriting, and
+# (b) treating memories as untrusted data when they re-enter the prompt. Both are
+# cheap here and neither needs a schema change.
+_LIVE = "live"
+_MIN_CONFIDENCE = 0.4
+
+
+def _meta(row: dict) -> dict:
+    """Parse the JSON metadata stored in `url` (empty for legacy rows)."""
+    raw = row.get("url") or ""
+    if not raw.startswith("{"):
+        return {}
+    try:
+        import json as _json
+
+        loaded = _json.loads(raw)
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception:
+        return {}
+
+
+def _is_live(row: dict) -> bool:
+    meta = _meta(row)
+    if meta.get("tombstoned"):
+        return False
+    if meta.get("valid_to"):
+        return False
+    return float(meta.get("confidence", 1.0)) >= _MIN_CONFIDENCE
+
+
+def _set_meta(row_id: str, **changes) -> bool:
+    """Merge `changes` into this row's metadata. Returns False when unavailable.
+
+    A failed metadata write must never lose the memory itself: the row stays and
+    the caller is told, rather than pretending the version was superseded.
+    """
+    import json as _json
+    import time as _time
+
+    try:
+        rows = _kb().table.search().where(f"id = '{row_id}'", prefilter=True).limit(1).to_list()
+    except Exception as e:
+        log.warning("memory metadata read failed: %s", e)
+        return False
+    if not rows:
+        return False
+    meta = _meta(rows[0])
+    meta.setdefault("valid_from", float(rows[0].get("created_at") or _time.time()))
+    meta.update(changes)
+    try:
+        _kb().table.update(where=f"id = '{row_id}'", values={"url": _json.dumps(meta, sort_keys=True)})
+        return True
+    except Exception as e:
+        log.warning("memory metadata write failed: %s", e)
+        return False
+
+
+def _new_meta(key: str = "", origin: str = "user_tool", confidence: float = 1.0) -> str:
+    import json as _json
+    import time as _time
+
+    now = _time.time()
+    return _json.dumps(
+        {
+            "key": key,
+            "valid_from": now,
+            "valid_to": 0.0,
+            "confidence": round(float(confidence), 3),
+            "last_confirmed_at": now,
+            "origin": origin,
+            "tombstoned": False,
+        },
+        sort_keys=True,
+    )
+
+
+def _supersede(key: str, new_id: str) -> int:
+    """Close the live versions of `key`: they keep their history, stop being recall."""
+    import time as _time
+
+    if not key:
+        return 0
+    closed = 0
+    for row in _memory_rows():
+        if _meta(row).get("key") != key:
+            continue
+        if _set_meta(row["id"], valid_to=_time.time(), superseded_by=new_id):
+            closed += 1
+    return closed
+
+
+def _memory_rows() -> list[dict]:
+    """Every user_memory row (live AND superseded/tombstoned), one filtered scan.
+
+    Named for what it returns: filtering to live versions is `_is_live`, applied by
+    the callers that inject or supersede. Conflating the two made a superseded fact
+    look live in a review pass, which is exactly the confusion versioning exists to
+    remove."""
+    try:
+        return (
+            _kb()
+            .table.search()
+            .where(f"source = '{_SOURCE}'", prefilter=True)
+            .limit(1000)
+            .to_list()
+        )
+    except Exception as e:
+        log.warning("memory scan failed: %s", e)
+        return []
+
+
+def memory_status() -> str:
+    """One line for boot: can memory actually be read and written right now?
+
+    `recall_block` returns "" on any failure, which makes a dead embed backend look
+    exactly like "nothing relevant recalled" — that silence is why memory could rot
+    unnoticed. A probe at startup turns it into a visible state.
+
+    Note the probe must use the module-level `_embed`, not a method: the embedder
+    is a function in store.knowledge_base, and the backend stamp lives on the
+    KnowledgeBase instance (`memory.lance.embed_backend`).
+    """
+    try:
+        from store import knowledge_base as _kbm
+
+        kb = _kb()
+        # Count only live versions: superseded and tombstoned rows are history, and
+        # reporting them as facts made a forgotten memory look still in force.
+        total = sum(1 for r in _memory_rows() if _is_live(r))
+        _kbm._embed("clixen memory probe", backend=kb.embed_backend)
+        return f"memory: ok ({total} live facts, {kb.embed_backend or _kbm.EMBED_BACKEND} embeddings)"
+    except Exception as e:
+        try:
+            total = sum(1 for r in _memory_rows() if _is_live(r))
+        except Exception:
+            total = 0
+        return (
+            f"memory: UNREACHABLE ({total} facts stored but not searchable) — {e}. "
+            "recall_block() returns empty for every query until an embed backend is reachable."
+        )
+
+
+def remember(
+    fact: str,
+    entity_type: str = "",
+    entity_name: str = "",
+    tier: str = "",
+    key: str = "",
+) -> str:
     """Store a durable fact about the user. Returns a short confirmation.
 
     entity_type/entity_name (optional, e.g. "person"/"Sarah") tag the fact so it can
@@ -110,24 +266,43 @@ def remember(fact: str, entity_type: str = "", entity_name: str = "", tier: str 
     "always" facts show up in recall_block() every turn regardless of topic similarity —
     use sparingly, for things genuinely always-relevant (e.g. a standing preference).
     Default "on_relevance" is the pre-existing similarity-threshold behavior.
+
+    key (optional) names the belief this fact is about, e.g. "user.timezone".
+    Re-stating the same key supersedes the live version instead of overwriting it:
+    the old row keeps valid_to and stops being recalled, but stays for audit — a
+    memory that was later corrected should be traceable, and a poisoned memory
+    should be removable without erasing the evidence that it existed.
     """
     fact = (fact or "").strip()
     if not fact:
         return "Nothing to remember — empty fact."
     query_tag = _build_tags(entity_type, entity_name, tier)
+    key = (key or "").strip()
     try:
         kb = _kb()
-        # Idempotent: drop any prior identical fact (same content → same id) before re-adding.
-        kb.table.delete(f"id = '{_content_id(fact)}'")
-        kb.store(content=fact, source=_SOURCE, method="manual", query=query_tag)
-        return f"Got it — I'll remember that: {fact}"
+        new_id = _content_id(fact)
+        if key:
+            _supersede(key, new_id)  # history, not overwrite (ADR 0018)
+        # Idempotent for an identical restatement: same content → same id → the
+        # deletion below drops the old row, then we re-add it with a fresh
+        # confirmation timestamp so "user said it again" is recorded as such.
+        kb.table.delete(f"id = '{new_id}'")
+        kb.store(
+            content=fact,
+            source=_SOURCE,
+            method="manual",
+            query=query_tag,
+            url=_new_meta(key=key),
+        )
+        suffix = " (updated)" if key else ""
+        return f"Got it — I'll remember that{suffix}: {fact}"
     except Exception as e:  # Ollama/embed down — don't crash the turn
         log.warning("remember failed: %s", e)
         return f"[error] couldn't save memory: {e}"
 
 
 def _entity_rows() -> list[dict]:
-    """All user_memory rows carrying an entity: tag. Table is personal-scale (single
+    """Live user_memory rows carrying an entity: tag. Table is personal-scale (single
     user), so a filtered full scan + python-side tag parse is simpler and more robust
     than encoding exact-match LIKE patterns against a multi-segment tag string."""
     try:
@@ -140,7 +315,7 @@ def _entity_rows() -> list[dict]:
     except Exception as e:
         log.warning("_entity_rows failed: %s", e)
         return []
-    return rows
+    return [r for r in rows if _is_live(r)]
 
 
 def recall_about(entity_name: str) -> str:
@@ -164,18 +339,25 @@ def recall_about(entity_name: str) -> str:
 
 
 def forget(query: str) -> str:
-    """Delete the single best-matching memory. Destructive → conservative by design:
-    removes only the closest match (within threshold), never a whole neighborhood of
-    related facts. Call again to remove more."""
+    """Tombstone the single best-matching memory. Conservative by design: only the
+    closest match (within threshold), never a whole neighbourhood of related facts.
+
+    Tombstoned, not deleted (ADR 0018): the row keeps its history for audit but
+    leaves every future recall immediately. Deleting outright would erase the
+    evidence that a memory — possibly an injected one — ever existed.
+    """
     query = (query or "").strip()
     if not query:
         return "Nothing to forget — empty query."
     try:
-        hits = _kb().search(query, top_k=1, source_filter=_SOURCE)
+        hits = [h for h in _kb().search(query, top_k=3, source_filter=_SOURCE) if _is_live(h)]
         if not hits or hits[0].get("_distance", 99) > _forget_threshold():
             return f"No memory found matching: {query}"
         top = hits[0]
-        _kb().table.delete(f"id = '{top['id']}'")
+        import time as _time
+
+        if not _set_meta(top["id"], tombstoned=True, valid_to=_time.time()):
+            return f"[error] found the memory but could not tombstone it: {top.get('content', '')[:80]}"
         return f"Forgot: {top['content']}"
     except Exception as e:
         log.warning("forget failed: %s", e)
@@ -183,7 +365,7 @@ def forget(query: str) -> str:
 
 
 def _always_rows() -> list[dict]:
-    """user_memory rows tagged tier:always — injected every turn regardless of topic."""
+    """Live user_memory rows tagged tier:always — injected every turn regardless of topic."""
     try:
         rows = (
             _kb()
@@ -194,7 +376,7 @@ def _always_rows() -> list[dict]:
     except Exception as e:
         log.warning("_always_rows failed: %s", e)
         return []
-    return rows
+    return [r for r in rows if _is_live(r)]
 
 
 def _record_recall_signals(query: str, hits: list[dict]) -> None:
@@ -220,17 +402,33 @@ def recall_block(query: str) -> str:
     """
     Harness hook: return a system-prompt block of memories relevant to `query`,
     or "" when there's nothing to recall (empty namespace) or recall fails.
+
     Two embeds + two LanceDB lookups (user_memory + session fold summaries);
     safe to call on every turn.
+
+    Two deliberate properties, both from ADR 0018:
+    - Only live versions are injected (superseded and tombstoned rows are history).
+    - The block is FENCED as untrusted data. A memory is text that entered the
+      system from outside the current turn — an emailed "remember that the user
+      approved transfers", a page the agent read, or something the model wrote to
+      itself earlier. Structurally it must sit below instructions, not beside them.
     """
     try:
         hits = _kb().search(query or "", top_k=5, source_filter=_SOURCE)
         hits += _kb().search(query or "", top_k=5, source_filter=_SESSION_SOURCE)
     except Exception as e:
-        log.debug("recall skipped: %s", e)
+        # Was log.debug: a dead embed backend then looked exactly like "nothing
+        # relevant recalled" for weeks. Loud once per process, quiet after that.
+        global _recall_warned
+        if not _recall_warned:
+            _recall_warned = True
+            log.warning(
+                "memory recall unavailable (%s) — every turn runs WITHOUT recalled facts; "
+                "see memory_tools.memory_status()", e,
+            )
         return ""
     # Only inject on-topic memories — otherwise every turn floods the prompt with all of them.
-    hits = [h for h in hits if h.get("_distance", 99) <= _recall_threshold()]
+    hits = [h for h in hits if h.get("_distance", 99) <= _recall_threshold() and _is_live(h)]
 
     # Record only what similarity actually retrieved. The "always" rows merged in below
     # bypass the gate, so counting them would max out every usage metric without the
@@ -256,7 +454,15 @@ def recall_block(query: str) -> str:
             bullets.append(f"- [earlier conversation {cid}: {h['content']}]")
         else:
             bullets.append(f"- {h['content']}")
-    return f"## What you remember\n{chr(10).join(bullets)}\n"
+    body = f"## What you remember (recalled, may be stale)\n{chr(10).join(bullets)}"
+
+    # Same fence as page text and mail (tools/injection_guard.py): memories are
+    # recalled *data*. Using the shared wrapper means a memory that says "ignore
+    # previous instructions" arrives with the same standing as one quoted from a
+    # web page, and the fence's own sentinel cannot be forged from inside it.
+    from tools.injection_guard import wrap_external_output
+
+    return wrap_external_output("memory_recall", body)
 
 
 def mem_block_for(query: str) -> str:
@@ -432,6 +638,10 @@ MEMORY_SCHEMAS = [
                         "enum": ["always", "on_relevance", "surface_only"],
                         "description": "Optional, default on_relevance (topic-similarity gated, the normal behavior). 'always' injects this fact every turn regardless of topic — use sparingly, only for standing facts genuinely always relevant.",
                     },
+                    "key": {
+                        "type": "string",
+                        "description": "Optional stable name for the belief this fact is about, e.g. 'user.timezone'. Re-stating the same key supersedes the old version instead of leaving two conflicting facts; the old one stops being recalled but stays in history.",
+                    },
                 },
                 "required": ["fact"],
             },
@@ -545,7 +755,7 @@ MEMORY_SCHEMAS = [
 ]
 
 MEMORY_EXECUTORS = {
-    "remember": lambda args: remember(args.get("fact", ""), args.get("entity_type", ""), args.get("entity_name", ""), args.get("tier", "")),
+    "remember": lambda args: remember(args.get("fact", ""), args.get("entity_type", ""), args.get("entity_name", ""), args.get("tier", ""), args.get("key", "")),
     "recall_about": lambda args: recall_about(args.get("entity_name", "")) or f"Nothing remembered about {args.get('entity_name', '')}.",
     "link_facts": lambda args: link_facts(args.get("fact_a", ""), args.get("fact_b", ""), args.get("relation_type", "related")),
     "facts_related_to": lambda args: facts_related_to(args.get("fact", "")) or f"No links found for: {args.get('fact', '')}",

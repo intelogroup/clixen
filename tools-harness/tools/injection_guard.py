@@ -46,6 +46,11 @@ EXTERNAL_CONTENT_TOOLS = {
     # Drives a hidden browser and reports what it read; same trust level as the
     # page it read. Was the last unfenced prose source in the orb's toolset.
     "ask_browser_agent",
+    # Recalled long-term memory. Not a tool result, but text that entered the system
+    # from outside the current turn (an email, a page, or something the model wrote
+    # to itself earlier), so it crosses the same boundary: a memory that says
+    # "ignore previous instructions" must read as quoted data, exactly like a page.
+    "memory_recall",
 }
 
 

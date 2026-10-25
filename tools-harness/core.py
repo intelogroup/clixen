@@ -228,6 +228,15 @@ def _preflight() -> None:
             "will fail; the orb uses their direct tool equivalents instead"
         )
 
+    # Long-term memory — recall_block() returns "" on any failure, so a dead embed
+    # backend is indistinguishable from "nothing relevant to recall". Print it.
+    try:
+        from tools.memory_tools import memory_status
+
+        print(f"preflight: {memory_status()}")
+    except Exception as exc:
+        print(f"preflight: memory status unavailable ({exc})")
+
 
 def main():
     print("Starting Clixen Core (consolidated)...")
