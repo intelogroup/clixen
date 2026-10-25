@@ -293,6 +293,39 @@ FIND_FILES_SCHEMA = {
 _MAX_FILE_BYTES = 100_000  # 100 KB hard cap on any single file read
 
 
+def _is_probably_binary(head: bytes) -> bool:
+    """True when a file is not text, so read_file can say what to use instead.
+
+    Measured 2026-10-25: reading a PNG returned "1: \ufffdPNG 2: \x1a 3: ..." — 139 lines
+    of replacement characters that cost tokens and told the model nothing. A file
+    with a NUL byte, or that fails UTF-8 decoding on its first block, is not text.
+    """
+    if b"\x00" in head:
+        return True
+    try:
+        head.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
+_BINARY_HINT = {
+    ".png": "analyze_image (it can look at the picture) or ocr_image (text inside it)",
+    ".jpg": "analyze_image or ocr_image",
+    ".jpeg": "analyze_image or ocr_image",
+    ".gif": "analyze_image",
+    ".webp": "analyze_image or ocr_image",
+    ".heic": "analyze_image",
+    ".pdf": "read_pdf or pdf_to_markdown",
+    ".zip": "nothing — this is an archive",
+    ".mp3": "transcribe_audio",
+    ".m4a": "transcribe_audio",
+    ".wav": "transcribe_audio",
+    ".mp4": "nothing yet — this is a video",
+    ".mov": "nothing yet — this is a video",
+}
+
+
 def read_file(path: str, offset: int = 1, limit: int = 200) -> str:
     from tools.fs_observation import observe
 
@@ -305,7 +338,18 @@ def read_file(path: str, offset: int = 1, limit: int = 200) -> str:
 
     try:
         size = p.stat().st_size
-        raw = p.read_bytes()[:_MAX_FILE_BYTES].decode("utf-8", errors="replace")
+        with p.open("rb") as handle:
+            head = handle.read(4096)
+            if _is_probably_binary(head):
+                suggestion = _BINARY_HINT.get(
+                    p.suffix.lower(), "a tool that understands this format"
+                )
+                return (
+                    f"Not text: {p} is a binary {p.suffix or 'file'} ({size} bytes). "
+                    f"read_file only returns text. Use {suggestion}."
+                )
+            handle.seek(0)
+            raw = handle.read(_MAX_FILE_BYTES).decode("utf-8", errors="replace")
     except PermissionError:
         return f"Permission denied: {p}"
     observe(p)

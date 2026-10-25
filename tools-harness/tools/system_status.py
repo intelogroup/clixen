@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -82,22 +83,59 @@ def _disk() -> str:
     return f"disk: {avail} free of {size} ({cap} used)"
 
 
+_PRESSURE_CACHE: tuple[str, float] = ("", 0.0)
+
+
+def _memory_pressure() -> str:
+    """The pressure level, which `top -l 1` no longer prints.
+
+    `top`'s PhysMem line has no pressure field on current macOS, so the old code
+    silently omitted it and the orb answered "the reading wasn't included" when
+    asked whether the Mac was under pressure (measured 2026-10-25). Two cheap
+    sources, in order:
+
+    * ``sysctl vm.memory_pressure``: 1 normal, 2 warning, 4 critical (0 = not set,
+      which happens on some boots — it returned 0 here, so it cannot be the only
+      source);
+    * ``memory_pressure -Q``: system-wide free percentage, which is always there.
+    """
+    # `memory_pressure -Q` costs ~1.6 s (measured), which would quadruple this tool's
+    # cost when the orb asks a machine question. Pressure moves slowly, so a 15 s
+    # cache is invisible to the answer and keeps the tool fast.
+    global _PRESSURE_CACHE
+    now = time.monotonic()
+    if _PRESSURE_CACHE[1] and now - _PRESSURE_CACHE[1] < 15:
+        return _PRESSURE_CACHE[0]
+
+    level = _run(["sysctl", "-n", "vm.memory_pressure"]).strip()
+    names = {"1": "normal", "2": "warning", "4": "critical"}
+    if level in names:
+        _PRESSURE_CACHE = (names[level], now)
+        return names[level]
+    out = _run(["memory_pressure", "-Q"])
+    for line in out.splitlines():
+        if "free percentage" in line.lower():
+            pct = line.rsplit(":", 1)[-1].strip()
+            # Free memory is NOT a pressure level. Saying "51% free" alone let the orb
+            # answer "not under memory pressure" — a claim we cannot support from this
+            # number. Name it as unknown and give the figure as context.
+            _PRESSURE_CACHE = (f"unknown ({pct} of memory free)", now)
+            return _PRESSURE_CACHE[0]
+    _PRESSURE_CACHE = ("unknown", now)
+    return "unknown"
+
+
 def _memory() -> str:
-    """Memory pressure (top -l 1 has 'PhysMem' line)."""
+    """Memory in use, plus the pressure reading."""
     out = _run(["top", "-l", "1", "-n", "0"])
     if not out:
         return "memory: unavailable"
     phys = next((ln for ln in out.splitlines() if ln.startswith("PhysMem:")), "")
-    pressure = next(
-        (ln for ln in out.splitlines() if "Memory pressure" in ln or "MemoryPressure" in ln),
-        "",
-    )
     parts = []
     if phys:
         # PhysMem: 18G used (1234M wired, ...), 6G unused.
         parts.append(phys.replace("PhysMem:", "").strip())
-    if pressure:
-        parts.append(pressure.strip())
+    parts.append(f"pressure {_memory_pressure()}")
     return "memory: " + (" | ".join(parts) if parts else "(top output unrecognized)")
 
 

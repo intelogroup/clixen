@@ -39,6 +39,7 @@ DIMENSIONS: dict[str, list[str]] = {
     "Durability (journal)": ["test_step_journal.py"],
     "Screen text (OCR)": ["test_ocr_engines.py"],
     "Image understanding": ["test_vision_analyze.py"],
+    "Machine, clipboard, files": ["test_orb_machine_tools.py"],
     "Tool demand (promotion gate)": ["test_tool_demand.py"],
     "Skills (procedures on demand)": ["test_skills.py"],
     "Popups and consent banners": ["test_consent_banners.py"],

@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import json
 
-# Long enough to keep "what it does + when to prefer it", short enough that 34 of
-# them stop being the largest thing in the request. 200 was chosen by measuring:
-# first-sentence-only (2_934 chars total) cut into real instructions on tools
-# whose first sentence is a preamble.
-DEFAULT_LIMIT = 200
+# Long enough to keep "what it does + when to prefer it", short enough that the block
+# stops being the largest thing in the request. 200 was chosen by measuring:
+# first-sentence-only (2_934 chars total) cut into real instructions on tools whose
+# first sentence is a preamble. Lowered to 170 on 2026-10-25: four tools added that
+# day carry very short descriptions, so the *ratio* saved fell to 24.7% against a 25%
+# guard — tightening the cap is the honest fix, weakening the guard is not.
+DEFAULT_LIMIT = 170
 
 # One line for the system prompt: without it the model reads a truncated
 # description as the whole story. Funded by the schema saving above.
