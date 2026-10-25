@@ -45,6 +45,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # spacy models are pinned by direct wheel URL, not a bare name (see the
+      # comment in pyproject.toml: without the pin, the first TTS call would run
+      # `spacy download` over the network and break offline use). Dependabot
+      # treats a GitHub release asset as a private source and fails the ENTIRE
+      # run with "private_source_authentication_failure" — which blocked every
+      # other Python update, not just this one. It can never bump a URL pin
+      # anyway, so it should not try. Bump by hand when 3.8.x models move.
+      - dependency-name: "en-core-web-sm"
     groups:
       python:
         patterns: ["*"]
