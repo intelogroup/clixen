@@ -66,7 +66,7 @@ dependencies = [
   "resemblyzer>=0.1.4",
   "paper-qa>=5.0.0",
   "reportlab>=4.0.0",
-  "scrapling[fetchers]>=0.4.0",
+  "scrapling[fetchers,rag]>=0.5",
   "setuptools>=83.0.0",  # tools/voiceprint.py shims pkg_resources (importlib.metadata-backed) for webrtcvad
   "mcp<2.0.0",
   "pillow>=12.3.0",

@@ -64,3 +64,99 @@ def test_bad_selectors_return_a_message_instead_of_raising(store):
 def test_empty_inputs_are_refused(store):
     assert "Empty HTML" in sf._scrapling_extract("", ".price", domain="x.test")
     assert "Empty selector" in sf._scrapling_extract(PAGE_V1, "", domain="x.test")
+
+
+# ── markdown + background-API capture ────────────────────────────────────────
+# Both are exercised with fakes here: the real ones need a browser, which CI has no
+# business downloading. The measured live numbers are in the commit message.
+
+
+def test_markdown_needs_no_selector(monkeypatch):
+    class Page:
+        status = 200
+
+        @staticmethod
+        def markdown(main_content_only=True):
+            return "# Price board\n\n- Kettle: $39.50\n- Grinder: $112.00\n"
+
+    class Fetcher:
+        @staticmethod
+        def get(url, timeout=30):
+            return Page()
+
+    import sys as _sys
+    fake = type(_sys)("scrapling.fetchers")
+    fake.Fetcher = Fetcher
+    fake.StealthyFetcher = Fetcher
+    monkeypatch.setitem(_sys.modules, "scrapling.fetchers", fake)
+
+    out = sf._scrapling_fetch_and_extract("https://shop.test/", "", as_markdown=True)
+    payload = __import__("json").loads(out)
+    assert payload["ok"] and "Kettle" in payload["markdown"]
+    assert payload["chars"] > 0
+
+
+def test_api_capture_returns_the_bodies_and_says_which_url_matched(monkeypatch):
+    class Record:
+        url = "https://shop.test/api/products"
+        status = 200
+        body = b'{"items":[{"name":"Kettle","price":39.5}]}'
+
+    class Network:
+        @staticmethod
+        def search(url_pattern=None, limit=100):
+            assert "api" in (url_pattern or "")
+            return [Record()]
+
+    class Session:
+        def __init__(self, **kw):
+            assert kw.get("record_requests") is True, "capture needs recording enabled"
+            self.network = Network()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def fetch(self, url):
+            return None
+
+    import sys as _sys
+    fake = type(_sys)("scrapling.fetchers")
+    fake.StealthySession = Session
+    monkeypatch.setitem(_sys.modules, "scrapling.fetchers", fake)
+
+    out = sf._scrapling_api_capture("https://shop.test/", url_pattern="api", limit=5)
+    payload = __import__("json").loads(out)
+    assert payload["ok"] is True and payload["count"] == 1
+    assert "Kettle" in payload["responses"][0]["body"]
+    assert payload["responses"][0]["url"].endswith("/api/products")
+
+
+def test_api_capture_with_no_matches_says_so_and_suggests_the_alternative(monkeypatch):
+    class Session:
+        def __init__(self, **kw):
+            class N:
+                @staticmethod
+                def search(url_pattern=None, limit=100):
+                    return []
+            self.network = N()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def fetch(self, url):
+            return None
+
+    import sys as _sys
+    fake = type(_sys)("scrapling.fetchers")
+    fake.StealthySession = Session
+    monkeypatch.setitem(_sys.modules, "scrapling.fetchers", fake)
+
+    payload = __import__("json").loads(sf._scrapling_api_capture("https://shop.test/"))
+    assert payload["ok"] is False
+    assert "scrapling_fetch_and_extract" in payload["hint"]

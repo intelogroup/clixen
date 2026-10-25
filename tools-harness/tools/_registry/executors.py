@@ -92,9 +92,15 @@ EXECUTORS = {
     ),
     "scrapling_fetch_and_extract": lambda args: _scrapling_fetch_and_extract(
         url=args["url"],
-        selector=args["selector"],
+        selector=args.get("selector", ""),
         extract=args.get("extract", "text"),
         stealth=args.get("stealth", False),
+        as_markdown=args.get("as_markdown", False),
+    ),
+    "scrapling_api_capture": lambda args: _scrapling_api_capture(
+        url=args["url"],
+        url_pattern=args.get("url_pattern", ""),
+        limit=args.get("limit", 8),
     ),
     "apify_run_actor": lambda args: apify_run_actor_exec(
         actor_id=args["actor_id"],

@@ -35,8 +35,10 @@ from tools.scrapling_fetch import (
     STEALTHY_SCHEMA as SCRAPLING_STEALTHY_SCHEMA,
     EXTRACT_SCHEMA as SCRAPLING_EXTRACT_SCHEMA,
     FETCH_AND_EXTRACT_SCHEMA as SCRAPLING_FETCH_AND_EXTRACT_SCHEMA,
+    SCRAPLING_API_CAPTURE_SCHEMA,
     _scrapling_fetch, _scrapling_stealthy_fetch,
     _scrapling_extract, _scrapling_fetch_and_extract,
+    _scrapling_api_capture,
 )
 from tools.fetch_url import SCHEMA as WEB_FETCH_SCHEMA, execute as _web_fetch
 from tools.apify import (
