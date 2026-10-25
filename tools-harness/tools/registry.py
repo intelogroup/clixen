@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import re as _re
+import time as _time
 import shlex
 from pathlib import Path
 
@@ -537,6 +538,8 @@ def _execute_raw(name: str, arguments: dict) -> str:
     try:
         from store import trace_store
         trace_store.record("adhoc", {"event": "tool_call", "tool": name})
+        _t0 = _time.perf_counter()
+        _publish_action("started", name)
         raw_result = EXECUTORS[name](arguments)
         from tools.tool_policy import sanitize_output
         # Coerce non-str results (executors returning None/dicts) so downstream
@@ -553,6 +556,11 @@ def _execute_raw(name: str, arguments: dict) -> str:
             from tools.rate_limit import restore
             restore(name, _rl_previous_ts)
         _journal_step(name, arguments, result, ok=True)
+        _publish_action(
+            "done", name,
+            ok=not result.startswith(("[error]", "[tool error]", "[blocked]", "[invalid")),
+            ms=int((_time.perf_counter() - _t0) * 1000),
+        )
         return result
     except Exception as e:
         if _rl_previous_ts is not None:
@@ -561,7 +569,23 @@ def _execute_raw(name: str, arguments: dict) -> str:
         result = f"[tool error] {name} failed: {e}"
         tool_failure_log.record_failure(name, result)
         _journal_step(name, arguments, result, ok=False)
+        _publish_action("done", name, ok=False, ms=0, error=str(e)[:120])
         return _with_failure_hint(name, result)
+
+
+def _publish_action(phase: str, name: str, **kw) -> None:
+    """Tell any subscribed UI that an action started or finished.
+
+    Kept here rather than in the chat layer so every caller — orb, orchestrator,
+    Telegram — produces the same events, and so the renderer stops having to scrape
+    "⚙️ Running <tool>…" out of the narration.
+    """
+    try:
+        from tools import action_events
+
+        action_events.publish(phase, name, **kw)
+    except Exception:
+        pass
 
 
 def _journal_step(name: str, arguments: dict, result: str, ok: bool) -> None:

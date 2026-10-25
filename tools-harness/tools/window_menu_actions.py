@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 
 WINDOW_SCHEMA = {
     "type": "function",
@@ -16,20 +17,26 @@ WINDOW_SCHEMA = {
         "description": (
             "Arrange the user's own app windows. action='list' (app): title, position, size of each "
             "window. 'focus' (app, index): raise it. 'move' (app, x, y) and 'resize' (app, width, height): "
-            "screen points, origin top-left. 'minimize' (app, index), 'zoom' (fill the screen's usable area, not full screen), 'fullscreen' (toggle full screen), "
+            "screen points, origin top-left. 'tile' (app, index, position): fill a named region - use it for "
+            "'put X on the left', never move+resize arithmetic. 'minimize' (app, index), 'zoom' (fill the screen's usable area, not full screen), 'fullscreen' (toggle full screen), "
             "'close' (red button: the app still asks about unsaved work; never quits the app). index is 1-based, "
             "default 1. Use for 'put X on the left', 'make this bigger', 'bring Y forward', 'close this window'."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["list", "focus", "move", "resize", "minimize", "zoom", "fullscreen", "close"]},
+                "action": {"type": "string", "enum": ["list", "focus", "move", "resize", "tile", "minimize", "zoom", "fullscreen", "close"]},
                 "app": {"type": "string", "description": "Process name, e.g. 'Google Chrome', 'Finder'."},
                 "index": {"type": "integer", "description": "1-based window index, default 1."},
                 "x": {"type": "integer"},
                 "y": {"type": "integer"},
                 "width": {"type": "integer"},
                 "height": {"type": "integer"},
+                "position": {
+                    "type": "string",
+                    "enum": ["left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right", "maximize", "center"],
+                    "description": "tile only: which half or quarter of the usable screen to fill.",
+                },
             },
             "required": ["action", "app"],
         },
@@ -187,19 +194,90 @@ def _usable_area() -> tuple[int, int, int, int] | None:
         return None
 
 
+_BOUNDS_JXA = (
+    'ObjC.import("AppKit");'
+    'function run(argv){'
+    '  const app = Application("System Events").processes.byName(argv[0]);'
+    '  const w = app.windows[Number(argv[1]) - 1];'
+    '  const p = w.position(), z = w.size();'
+    '  return [p[0], p[1], z[0], z[1]].join(",");'
+    '}'
+)
+
+
+def _read_bounds(app: str, index: int) -> tuple[int, int, int, int] | None:
+    """Where the window actually is, a moment after being told to move."""
+    try:
+        time.sleep(0.25)
+        r = subprocess.run(
+            ["/usr/bin/osascript", "-l", "JavaScript", "-e", _BOUNDS_JXA, str(app), str(index)],
+            capture_output=True, text=True, timeout=10,
+        )
+        x, y, w, h = (int(float(v)) for v in r.stdout.strip().split(","))
+        return x, y, w, h
+    except (subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def _tile_rect(area: tuple[int, int, int, int], position: str) -> tuple[int, int, int, int] | None:
+    """x, y, w, h for a named screen region, from the usable area.
+
+    Window placement is arithmetic the model gets wrong: "put Chrome on the left"
+    used to mean `move` + `resize` with hand-computed numbers, and a wrong number
+    silently puts the window half off-screen. One call, exact halves/quarters.
+    """
+    x, y, w, h = area
+    half_w, half_h = w // 2, h // 2
+    rects = {
+        "left": (x, y, half_w, h),
+        "right": (x + half_w, y, w - half_w, h),
+        "top": (x, y, w, half_h),
+        "bottom": (x, y + half_h, w, h - half_h),
+        "top-left": (x, y, half_w, half_h),
+        "top-right": (x + half_w, y, w - half_w, half_h),
+        "bottom-left": (x, y + half_h, half_w, h - half_h),
+        "bottom-right": (x + half_w, y + half_h, w - half_w, h - half_h),
+        "maximize": (x, y, w, h),
+        "center": (x + (w - int(w * 0.7)) // 2, y + (h - int(h * 0.7)) // 2, int(w * 0.7), int(h * 0.7)),
+    }
+    return rects.get(position.strip().lower().replace("_", "-"))
+
+
 def window(action: str, app: str, index: int = 1, x: int | None = None, y: int | None = None,
-           width: int | None = None, height: int | None = None) -> str:
-    if action == "zoom":
+           width: int | None = None, height: int | None = None,
+           position: str = "") -> str:
+    if action in ("tile", "zoom"):
         if not app.strip() or index < 1:
             return "window needs an app name and a 1-based index."
         area = _usable_area()
         if area is None:
             return "Error: could not read the screen size."
-        err = _run(_WINDOW["move"], app, str(index), str(area[0]), str(area[1]))
+        rect = (area[0], area[1], area[2], area[3]) if action == "zoom" else _tile_rect(area, position)
+        if rect is None:
+            return (
+                f"Unknown position '{position}'. Use one of: left, right, top, bottom, "
+                "top-left, top-right, bottom-left, bottom-right, maximize, center."
+            )
+        tx, ty, tw, th = rect
+        err = _run(_WINDOW["move"], app, str(index), str(tx), str(ty))
         if err.startswith("Error"):
             return err
-        out = _run(_WINDOW["resize"], app, str(index), str(area[2]), str(area[3]))
-        return out if out.startswith("Error") else f"Zoomed window {index} to {area[2]}x{area[3]}."
+        out = _run(_WINDOW["resize"], app, str(index), str(tw), str(th))
+        if out.startswith("Error"):
+            return out
+        label = action if action == "zoom" else f"tile {position}"
+        # Read back instead of trusting the request: macOS may clamp a window to a
+        # minimum size or nudge it on-screen, and a bare "tiled to 735x861" would then
+        # be a claim the screen does not support. Measured: an immediate read can still
+        # show the previous frame, so settle first.
+        actual = _read_bounds(app, index)
+        if actual and (actual[0], actual[1]) != (tx, ty):
+            return (
+                f"Tiled window {index} of {app} ({label}); asked for {tw}x{th} at "
+                f"({tx},{ty}), the window is at ({actual[0]},{actual[1]}) {actual[2]}x{actual[3]} — "
+                "macOS adjusts some windows, so this is where it actually is."
+            )
+        return f"Tiled window {index} of {app}: {label} -> {tw}x{th} at ({tx},{ty})."
     script = _WINDOW.get(action)
     if script is None:
         return f"Unknown window action: {action}."

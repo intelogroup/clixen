@@ -242,3 +242,37 @@ def test_subscribers_receive_published_events():
     agent.unsubscribe(q)
     agent.publish(VoiceEvent("token", text="ignored"))
     assert q.empty()
+
+
+def test_audio_starts_before_the_reply_finishes_streaming(fast_tts):
+    """Latency guard (A1): the first clip is synthesised as soon as the first sentence
+    is complete, not when the last token arrives.
+
+    This is the property that broke before: a short reply never crossed the leak
+    filter's holdback, so the whole turn was buffered and the user heard nothing for
+    ~2.5 s, then everything at once. Deterministic here rather than a p50 measurement:
+    the brain sleeps between tokens, so "audio before the end" is a binary fact.
+    """
+    agent = VoiceAgent()
+
+    def brain(query, *, chat_id, on_token, turn_id, force_web_search):
+        # The split happens once the NEXT sentence has begun (the splitter looks ahead
+        # for the capital), so the second token is what completes the first sentence.
+        on_token("First sentence. ")
+        on_token("Second")
+        time.sleep(0.35)          # a buffered turn would miss this deadline
+        on_token(" one.")
+        return ("First sentence. Second one.", "fake-model", "chat")
+
+    agent.set_brain(brain)
+    started = time.time()
+    first_audio = None
+    kinds = []
+    for event in agent.stream_turn(audio=b"fake", chat_id="voice_agent"):
+        kinds.append(event.kind)
+        if event.kind == "audio" and first_audio is None:
+            first_audio = time.time() - started
+
+    assert first_audio is not None, kinds
+    assert first_audio < 0.35, f"first audio at {first_audio:.2f}s — the turn was buffered"
+    assert kinds.count("audio") >= 1 and kinds[-1] == "done"

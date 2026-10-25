@@ -53,6 +53,9 @@ const state = {
   amp: 0,            // smoothed 0..1 envelope driving the ripples
   targetAmp: 0,
   t: 0,
+  runningTools: new Set(),  // tools in flight, from "action" events
+  lastAction: "",
+  lastActionFailed: "",
 };
 
 // Continuous-listening toggle (declared here, not in the mic section, because
@@ -1000,6 +1003,33 @@ listen("orb-event", (ev) => {
     case "transcript":
       say(p.text, "you", true);
       break;
+
+    case "action": {
+      // Structured tool events: started / done with an outcome and a duration.
+      // Before this the bunny animated off a scraped "⚙️ Running <tool>…" string in
+      // the narration, so it could not know whether the call worked.
+      const name = p.tool || "tool";
+      if (!state.runningTools) state.runningTools = new Set();
+      if (p.phase === "started") {
+        state.runningTools.add(name);
+        state.lastAction = name;
+        setAction(true);
+        state.mode = state.mode === "speaking" ? "speaking" : "thinking";
+        if (cfg.debug) console.log("[orb:js] action start", name);
+      } else {
+        state.runningTools.delete(name);
+        if (!p.ok) {
+          state.lastActionFailed = name;
+          if (cfg.debug) console.log("[orb:js] action failed", name, p.error || "");
+        } else if (cfg.debug) {
+          console.log("[orb:js] action done", name, `${p.ms || 0}ms`);
+        }
+        // Only stop the action pose once nothing else is in flight — batched calls
+        // arrive as several overlapping start/done pairs.
+        if (state.runningTools.size === 0) setAction(false);
+      }
+      break;
+    }
 
     case "token":
       // The backend announces a running tool as "⚙️ Running <tool>…" inside the

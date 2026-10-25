@@ -1667,6 +1667,31 @@ async def voice_model(request: Request):
 
 _VOICE_MIC = os.environ.get("CLIXEN_VOICE_MIC", "1") != "0"
 _VOICE_BUS = voice_session.get_bus()
+
+
+def _publish_action_event(payload: dict) -> None:
+    """Tool started/finished -> the orb's event stream.
+
+    The bunny used to animate off a scraped "⚙️ Running <tool>…" string in the
+    narration, so it could not tell success from failure or how long a call took.
+    These events carry that, and the renderer no longer has to parse prose.
+    """
+    try:
+        _VOICE_BUS.publish({
+            "type": "action",
+            "phase": payload.get("phase", ""),
+            "tool": payload.get("tool", ""),
+            "ok": payload.get("ok", True),
+            "ms": payload.get("ms", 0),
+            "error": payload.get("error", ""),
+        })
+    except Exception:
+        pass
+
+
+from tools import action_events as _action_events  # noqa: E402
+
+_action_events.add_sink(_publish_action_event)
 _VOICE_SESSION = None
 _VOICE_SESSION_LOCK = threading.Lock()
 

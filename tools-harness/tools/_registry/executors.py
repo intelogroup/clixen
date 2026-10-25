@@ -500,6 +500,7 @@ EXECUTORS = {
     "window": lambda args: window(
         args.get("action", ""), args.get("app", ""), int(args.get("index") or 1),
         args.get("x"), args.get("y"), args.get("width"), args.get("height"),
+        args.get("position", ""),
     ),
     "ui_drag": lambda args: ui_drag(args.get("from_id", ""), args.get("to_id", ""), args.get("app", "")),
     "app": lambda args: app(args.get("action", ""), args.get("name", "")),

@@ -49,7 +49,7 @@ DIMENSIONS: dict[str, list[str]] = {
 # also a to-do list, and hiding these would make the product look better tested
 # than it is.
 KNOWN_GAPS: dict[str, str] = {
-    "Latency budget": "scripts/voice_latency.py measures it live; no CI assertion yet",
+    "Latency budget": "CI asserts the property (first clip before the stream ends: tests/voice/test_agent.py, test_tts_stream.py); the p50 number is only measured live by scripts/voice_latency.py against a real model and TTS, which CI cannot call",
     "Long-run soak (hours)": "jobs ran 42 min in production; no scripted soak",
     "Live human-input events": "no global event tap exists — polled at 3 s by tools/screen_watch.py",
 }

@@ -101,8 +101,13 @@ def sentence_boundary(buf: str) -> tuple[str, str]:
     """Split a streaming buffer at the first speakable sentence boundary.
 
     Returns (ready_sentence, remainder); ("", buf) means "keep accumulating".
-    Requires ≥3 words for a newline break and ≥4 for a punctuation break, so a
-    short "OK." fragment doesn't get synthesised on its own.
+
+    The word floor exists so a bare "OK." is not synthesised on its own, but it was
+    set at 4 for punctuation, which meant common two-word sentences ("First sentence.")
+    never split: the whole reply was buffered and spoken only at the end. Measured on
+    a two-sentence reply: 0.36 s of silence before the first clip, when the first
+    sentence was complete at 0.01 s. Two words is enough to be worth speaking; one
+    is not.
     """
     if not buf:
         return "", ""
@@ -114,7 +119,7 @@ def sentence_boundary(buf: str) -> tuple[str, str]:
             if len(chunk.split()) >= 3:
                 return chunk, rest
     m = re.search(r"([.!?…])\s+(?=[A-Z])", buf)
-    if m and len(buf[: m.end()].split()) >= 4:
+    if m and len(buf[: m.end()].split()) >= 2:
         return buf[: m.end()].strip(), buf[m.end() :]
     return "", buf
 
