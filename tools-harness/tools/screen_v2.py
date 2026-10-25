@@ -313,6 +313,32 @@ def wait_for(expect: dict | None = None, timeout: float = 8.0, app: str = "") ->
 _CHROMES = {"google chrome", "chromium", "brave browser", "microsoft edge"}
 
 
+def _chrome_instances() -> list[str]:
+    """Distinct --user-data-dir values of running Chrome processes.
+
+    Two Chrome instances (a normal profile plus an agent profile with its own
+    --user-data-dir) both answer to the bundle id, but AppleScript addresses only
+    ONE of them while AX sees whichever window is actually on screen. Measured
+    2026-10-25: `tabs` listed the exam tab from the agent profile while the window
+    in front was a CNN article in the other profile — the agent concluded the page
+    had not opened and started retrying.
+    """
+    try:
+        out = subprocess.run(
+            ["ps", "-Ao", "args"], capture_output=True, text=True, timeout=5
+        ).stdout
+    except Exception:
+        return []
+    dirs = set()
+    for line in out.splitlines():
+        if "Google Chrome.app/Contents/MacOS/Google Chrome" not in line:
+            continue
+        for token in line.split():
+            if token.startswith("--user-data-dir="):
+                dirs.add(token.split("=", 1)[1])
+    return sorted(dirs)
+
+
 def tabs(action: str = "list", match: str = "", app: str = "Google Chrome") -> str:
     """List, switch to, or close browser tabs by a title or URL fragment. Chrome-family browsers only."""
     if app.lower() not in _CHROMES:
@@ -327,8 +353,42 @@ def tabs(action: str = "list", match: str = "", app: str = "Google Chrome") -> s
         if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
             title, _, url = parts[2].rpartition("|")
             rows.append({"window": int(parts[0]), "index": int(parts[1]), "title": title, "url": url})
+
+    # Which browser is on screen? This is the instance the user (and the bunny) is
+    # watching, so a tab list that excludes it is misleading rather than useful.
+    front_title = ""
+    try:
+        from tools import ax_context as _ax
+
+        front_title = _ax.window_title(app) or ""
+    except Exception:
+        front_title = ""
+
+    def _overlaps(tab_title: str) -> bool:
+        words = {w for w in front_title.lower().replace("—", " ").split() if len(w) > 3}
+        return any(w in tab_title.lower() for w in words) if words else True
+
+    on_screen = not front_title or any(_overlaps(t["title"]) for t in rows)
+    instances = _chrome_instances()
+    note = ""
+    if not on_screen:
+        note = (
+            f"another Chrome instance is in front ({front_title[:60]!r}) and AppleScript "
+            f"enumerated a different one"
+            + (f"; {len(instances)} profiles are running" if len(instances) > 1 else "")
+            + ". Use observe/read_page_text for the page you can see; tabs describes the "
+              "other instance."
+        )
+
     if action == "list":
-        return _out({"ok": True, "tabs": rows})
+        payload = {"ok": True, "tabs": rows}
+        if note:
+            payload.update({"on_screen": False, "front_window_title": front_title[:120], "note": note})
+        return _out(payload)
+    if not on_screen:
+        # Act on a browser the user cannot see and a wrong click becomes a mystery:
+        # refuse instead of switching/closing tabs in the invisible instance.
+        return _err("wrong_instance", note)
     if action not in ("switch", "close"):
         return _err("bad_action", "action must be list, switch or close.")
     if not match.strip():
