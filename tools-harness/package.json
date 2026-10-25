@@ -11,16 +11,16 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "baileys": "github:WhiskeySockets/Baileys#7e7b0757e3f9f3c7789fb1cfd2f241d5002a199a",
-    "better-sqlite3": "^12.11.1",
-    "express": "^5.2.1",
-    "pino": "^10.3.1",
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.3.0",
+    "pino": "^10.4.0",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.6.5",
     "@types/qrcode": "^1.5.5",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
   "overrides": {
