@@ -96,11 +96,21 @@ EXECUTORS = {
         extract=args.get("extract", "text"),
         stealth=args.get("stealth", False),
         as_markdown=args.get("as_markdown", False),
+        cdp_url=args.get("cdp_url", ""),
+        profile=args.get("profile", ""),
     ),
     "scrapling_api_capture": lambda args: _scrapling_api_capture(
         url=args["url"],
         url_pattern=args.get("url_pattern", ""),
         limit=args.get("limit", 8),
+        cdp_url=args.get("cdp_url", ""),
+        profile=args.get("profile", ""),
+    ),
+    "scrapling_crawl": lambda args: _scrapling_crawl(
+        start_url=args["start_url"],
+        item_selector=args.get("item_selector", ""),
+        max_pages=args.get("max_pages", 5),
+        extract=args.get("extract", "text"),
     ),
     "apify_run_actor": lambda args: apify_run_actor_exec(
         actor_id=args["actor_id"],

@@ -481,6 +481,14 @@ FETCH_AND_EXTRACT_SCHEMA = {
                         "page's content rather than pull one field."
                     ),
                 },
+                "cdp_url": {
+                    "type": "string",
+                    "description": "Attach to an already-running Chrome with a debug port, e.g. http://127.0.0.1:9222.",
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "Persist cookies for this site under a named profile, so a login survives between calls.",
+                },
             },
             "required": ["url"],
         },
@@ -513,6 +521,8 @@ SCRAPLING_API_CAPTURE_SCHEMA = {
                     "type": "integer",
                     "description": "Max responses to return (default 8, max 20).",
                 },
+                "cdp_url": {"type": "string", "description": "Attach to a running Chrome debug port instead of launching one."},
+                "profile": {"type": "string", "description": "Named persistent profile, for pages behind a login." },
             },
             "required": ["url"],
         },
@@ -520,7 +530,155 @@ SCRAPLING_API_CAPTURE_SCHEMA = {
 }
 
 
-def _scrapling_markdown(url: str, stealth: bool = False, main_content_only: bool = True) -> str:
+SCRAPLING_CRAWL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "scrapling_crawl",
+        "description": (
+            "Walk a site's own links from a start page and collect one selector from each "
+            "page (titles, links, prices). Hard-capped at 5 pages / 40 items / 40 seconds, "
+            "same domain only. Use for 'grab these from my docs site' jobs, not for "
+            "scraping the open web."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_url": {"type": "string"},
+                "item_selector": {"type": "string", "description": "CSS/XPath to collect per page, e.g. 'h2::text'."},
+                "max_pages": {"type": "integer", "description": "1-10, default 5."},
+                "extract": {"type": "string", "enum": ["text", "html", "attrs"]},
+            },
+            "required": ["start_url", "item_selector"],
+        },
+    },
+}
+
+
+def _profile_dir(name: str) -> str:
+    """A persistent browser profile for one site, so a login survives.
+
+    Cookies and localStorage are credentials. They go beside the other user data
+    (the vault when the app runs the sidecar), never in the repo, and the directory is
+    created 0700 so another local account cannot read them.
+
+    Default is OFF: `profile=` must be passed explicitly, because silently persisting
+    sessions would turn "look at this page" into "stay logged in as the user".
+    """
+    import os as _os
+
+    data_dir = _os.environ.get("CLIXEN_DATA_DIR")
+    base = (Path(data_dir).expanduser() if data_dir
+            else Path.home() / "Library" / "Application Support" / "Clixen")
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)[:64] or "default"
+    target = base / "scrapling" / "profiles" / safe
+    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        target.chmod(0o700)
+    except OSError:
+        pass
+    return str(target)
+
+
+def _browser_kwargs(stealth: bool, cdp_url: str = "", profile: str = "") -> dict:
+    """Options for the browser fetchers, shared by every scrapling tool here.
+
+    `cdp_url` attaches to a browser that is ALREADY running with a debugging port.
+    That is a dev/diagnostic path: ADR 0006 keeps a debug port out of the shipped
+    app, so this only works when the user started such a browser themselves.
+    """
+    kwargs: dict = {"headless": True, "network_idle": True, "timeout": 45_000}
+    if cdp_url:
+        kwargs["cdp_url"] = cdp_url
+        kwargs.pop("headless", None)  # the attached browser owns its own visibility
+    elif profile:
+        kwargs["user_data_dir"] = _profile_dir(profile)
+    return kwargs
+
+
+def _scrapling_crawl(
+    start_url: str,
+    item_selector: str,
+    max_pages: int = 5,
+    same_domain: bool = True,
+    extract: str = "text",
+) -> str:
+    """Bounded same-site crawl: follow links, collect one selector per page.
+
+    Deliberately small — 5 pages / 40 items / 40 s by default. The library's spider
+    framework can run for hours with pause/resume, which is the wrong shape for an
+    orb that answers in seconds; this is the useful 5% of it behind a hard cap, so a
+    "grab the titles from my docs site" ask cannot become an accidental crawl of the
+    internet.
+    """
+    import time as _time
+
+    max_pages = max(1, min(int(max_pages or 5), 10))
+    deadline = _time.time() + 40
+    seen: set[str] = set()
+    queue = [start_url]
+    base_host = ""
+    m = re.match(r"https?://([^/]+)", start_url)
+    if m:
+        base_host = m.group(1).lower()
+
+    from urllib.parse import urljoin, urlparse
+
+    pages_read = 0
+    items: list[dict] = []
+    errors: list[str] = []
+
+    while queue and pages_read < max_pages and _time.time() < deadline and len(items) < 40:
+        url = queue.pop(0)
+        if url in seen:
+            continue
+        seen.add(url)
+        fetched = _scrapling_fetch(url)
+        try:
+            data = json.loads(fetched)
+        except json.JSONDecodeError:
+            errors.append(f"{url}: unfetchable")
+            continue
+        if not data.get("ok"):
+            errors.append(f"{url}: {data.get('error', 'fetch failed')}")
+            continue
+        pages_read += 1
+        html = data.get("html", "")
+
+        if item_selector:
+            found = _scrapling_extract(
+                html, item_selector, domain=base_host, extract=extract, mode="raw"
+            )
+            try:
+                payload = json.loads(found)
+                for value in payload.get("results", []):
+                    items.append({"page": url, "value": value})
+            except json.JSONDecodeError:
+                pass
+
+        if same_domain and pages_read < max_pages:
+            for href in re.findall(r'href=["\']([^"\'#]+)', html):
+                nxt = urljoin(url, href)
+                host = urlparse(nxt).netloc.lower()
+                if host != base_host or nxt in seen:
+                    continue
+                if urlparse(nxt).path.endswith((".pdf", ".zip", ".png", ".jpg", ".mp4")):
+                    continue
+                if len(queue) + pages_read < max_pages * 3:
+                    queue.append(nxt)
+
+    return json.dumps({
+        "ok": bool(items or pages_read),
+        "start": start_url,
+        "pages_read": pages_read,
+        "items_found": len(items),
+        "truncated": len(items) >= 40 or pages_read >= max_pages,
+        "items": items[:40],
+        "errors": errors[:5],
+    })
+
+
+def _scrapling_markdown(url: str, stealth: bool = False, main_content_only: bool = True,
+                        cdp_url: str = "", profile: str = "") -> str:
     """A page as clean, LLM-ready Markdown — no selector, no boilerplate.
 
     `read_page_text` returns the extension's innerText; this returns structure:
@@ -534,8 +692,8 @@ def _scrapling_markdown(url: str, stealth: bool = False, main_content_only: bool
         return _err(f"Scrapling unavailable: {exc}")
 
     try:
-        if stealth:
-            page = StealthyFetcher.fetch(url, headless=True, network_idle=True, timeout=45_000)
+        if stealth or cdp_url or profile:
+            page = StealthyFetcher.fetch(url, **_browser_kwargs(stealth, cdp_url, profile))
         else:
             page = Fetcher.get(url, timeout=30)
     except Exception as exc:
@@ -558,7 +716,8 @@ def _scrapling_markdown(url: str, stealth: bool = False, main_content_only: bool
     })
 
 
-def _scrapling_api_capture(url: str, url_pattern: str = "", limit: int = 8) -> str:
+def _scrapling_api_capture(url: str, url_pattern: str = "", limit: int = 8,
+                           cdp_url: str = "", profile: str = "") -> str:
     """The JSON the page itself loaded — read without re-requesting it.
 
     Most modern pages render from XHR/fetch responses, so the numbers you can see
@@ -578,10 +737,9 @@ def _scrapling_api_capture(url: str, url_pattern: str = "", limit: int = 8) -> s
     # Default: the shapes that carry data rather than assets.
     pattern = url_pattern or r"(?i)/(api|graphql|json|data|search|list)\b|\.json(\?|$)"
     try:
+        options = _browser_kwargs(True, cdp_url, profile)
         with StealthySession(
-            headless=True,
-            network_idle=True,
-            timeout=45_000,
+            **options,
             record_requests=True,
             max_recorded_requests=120,
             block_ads=True,

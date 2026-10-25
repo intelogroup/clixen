@@ -94,3 +94,6 @@ frontier-reading-anchors-*.md
 *.webp
 tools-harness/evals/results/
 extension/token.local.json
+
+# isolated venv for scrapling MCP server (it needs mcp>=2; the app pins <2)
+tools-harness/.venv-mcp/

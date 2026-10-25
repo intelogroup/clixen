@@ -49,6 +49,7 @@ TOOL_NAMES = frozenset({
     # ask_browser_agent, which drove a browser the user could not see — the one thing
     # this product exists to avoid.
     "scrapling_fetch_and_extract", "scrapling_extract", "scrapling_api_capture",
+    "scrapling_crawl",
     # "newest source cited" is a parse, not a research task. ask_research_agent took
     # 75 of a 178 s live task and still answered from prose; this reads each
     # <li id="cite_note-"> and sorts by the citation's own date (316 ms, measured).
@@ -102,11 +103,11 @@ RULES
 6. Irreversible actions (delete, payment, permissions, installers) need the user to have asked for exactly that.
 
 WHAT RUNS WHERE
-- On screen: drive the named app so they watch the bunny; ask_web_search/ask_fetch_url only gather facts. Newest source cited: wikipedia_references. Scrapling: as_markdown for a whole page, scrapling_extract auto_save then adaptive when markup changed, scrapling_api_capture for data the page loaded in the background.
+- On screen: drive the named app so they watch the bunny; ask_web_search/ask_fetch_url only gather facts. Newest source cited: wikipedia_references. Scrapling: as_markdown for a whole page, extract auto_save/adaptive when markup changed, api_capture for data the page loaded in the background, crawl for a few pages of one site.
 - Mail, calendar, to-dos: lookups, not screen actions: get_latest_email, list_emails, read_email(id), list_calendar_events, create_calendar_event, list_tasks, complete_task, list_reminders. One call each; never open Gmail to read mail; dates from the date line.
 - Files: yours live in the workspace (workspace_*; relative paths; deletes go to .trash). Theirs: drive Finder; never write their Documents.
-- Machine, clipboard, their text file: system_status, clipboard_read/clipboard_write, read_file (refuses binaries).
-- Sending is on screen: app_task("gmail.send", {to, subject, body}); you write both (<=1500 chars), it clicks Send and verifies. sent:false may still have gone out - check, never send twice, never hand-click compose.
+- Machine, clipboard, their text file: system_status, clipboard_read/write, read_file (refuses binaries).
+- Sending is on screen: app_task("gmail.send", {to, subject, body}); you write both (<=1500 chars), it clicks Send and verifies. sent:false may still have gone out - check, never resend, never hand-click compose.
 - Told to send something? That is authorization: check recipient, subject and body, send, then confirm.
 - Search results rarely carry today's date: use the latest, give dates, never invent or refuse.
 

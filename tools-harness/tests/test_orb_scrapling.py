@@ -160,3 +160,66 @@ def test_api_capture_with_no_matches_says_so_and_suggests_the_alternative(monkey
     payload = __import__("json").loads(sf._scrapling_api_capture("https://shop.test/"))
     assert payload["ok"] is False
     assert "scrapling_fetch_and_extract" in payload["hint"]
+
+
+# ── crawl, profiles, cdp ─────────────────────────────────────────────────────
+
+PAGES = {
+    "http://docs.test/": '<h1>Home</h1><a href="/a">A</a><a href="http://evil.test/x">out</a>',
+    "http://docs.test/a": '<h1>Guide A</h1><a href="/b">B</a>',
+    "http://docs.test/b": '<h1>Guide B</h1>',
+    "http://evil.test/x": '<h1>SHOULD NOT APPEAR</h1>',
+}
+
+
+def test_crawl_stays_on_the_domain_and_respects_the_page_cap(monkeypatch):
+    def fake_fetch(url):
+        body = PAGES.get(url)
+        if body is None:
+            return '{"ok": false, "error": "404"}'
+        return __import__("json").dumps({"ok": True, "url": url, "html": body})
+
+    monkeypatch.setattr(sf, "_scrapling_fetch", fake_fetch)
+    payload = __import__("json").loads(
+        sf._scrapling_crawl("http://docs.test/", "h1::text", max_pages=3)
+    )
+    values = [i["value"] for i in payload["items"]]
+    assert values == ["Home", "Guide A", "Guide B"], values
+    assert payload["pages_read"] == 3
+    assert "SHOULD NOT APPEAR" not in values, "an off-domain link was followed"
+
+
+def test_crawl_cap_cannot_exceed_ten_pages(monkeypatch):
+    calls = []
+
+    def fake_fetch(url):
+        calls.append(url)
+        nxt = f"http://docs.test/p{len(calls) + 1}"
+        return __import__("json").dumps({"ok": True, "url": url,
+                                          "html": f'<h1>p{len(calls)}</h1><a href="{nxt}">n</a>'})
+
+    monkeypatch.setattr(sf, "_scrapling_fetch", fake_fetch)
+    sf._scrapling_crawl("http://docs.test/", "h1::text", max_pages=99)
+    assert len(calls) <= 10, f"asked for 99 pages, fetched {len(calls)}"
+
+
+def test_a_profile_stays_under_the_data_dir_and_is_private(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLIXEN_DATA_DIR", str(tmp_path / "vault" / "data"))
+    path = sf._profile_dir("shop.test/login?x=1")
+    p = Path(path)
+    assert p.is_dir()
+    assert str(tmp_path) in str(p), "profile escaped the data dir"
+    assert p.stat().st_mode & 0o077 == 0, "profile is readable by other accounts"
+    assert "/" not in p.name and "?" not in p.name, f"unsafe profile name: {p.name}"
+
+
+def test_no_profile_means_no_persistent_session(monkeypatch):
+    """Sessions must be opt-in: silently persisting cookies is a privacy change."""
+    kwargs = sf._browser_kwargs(True)
+    assert "user_data_dir" not in kwargs and "cdp_url" not in kwargs
+
+
+def test_cdp_url_attaches_instead_of_launching_a_headless_browser(monkeypatch):
+    kwargs = sf._browser_kwargs(True, cdp_url="http://127.0.0.1:9333")
+    assert kwargs["cdp_url"] == "http://127.0.0.1:9333"
+    assert "headless" not in kwargs, "an attached browser owns its own visibility"
