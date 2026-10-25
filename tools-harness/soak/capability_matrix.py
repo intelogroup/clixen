@@ -38,6 +38,7 @@ DIMENSIONS: dict[str, list[str]] = {
     "Tool governance": ["test_action_class.py", "test_confirmation_store.py"],
     "Durability (journal)": ["test_step_journal.py"],
     "Tool demand (promotion gate)": ["test_tool_demand.py"],
+    "Skills (procedures on demand)": ["test_skills.py"],
     "Voice pipeline": ["voice/test_vad.py", "voice/test_session.py", "voice/test_streaming_asr.py"],
 }
 
