@@ -130,7 +130,12 @@ def test_api_capture_returns_the_bodies_and_says_which_url_matched(monkeypatch):
     out = sf._scrapling_api_capture("https://shop.test/", url_pattern="api", limit=5)
     payload = __import__("json").loads(out)
     assert payload["ok"] is True and payload["count"] == 1
-    assert "Kettle" in payload["responses"][0]["body"]
+    entry = payload["responses"][0]
+    # A JSON body is projected, not cut: the record has to survive intact.
+    assert entry["kind"] == "records"
+    assert entry["sample"][0]["name"] == "Kettle"
+    assert entry["sample"][0]["price"] == 39.5
+    assert "body" not in entry, "a parseable body should not fall back to a truncated string"
     assert payload["responses"][0]["url"].endswith("/api/products")
 
 
@@ -223,3 +228,35 @@ def test_cdp_url_attaches_instead_of_launching_a_headless_browser(monkeypatch):
     kwargs = sf._browser_kwargs(True, cdp_url="http://127.0.0.1:9333")
     assert kwargs["cdp_url"] == "http://127.0.0.1:9333"
     assert "headless" not in kwargs, "an attached browser owns its own visibility"
+
+
+# ── api_capture must stay parseable ──────────────────────────────────────────
+
+def test_a_big_json_body_is_projected_not_truncated():
+    """The 1 500-char cutoff made a 98KB payload unparseable, so no field could be
+    read out of it — including the pdf_url of the row the user asked for."""
+    import json
+
+    records = [
+        {"volume": "05", "issue": str(50 + i), "publication_date": "2026-10-01", "pdf_url": f"https://x/{i}.pdf"}
+        for i in range(53)
+    ]
+    records.append({"volume": "03", "issue": "44", "publication_date": "2025-01-02",
+                    "pdf_url": "https://x/IGM_vol_03_no_44.pdf"})
+    body = json.dumps(records)
+    assert len(body) > 1_500, "fixture must be bigger than the old cutoff"
+
+    out = sf._project_json(body, contains="2025-01-02", limit=2)
+    assert out is not None, "a JSON body must never come back as a truncated string"
+    assert out["kind"] == "records"
+    assert out["records"] == 54
+    assert out["matching"] == 1
+    assert out["sample"][0]["pdf_url"].endswith("IGM_vol_03_no_44.pdf")
+
+def test_a_non_json_body_still_comes_back_as_text():
+    assert sf._project_json("<html>not json</html>") is None
+
+def test_the_capture_tool_offers_contains_before_it_truncates():
+    props = sf.SCRAPLING_API_CAPTURE_SCHEMA["function"]["parameters"]["properties"]
+    assert "contains" in props, "without it a big list can only be truncated"
+    assert "pdf" in props["contains"]["description"].lower() or "row" in props["contains"]["description"].lower()

@@ -203,6 +203,81 @@ def write_text(rel: str, content: str) -> str:
     return f"Written {lines} lines ({len(encoded)} bytes) to {_rel(target)}"
 
 
+def download(url: str, rel: str = "", max_bytes: int = 50_000_000) -> str:
+    """Fetch a URL into the workspace as bytes — PDFs, images, archives.
+
+    Why this exists: `write_text` only takes strings, so the orb could read a page
+    but could not save the file a page offers. Downloading is the missing half of
+    "get me that document".
+
+    Bounds, because a URL is attacker-controlled input:
+      * http/https only (no file://, no data:, no local paths),
+      * 50 MB cap enforced while streaming, not just from Content-Length,
+      * written atomically (temp + rename) with 0600, into the workspace only,
+      * the name is derived from the URL and sanitised; a caller-supplied path goes
+        through `resolve()` like every other tool here.
+    """
+    import urllib.parse
+    import urllib.request
+
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"[error] only http and https URLs can be downloaded, not {parsed.scheme or 'a relative path'!r}"
+    if not parsed.netloc:
+        return f"[error] {url!r} has no host"
+
+    if not rel:
+        name = os.path.basename(urllib.parse.unquote(parsed.path)) or "download"
+        name = name.split("?")[0]
+        safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in name)[:120]
+        rel = f"downloads/{safe or 'download'}"
+
+    target = resolve(rel)
+    if target == _root():
+        return "[error] give a file name, not the workspace root"
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Clixen)"})
+    tmp = target.with_name(f".{target.name}.part-{os.getpid()}")
+    written = 0
+    ctype = "application/octet-stream"
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:  # noqa: S310 - scheme checked above
+            ctype = resp.headers.get("Content-Type", ctype)
+            declared = resp.headers.get("Content-Length")
+            if declared and declared.isdigit() and int(declared) > max_bytes:
+                return (f"[error] {url} is {int(declared) // 1_000_000}MB, over the "
+                        f"{max_bytes // 1_000_000}MB download limit")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                while True:
+                    chunk = resp.read(262_144)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise ValueError(
+                            f"over the {max_bytes // 1_000_000}MB limit — stopped at {written} bytes"
+                        )
+                    fh.write(chunk)
+    except ValueError as exc:
+        tmp.unlink(missing_ok=True)
+        return f"[error] {exc}"
+    except Exception as exc:  # noqa: BLE001 - surface the reason, never a traceback
+        tmp.unlink(missing_ok=True)
+        return f"[error] could not download {url}: {type(exc).__name__}: {exc}"
+
+    if target.exists():
+        if target.is_dir():
+            tmp.unlink(missing_ok=True)
+            return f"[error] {rel} is a folder"
+        _snapshot(target)
+    os.replace(tmp, target)
+    kind = "text" if ctype.startswith("text/") else ctype.split(";")[0]
+    return (f"Downloaded {url} to {_rel(target)} "
+            f"({written:,} bytes, {kind})")
+
+
 def delete(rel: str) -> str:
     """Move into .trash/ — recoverable, never unlink."""
     target = resolve(rel, must_exist=True)
@@ -323,6 +398,32 @@ WORKSPACE_DELETE_SCHEMA = {
                 "path": {"type": "string", "description": "File path relative to the workspace root"},
             },
             "required": ["path"],
+        },
+    },
+}
+
+
+WORKSPACE_DOWNLOAD_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "workspace_download",
+        "description": (
+            "Save a file from a URL into your workspace: PDFs, images, archives, CSV. "
+            "Use it when the user asks you to get or download a document. http/https "
+            "only, 50MB cap, and it never writes outside the workspace."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The http(s) URL of the file."},
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Optional workspace-relative path. Defaults to downloads/<filename from the URL>."
+                    ),
+                },
+            },
+            "required": ["url"],
         },
     },
 }

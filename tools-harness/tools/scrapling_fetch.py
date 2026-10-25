@@ -523,6 +523,13 @@ SCRAPLING_API_CAPTURE_SCHEMA = {
                 },
                 "cdp_url": {"type": "string", "description": "Attach to a running Chrome debug port instead of launching one."},
                 "profile": {"type": "string", "description": "Named persistent profile, for pages behind a login." },
+                "contains": {
+                    "type": "string",
+                    "description": (
+                        "Only return records whose JSON contains this text, e.g. a date "
+                        "'2025-01' or a product name. Use it to pull one row out of a big list."
+                    ),
+                },
             },
             "required": ["url"],
         },
@@ -716,8 +723,44 @@ def _scrapling_markdown(url: str, stealth: bool = False, main_content_only: bool
     })
 
 
+def _project_json(body: str, contains: str = "", limit: int = 5) -> dict | None:
+    """Turn a JSON API body into something usable instead of truncating it.
+
+    Why: the first version cut bodies at 1 500 chars, which is fine for a small
+    payload and useless for a real one — a 98 KB article list arrives as invalid
+    JSON, so the caller cannot read a single field out of it. Here a body that
+    parses becomes: how many records, which fields exist, and up to `limit`
+    records (optionally only those matching `contains`).
+    """
+    try:
+        parsed = json.loads(body)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    records = parsed if isinstance(parsed, list) else (
+        next((v for v in parsed.values() if isinstance(v, list)), None) if isinstance(parsed, dict) else None
+    )
+    if records is None:
+        return {"kind": "object", "keys": list(parsed)[:20],
+                "preview": json.dumps(parsed)[:600]}  # type: ignore[union-attr]
+    matched = [r for r in records if not contains or contains.lower() in json.dumps(r, ensure_ascii=False).lower()]
+    fields: list[str] = []
+    for r in matched[:20]:
+        if isinstance(r, dict):
+            for k in r:
+                if k not in fields:
+                    fields.append(k)
+    return {
+        "kind": "records",
+        "records": len(records),
+        "matching": len(matched),
+        "fields": fields[:40],
+        "sample": matched[:max(1, min(limit, 20))],
+    }
+
+
 def _scrapling_api_capture(url: str, url_pattern: str = "", limit: int = 8,
-                           cdp_url: str = "", profile: str = "") -> str:
+                           cdp_url: str = "", profile: str = "",
+                           contains: str = "", max_chars: int = 4_000) -> str:
     """The JSON the page itself loaded — read without re-requesting it.
 
     Most modern pages render from XHR/fetch responses, so the numbers you can see
@@ -754,12 +797,23 @@ def _scrapling_api_capture(url: str, url_pattern: str = "", limit: int = 8,
                     body = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
                 except Exception:
                     body = ""
-                payload.append({
+                entry = {
                     "url": getattr(record, "url", ""),
                     "status": getattr(record, "status", None),
                     "bytes": len(body),
-                    "body": body[:1500],
-                })
+                }
+                structured = _project_json(body, contains=contains, limit=limit)
+                if structured is not None:
+                    # A parsed body beats a truncated one: the caller can read fields
+                    # and file links out of a 98KB payload instead of a cutoff string.
+                    entry.update(structured)
+                else:
+                    entry["body"] = body[:max(500, min(int(max_chars or 4000), 20_000))]
+                    if len(body) > len(entry["body"]):
+                        entry["truncated"] = True
+                        entry["hint"] = ("body cut for size; pass contains= to filter JSON "
+                                         "or url_pattern= to pick one endpoint")
+                payload.append(entry)
     except Exception as exc:
         return _err(f"Capture failed: {type(exc).__name__}: {exc}")
 

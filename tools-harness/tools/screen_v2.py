@@ -569,12 +569,12 @@ ACT_SCHEMA = {
     "function": {
         "name": "act",
         "description": (
-            "Does one thing on the user's screen (or a batch via steps) and measures what changed. target: an element id from observe, copied exactly (e.g. 'e7.3'), or "
-            "its label. action: 'click', 'type' (clicks the field, then types text; submit=true presses Return), 'key' (text is a "
-            "shortcut like 'cmd+return' or 'esc'), or 'scroll' (text is 'up'/'down'). Returns {ok, effect:{focus, title, appeared, "
-            "gone}} or {ok:false, error:{code, hint, candidates}}; a click that changed nothing carries warning 'no_effect'. "
-            "Extension side panels are closed for you. Pass expect to wait for a result, e.g. {\"appears\": \"Message sent\"}, "
-            "{\"title_has\": \"...\"}, {\"gone\": \"...\"}, {\"focus_role\": \"TextField\"} or {\"value_contains\": \"...\"}."
+            "click / type (submit=true presses Return) / key (text is a shortcut like 'cmd+return', 'esc') / scroll (text "
+            "'up' or 'down') one thing by element id from observe (copied exactly, e.g. 'e7.3') or by its label, then measures "
+            "what changed. Returns {ok, effect:{focus, title, appeared, gone}} or {ok:false, error:{code, hint, candidates}}; "
+            "a click that changed nothing carries warning 'no_effect'. Extension side panels are closed for you. Pass expect to "
+            "wait for a result, e.g. {\"appears\": \"Message sent\"}, {\"title_has\": \"...\"}, {\"gone\": \"...\"}, "
+            "{\"focus_role\": \"TextField\"} or {\"value_contains\": \"...\"}. steps=[...] runs a batch in one call."
         ),
         "parameters": {
             "type": "object",

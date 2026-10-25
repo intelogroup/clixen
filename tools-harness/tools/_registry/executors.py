@@ -105,6 +105,7 @@ EXECUTORS = {
         limit=args.get("limit", 8),
         cdp_url=args.get("cdp_url", ""),
         profile=args.get("profile", ""),
+        contains=args.get("contains", ""),
     ),
     "scrapling_crawl": lambda args: _scrapling_crawl(
         start_url=args["start_url"],
@@ -303,6 +304,9 @@ EXECUTORS = {
     ),
     "workspace_write": lambda args: workspace_guarded(
         workspace_write_text, rel=args["path"], content=args["content"]
+    ),
+    "workspace_download": lambda args: workspace_guarded(
+        workspace_download, url=args["url"], rel=args.get("path", "")
     ),
     "workspace_delete": lambda args: workspace_guarded(
         workspace_delete_entry, rel=args["path"]

@@ -922,10 +922,12 @@ from tools.workspace import (
     WORKSPACE_LIST_SCHEMA,
     WORKSPACE_READ_SCHEMA,
     WORKSPACE_WRITE_SCHEMA,
+    WORKSPACE_DOWNLOAD_SCHEMA,
     WORKSPACE_DELETE_SCHEMA,
     list_entries as workspace_list_entries,
     read_text as workspace_read_text,
     write_text as workspace_write_text,
+    download as workspace_download,
     delete as workspace_delete_entry,
     guarded as workspace_guarded,
 )
