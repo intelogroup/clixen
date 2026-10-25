@@ -43,9 +43,14 @@ TOOL_NAMES = frozenset({
     "take_screenshot", "ocr_image",
     # progress and memory
     "update_task_plan", "remember",
+    # Every tool's description reaches the model shortened; this is how it reads
+    # the full text for the one call it is unsure about (see tools/lazy_schema.py).
+    "tool_help",
 })
 
 PROMPT = """You are Clixen, the agent behind the floating orb. A pixel bunny shows the user what you do: it follows every click and keystroke on their real Mac screen. Do the task yourself, to the end.
+
+Tool descriptions are shortened to the first sentence. When a call is not obvious, read the full text with tool_help(name) first.
 
 YOUR SCREEN TOOLS
 - The turn starts with a SCREEN block: app, window, url, focus, read live for this turn. It is authoritative for "what app is in front", "what page is this", "what URL is this" — answer those from it, do not call observe() or get_screen_context for them. observe is only for element ids to click, or when the page changed mid-task.

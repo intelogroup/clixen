@@ -28,6 +28,15 @@ _log = logging.getLogger(__name__)
 # ponytail: bare semaphore, no queue/broker — one process, in-memory is enough.
 _MESSAGING_GATE = threading.Semaphore(2)  # matches OLLAMA_MAX_LOADED_MODELS=2
 
+# Lazy tool descriptions for the lean orb/voice profile only (tools/lazy_schema.py):
+# every tool is still advertised, but each description is cut to its first ~200
+# chars and the full text is reachable through tool_help(name). Description prose
+# was half of the 26_807-char schema block the orb paid for on every round.
+# CLIXEN_LAZY_TOOLS=0 restores the full descriptions for an A/B.
+from tools import lazy_schema as _lazy_schema  # noqa: E402
+
+_lazy = None if os.environ.get("CLIXEN_LAZY_TOOLS") == "0" else _lazy_schema
+
 # Single boot path shared with core.py / telegram_bot.py / jobs/worker.py — see
 # tools/env_boot.py (key rotation used to stay stale in-process forever).
 from tools.env_boot import load_env as _load_env
@@ -1048,6 +1057,11 @@ def _run_impl(
             # orchestrator list happened not to carry (the email/tasks/calendar
             # data tools live only in per-intent lists) — see orb_agent.lean_tools.
             orchestrator_tools = orb_agent.lean_tools(ALL_TOOLS)
+            # Lazy descriptions: names, parameters and required fields stay exact,
+            # the prose moves behind tool_help(). Halves the schema bytes the model
+            # is charged for on every round (13_440 of 26_807 chars were prose).
+            if _lazy:
+                orchestrator_tools = _lazy.compress(orchestrator_tools)
             orchestrator_system_prompt = orb_agent.system_prompt_with_screen(
                 _screen_ctx(), _orch_plan_block, _orch_mem_block, _dt_line
             )
@@ -1056,6 +1070,8 @@ def _run_impl(
             # voice_agent does not match the "orb" prefix: same lean tool set here,
             # plus rules for text that is about to be read out loud.
             orchestrator_tools = orb_agent.voice_tools(ALL_TOOLS)
+            if _lazy:
+                orchestrator_tools = _lazy.compress(orchestrator_tools)
             orchestrator_system_prompt = orb_agent.voice_prompt(
                 *([_screen] if _screen else []), _orch_plan_block, _orch_mem_block, _dt_line
             )

@@ -489,6 +489,8 @@ EXECUTORS = {
     "get_window_context": lambda args: get_window_context(args.get("query") or "", args.get("app") or ""),
     "click_text": lambda args: click_text(args.get("text", ""), args.get("app") or ""),
     "read_page_text": lambda args: read_page_text(args.get("query") or "", args.get("app") or "", args.get("expand") is not False),
+    # Lazy tool descriptions: the full text behind a shortened description.
+    "tool_help": lambda args: tool_help(args.get("name") or ""),
     "press_keys": lambda args: press_keys(args.get("keys") or "", args.get("app") or ""),
     "close_tabs": lambda args: close_tabs(args.get("app") or "", int(args.get("keep") or 0)),
     "close_extension_panels": lambda args: close_extension_panels(args.get("app") or ""),
