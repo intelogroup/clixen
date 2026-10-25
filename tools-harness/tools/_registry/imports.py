@@ -927,4 +927,9 @@ from tools.wikipedia_refs import (
     wikipedia_references,
 )
 
+# Procedures on demand: a multi-step job costs schema on every round if it is a
+# tool, and prompt chars on every turn if it is prose. Since ADR 0005 says a site
+# is a target rather than a tool, workflows live here and are read when needed.
+from tools.skills import LOAD_SKILL_SCHEMA, load_skill
+
 # All available tool schemas (passed to ollama tools=[...])

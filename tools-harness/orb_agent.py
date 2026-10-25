@@ -46,6 +46,9 @@ TOOL_NAMES = frozenset({
     # 75 of a 178 s live task and still answered from prose; this reads each
     # <li id="cite_note-"> and sorts by the citation's own date (316 ms, measured).
     "wikipedia_references",
+    # Procedures, read on demand: zero schema prose in the prompt, paid once when a
+    # multi-step job actually needs the steps (ADR 0005).
+    "load_skill",
     # Screenshot + OCR locally: take_screenshot works from any model, while
     # ask_vision_agent routes to the local Ollama model for anything that is not
     # an image the caller already has (it failed that way 2026-09-23, and Ollama

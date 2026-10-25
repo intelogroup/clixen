@@ -291,6 +291,7 @@ EXECUTORS = {
     "wikipedia_references": lambda args: wikipedia_references(
         article=args["article"], limit=args.get("limit", 8)
     ),
+    "load_skill": lambda args: load_skill(args.get("name", "")),
     "grep_files": lambda args: grep_files(
         pattern=args["pattern"],
         path=args.get("path", _HOME),
