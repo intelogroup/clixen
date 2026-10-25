@@ -27,7 +27,9 @@ DEFAULT_LIMIT = 200
 
 # One line for the system prompt: without it the model reads a truncated
 # description as the whole story. Funded by the schema saving above.
-PROMPT_NOTE = "Tool descriptions are shortened to the first sentence; tool_help(name) reads the full text."
+# Kept in sync with orb_agent.PROMPT by a test: this sentence is the promise that
+# makes shortened descriptions safe, so it must exist word for word.
+PROMPT_NOTE = "Tool descriptions are one sentence; tool_help(name) has the rest."
 
 # Descriptions that enumerate *capabilities* rather than usage hints must stay
 # whole. app_task's text is the only list of recipes ('gmail.send', 'web.read');

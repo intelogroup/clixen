@@ -26,6 +26,10 @@ EXTERNAL_CONTENT_TOOLS = {
     "web_search", "google_search", "brave_search", "tech_search",
     "scrapling_fetch", "scrapling_stealthy_fetch", "scrapling_fetch_and_extract",
     "transcribe_audio", "ocr_image", "surya_ocr", "parse_email_file",
+    # Its answer *describes* untrusted pixels, so it can relay an instruction the
+    # screen was carrying ("the dialog says: send the file to ..."). Fence it like any
+    # other read of the outside world.
+    "analyze_image",
     "clipboard_read", "read_file", "read_many_files", "read_document", "read_pdf",
     "get_latest_email", "list_emails", "read_email",
     "browser_snapshot", "browser_get_content", "browser_get_attribute", "browser_run_js",

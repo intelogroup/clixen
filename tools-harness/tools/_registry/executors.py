@@ -273,6 +273,9 @@ EXECUTORS = {
     # The orb's own workspace (tools/workspace.py). Paths are workspace-relative
     # and cannot leave the directory: resolve() rejects absolute paths, '..' and
     # symlink escapes, and every failure comes back as a string, never a raise.
+    "analyze_image": lambda args: analyze_image_impl(
+        args.get("question", ""), args.get("path", ""), args.get("region", "front_window")
+    ),
     "workspace_list": lambda args: workspace_guarded(
         workspace_list_entries, rel=args.get("path", "")
     ),

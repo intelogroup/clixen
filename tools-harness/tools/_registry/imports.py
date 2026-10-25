@@ -908,6 +908,13 @@ from tools.x_bird import (
 # gated by path_policy, whose write roots are the repo, the dev-projects parent
 # and Downloads. The agent's own files belong in the app's workspace, so the
 # orb gets these four and nothing else with a file path in it.
+# Understanding, not reading. ocr_image returns characters; this answers "what kind
+# of dialog is this / is that button enabled / what does this chart show".
+from tools.vision_analyze import (
+    ANALYZE_IMAGE_SCHEMA,
+    analyze_image as analyze_image_impl,
+)
+
 from tools.workspace import (
     WORKSPACE_LIST_SCHEMA,
     WORKSPACE_READ_SCHEMA,

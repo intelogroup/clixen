@@ -331,6 +331,7 @@ ALL_TOOLS = [
     WIKIPEDIA_REFERENCES_SCHEMA,
     LOAD_SKILL_SCHEMA,
     EXT_PROBE_SCHEMA,
+    ANALYZE_IMAGE_SCHEMA,
 ]
 
 # All tools available to the agent (superset — includes shell tools)
