@@ -42,6 +42,14 @@ tab you clicked it on.
 | Two probes, zero entries, page logging every 4 s | `executeScript` defaults to the ISOLATED world, so we patched a `console` the page never uses | `world: "MAIN"` |
 | `--load-extension` produced no extension | Chrome 156 (stable) ignores that flag | load unpacked by hand, or run Chrome for Testing |
 
+## Level aliases (a bug that made the console look clean)
+
+`page_probe(level=...)` normalises the names: `error` also matches `pageerror`
+(uncaught exceptions), and `warning` matches `warn`. Before that, `level=error` hid
+the exceptions the user was asking about, and `level=warning` matched nothing -- and
+the tool answered "no console output", which reads as a clean console. If a filter
+hides everything the tool now says what was captured and which types are present.
+
 ## Limits, stated plainly
 
 - **From injection onward.** The page hooks are installed when you click the button,

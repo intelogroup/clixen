@@ -21,6 +21,7 @@ import time
 
 _QUEUE: list[dict] = []
 _LOG: list[str] = []
+_TAKEN: set[str] = set()
 _RESULTS: dict[str, dict] = {}
 _LOCK = threading.Lock()
 _IDS = itertools.count(1)
@@ -73,7 +74,18 @@ def take() -> dict | None:
     global _LAST_SEEN
     with _LOCK:
         _LAST_SEEN = _now()
-        return _QUEUE.pop(0) if _QUEUE else None
+        if not _QUEUE:
+            return None
+        cmd = _QUEUE.pop(0)
+        _TAKEN.add(cmd["id"])
+        return cmd
+
+
+def was_taken(cmd_id: str) -> bool:
+    """Did the extension pick this command up? If so, silence means it was suspended
+    mid-flight - worth one retry, not a "broken tool"."""
+    with _LOCK:
+        return cmd_id in _TAKEN
 
 
 def put_result(cmd_id: str, ok: bool, data=None, error: str = "") -> bool:
@@ -112,11 +124,24 @@ def ask(action: str, args: dict | None = None, timeout: float = DEFAULT_WAIT_S) 
         # and wait out the heartbeat: failing a call the extension can still serve
         # would look like a broken tool when it is only asleep.
         timeout = max(timeout, WAKE_WAIT_S)
-    cmd_id = enqueue(action, args)
-    result = wait_for(cmd_id, timeout)
-    if result is None:
-        return {"ok": False, "error": f"no answer from the extension within {timeout:.0f}s"}
-    return result
+    # Two attempts. Chrome suspends the worker after ~30 s idle, and it can suspend
+    # *between* taking a command and posting the result - which looked like "no answer
+    # within 8s" for a request that was in fact picked up (measured 2026-10-25).
+    for attempt in (1, 2):
+        cmd_id = enqueue(action, args)
+        wait = timeout if attempt == 1 else max(timeout, WAKE_WAIT_S)
+        result = wait_for(cmd_id, wait)
+        if result is not None:
+            return result
+        if not was_taken(cmd_id):
+            break          # nobody picked it up: asleep or absent, a retry will not help
+    if not _EVER_SEEN:
+        return {
+            "ok": False,
+            "error": "not connected: the Clixen extension has not polled the core. "
+                     "Load it (chrome://extensions > Load unpacked > extension/) and try again.",
+        }
+    return {"ok": False, "error": f"no answer from the extension within {timeout:.0f}s"}
 
 
 def reset_for_tests() -> None:
@@ -124,6 +149,7 @@ def reset_for_tests() -> None:
     with _LOCK:
         _QUEUE.clear()
         _RESULTS.clear()
+        _TAKEN.clear()
         _LAST_SEEN = 0.0
         _EVER_SEEN = False
 
@@ -181,9 +207,22 @@ def probe(kind: str = "dom", level: str = "", limit: int = 0, text: str = "", ti
     data = res.get("data") or {}
     if kind == "console":
         entries = data.get("entries") or []
+        total = data.get("total")
+        filtered = data.get("filtered_by")
+        types = data.get("types") or {}
         if not entries:
+            if total:
+                # The filter hid everything: saying "nothing captured" would make the
+                # model report a clean console that is not clean.
+                present = ", ".join(f"{k}x{v}" for k, v in sorted(types.items()))
+                return (
+                    f"No {filtered} entries, but {total} message(s) are captured ({present}). "
+                    "Call page_probe again without level, or with the right level, to read them."
+                )
             return "No console output captured in this tab yet (the extension records from injection onward)."
-        lines = [f"Console ({data.get('count', len(entries))} captured, {data.get('errors', 0)} error-level):"]
+        counts = data.get("count", len(entries))
+        shown_total = total if total is not None else counts
+        lines = [f"Console ({counts} shown, {data.get('errors', 0)} error-level of {shown_total} captured):"]
         lines += [f"- {e.get('type')}: {e.get('text')}" for e in entries[-40:]]
         return "\n".join(lines)
     if kind == "text":

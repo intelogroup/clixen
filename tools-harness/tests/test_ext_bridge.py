@@ -36,7 +36,7 @@ def test_command_round_trip():
         eb.take()["id"], True, {"entries": [{"type": "error", "text": "boom"}], "count": 1, "errors": 1}
     )).start()
     out = eb.probe("console", timeout=3)
-    assert "1 captured, 1 error-level" in out and "error: boom" in out
+    assert "1 shown, 1 error-level" in out and "error: boom" in out
 
 
 def test_a_silent_extension_times_out_with_a_reason():
@@ -109,3 +109,69 @@ def test_a_suspended_worker_is_waited_for_not_failed(monkeypatch):
 
 def test_never_seen_fails_fast_with_instructions():
     assert "not connected" in eb.probe("console", timeout=0.2)
+
+
+def test_a_level_filter_that_hides_everything_says_so():
+    """level="warning" used to match nothing (browser says "warn") and the model was
+    told the console was clean. Filtering must never read as emptiness."""
+    eb.mark_seen()
+
+    def answer():
+        cmd = eb.take()
+        eb.put_result(cmd["id"], True, {
+            "count": 0, "total": 3, "filtered_by": "warning",
+            "types": {"warn": 2, "log": 1}, "errors": 0, "entries": [],
+        })
+
+    threading.Timer(0.05, answer).start()
+    out = eb.probe("console", level="warning", timeout=3)
+    assert "No warning entries" in out
+    assert "3 message(s) are captured" in out and "warnx2" in out
+
+
+def test_uncaught_exceptions_count_as_errors():
+    eb.mark_seen()
+
+    def answer():
+        cmd = eb.take()
+        eb.put_result(cmd["id"], True, {
+            "count": 1, "total": 1, "filtered_by": "error", "types": {"pageerror": 1},
+            "errors": 1, "entries": [{"type": "pageerror", "text": "seeded failure"}],
+        })
+
+    threading.Timer(0.05, answer).start()
+    out = eb.probe("console", level="error", timeout=3)
+    assert "pageerror: seeded failure" in out and "1 error-level" in out
+
+
+def test_a_command_taken_but_unanswered_is_retried_once():
+    """A worker can suspend between taking a command and posting the result (measured).
+    That is not a broken tool: retry once, and succeed on the second command."""
+    eb.mark_seen()
+    taken = {"n": 0}
+
+    def fake_extension():
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            cmd = eb.take()
+            if cmd is None:
+                time.sleep(0.05)
+                continue
+            taken["n"] += 1
+            if taken["n"] == 1:
+                continue                      # taken, then never answered
+            eb.put_result(cmd["id"], True, {
+                "entries": [{"type": "error", "text": "after retry"}],
+                "count": 1, "errors": 1, "total": 1,
+            })
+            return
+
+    threading.Timer(0.05, fake_extension).start()
+    original = eb.WAKE_WAIT_S
+    eb.WAKE_WAIT_S = 1.5              # do not burn 34 s in a unit test
+    try:
+        out = eb.probe("console", timeout=0.3)
+    finally:
+        eb.WAKE_WAIT_S = original
+    assert "after retry" in out
+    assert taken["n"] == 2

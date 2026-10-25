@@ -95,14 +95,27 @@ function pageProbe(args) {
     );
   }
 
-  const kind = (args && args.kind) || "dom";
+  args = args || {};
+  const kind = args.kind || "dom";
 
   if (kind === "console") {
+    // Level aliases: the tool schema offers "error, warning, log, info" but the
+    // browser reports "warn", and an uncaught exception is "pageerror" - not
+    // "error". Matching literally made level="error" hide the very exceptions the
+    // user was asking about, and level="warning" match nothing at all.
+    const ALIAS = { error: ["error", "pageerror"], warning: ["warn"], warn: ["warn"] };
     const level = (args.level || "").toLowerCase();
-    const rows = (window[KEY] || []).filter((m) => !level || m.type === level);
+    const wanted = ALIAS[level] || (level ? [level] : []);
+    const all = window[KEY] || [];
+    const rows = wanted.length ? all.filter((m) => wanted.includes(m.type)) : all;
+    const types = {};
+    for (const m of all) types[m.type] = (types[m.type] || 0) + 1;
     return {
       count: rows.length,
-      errors: rows.filter((m) => m.type === "error" || m.type === "pageerror").length,
+      total: all.length,
+      filtered_by: level || null,
+      types,
+      errors: all.filter((m) => m.type === "error" || m.type === "pageerror").length,
       entries: rows.slice(-(args.limit || 50)),
     };
   }
