@@ -25,12 +25,13 @@ def test_every_screen_tool_is_in_the_allowlist():
 def test_prompt_is_short_and_context_blocks_come_first():
     p = orb_agent.system_prompt("NOW: today", "", "PLAN: a")
     assert p.startswith("NOW: today\nPLAN: a\n") and p.endswith(orb_agent.PROMPT)
-    # Was 4_500. Raised to 4_700 on 2026-10-25 for the one-time line that tells
-    # the model its tool descriptions are shortened (lazy_schema.PROMPT_NOTE,
-    # 128 chars) — that line buys back ~10_500 chars of schema prose on every
-    # round, so this is a deliberate trade, not drift. The orchestrator prompt is
-    # still ~13_800 chars.
-    assert len(orb_agent.PROMPT) < 4700
+    # Ladder of this guard: 4_500 -> 4_700 (the one-line note that tool
+    # descriptions are shortened) -> 3_000 after the prose was rewritten without
+    # losing a rule (2_839 chars, measured 2026-10-25: same tool choice and same
+    # answers on four task shapes, 4_767 -> 4_347 round-0 prompt tokens with
+    # fresh chat ids). 3_000 is the new floor so it cannot quietly grow back.
+    # The orchestrator prompt is still ~13_800 chars.
+    assert len(orb_agent.PROMPT) < 3000
 
 
 def test_the_orb_cannot_send_mail_behind_the_screen():
