@@ -97,6 +97,55 @@ def _overlays(els: list, app: str) -> list[str]:
     return out + [f"popover: {p}" for p in ax.popovers(app)]
 
 
+# A consent banner is not an AX "popover": it lives inside the page, so the browser
+# reports no popover and observe() used to say overlays: []. Measured on
+# theguardian.com 2026-10-25: the page was blocked by a CMP whose focused WebArea
+# was "Privacy Manager US App", the AX tree exposed only "Closer" and "Do not sell
+# or share my personal information" (the real Accept/Reject live in an iframe), and
+# nothing in the payload said a dialog was in the way.
+_BANNER_WORDS = (
+    "privacy manager", "consent", "cookie", "we use cookies", "gdpr",
+    "accept all", "reject all", "cookie settings", "before you continue",
+)
+_BANNER_ACCEPT = ("accept all", "accept cookies", "i agree", "agree and continue", "accept")
+_BANNER_REJECT = ("reject all", "reject", "decline", "do not sell", "don't sell", "opt out")
+_BANNER_DISMISS = ("closer", "close", "dismiss", "got it", "manage choices", "ok, thanks")
+
+
+def _blocking_banner(focus_label: str, labels: list[str]) -> str:
+    """Describe a page-level consent/dialog that is in the way, or ''.
+
+    The distinction between accept / reject / dismiss is not cosmetic: clicking
+    "accept" or "do not sell" is a privacy election made on the user's behalf, so
+    the message says which choices are actually present and never implies that any
+    of them is the agent's to make.
+    """
+    haystack = " ".join([focus_label or ""] + [label or "" for label in labels]).lower()
+    if not any(word in haystack for word in _BANNER_WORDS):
+        return ""
+    where = f"focus is '{focus_label[:60]}'" if focus_label else "page text mentions consent"
+    accept = [lb for lb in labels if any(a == (lb or "").lower().strip() or a in (lb or "").lower() for a in _BANNER_ACCEPT)]
+    reject = [lb for lb in labels if any(r in (lb or "").lower() for r in _BANNER_REJECT)]
+    dismiss = [lb for lb in labels if (lb or "").lower().strip() in _BANNER_DISMISS]
+
+    if accept or reject:
+        parts = [x for x in (
+            f"accept: {', '.join(accept[:2])}" if accept else "",
+            f"reject: {', '.join(reject[:2])}" if reject else "",
+            f"dismiss: {', '.join(dismiss[:2])}" if dismiss else "",
+        ) if x]
+        return (f"consent banner ({where}); choices present — {' / '.join(parts)}. Choosing "
+                "accept or reject is the user's decision: dismiss it or ask, never elect for them")
+    if dismiss:
+        return (f"consent banner ({where}); only a dismiss control is exposed "
+                f"({', '.join(dismiss[:2])}) — closing it is neutral, and the banner has no "
+                "accept/opt-out in the element list, so do not claim either was chosen")
+    return (
+        f"consent banner ({where}) — its buttons are NOT in the element list (usually an "
+        "iframe): try click_text, or read the page first"
+    )
+
+
 def observe(app: str = "", query: str = "") -> str:
     return _trace("observe", {"app": app, "query": query}, _observe(app, query))
 
@@ -120,9 +169,13 @@ def _observe(app: str, query: str) -> str:
             if v:
                 row["value"] = v[-_LABEL_MAX:]
         rows.append(row)
+    labels = [it["fp"][1] for it in items]
+    overlays = _overlays(els, app)
+    if banner := _blocking_banner(label, labels):
+        overlays.append(banner)
     return _out({"rev": rev, "app": _state.get("app") or app, "title": title, "url": ax.front_url(app),
                  "focus": {"id": focus_id, "role": role, "label": label[:_LABEL_MAX]},
-                 "overlays": _overlays(els, app), "elements": rows})
+                 "overlays": overlays, "elements": rows})
 
 
 _ID = re.compile(r"e\d+\.(\d+)")
