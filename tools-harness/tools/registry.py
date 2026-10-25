@@ -552,6 +552,7 @@ def _execute_raw(name: str, arguments: dict) -> str:
         if _rl_previous_ts is not None and result.startswith("[error]"):
             from tools.rate_limit import restore
             restore(name, _rl_previous_ts)
+        _journal_step(name, arguments, result, ok=True)
         return result
     except Exception as e:
         if _rl_previous_ts is not None:
@@ -559,7 +560,40 @@ def _execute_raw(name: str, arguments: dict) -> str:
             restore(name, _rl_previous_ts)
         result = f"[tool error] {name} failed: {e}"
         tool_failure_log.record_failure(name, result)
+        _journal_step(name, arguments, result, ok=False)
         return _with_failure_hint(name, result)
+
+
+def _journal_step(name: str, arguments: dict, result: str, ok: bool) -> None:
+    """Record this call as a durable step, when a run id is in scope.
+
+    Deliberately fire-and-forget: journaling must never be able to fail a tool call
+    the user asked for. The payload is primitives only (tool, class, argument keys,
+    result size) — never the result text, which can carry page or mail content into
+    a durable file.
+    """
+    try:
+        from log_config import CURRENT_RUN_ID
+
+        run_id = CURRENT_RUN_ID.get()
+        if not run_id:
+            return
+        from store import step_journal
+        from tools import action_class
+
+        step_journal.record_next(
+            run_id,
+            "tool_call",
+            {
+                "tool": name,
+                "action_class": action_class.of_call(name, arguments or {}),
+                "argument_keys": sorted((arguments or {}).keys()),
+                "result_chars": len(result or ""),
+            },
+            outcome="ok" if ok else "error",
+        )
+    except Exception:
+        pass  # a journal hiccup must never surface as a tool failure
 
 
 def execute_confirmed(token: str, approved: bool) -> str:
