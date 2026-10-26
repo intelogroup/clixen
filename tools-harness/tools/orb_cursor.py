@@ -16,6 +16,38 @@ from pathlib import Path
 
 _FILE = Path.home() / ".config" / "g4l" / "data" / "orb_cursor.json"
 
+# Where the bunny currently is. Every payload carries this, because the orb polls the
+# file every 80 ms and a gesture written without coordinates left the bunny parked at
+# the orb: `point()` wrote {x,y}, then `scrolling()` replaced the whole file with
+# {"scroll":…} and the position was gone. A gesture must never erase the anchor.
+_LAST_ANCHOR: tuple[float, float] | None = None
+
+
+def _write(extra: dict, anchor: tuple[float, float] | None = None) -> None:
+    """Write one payload. The anchor travels with every payload; the gesture keys do not
+    persist (a stale `click: true` must never re-fire on the next event)."""
+    global _LAST_ANCHOR
+    if anchor is not None:
+        _LAST_ANCHOR = anchor
+    payload: dict = {"seq": time.time_ns(), "ts": time.time()}
+    if _LAST_ANCHOR is not None:
+        payload["x"], payload["y"] = _LAST_ANCHOR
+        if anchor is None:
+            # A gesture that keeps the current anchor has nothing to travel to. Without this
+            # the orb flew for 0.75s before every gesture, so a 0.2s read was followed by a
+            # late animation at a place the bunny had already left.
+            payload["nofly"] = True
+    payload.update(extra)
+    _FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload))
+    tmp.replace(_FILE)
+
+
+def anchor() -> tuple[float, float] | None:
+    """The bunny's last known position, or None before it has been anywhere."""
+    return _LAST_ANCHOR
+
 
 # Seconds from the orb receiving a target to the visible click landing. The real click waits this
 # long so it happens where the animation says it does. "press" = fly + press; "bazooka" = crouch
@@ -37,49 +69,56 @@ def travel_mode() -> str | None:
 
 
 def point(x: float, y: float, click: bool = True, style: str | None = None) -> None:
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _FILE.with_suffix(".tmp")
-    payload = {"seq": time.time_ns(), "ts": time.time(), "x": x, "y": y, "click": click}
+    extra: dict = {"click": click}
     if style:
-        payload["style"] = style
+        extra["style"] = style
     if travel := travel_mode():
-        payload["travel"] = travel
-    tmp.write_text(json.dumps(payload))
-    tmp.replace(_FILE)
+        extra["travel"] = travel
+    _write(extra, anchor=(x, y))
 
 
 def typing(text: str, per_char_s: float) -> None:
-    """Tell the orb to show the typing hand + text bubble at the parked cursor: it reveals one
+    """Tell the orb to show the typing hand + text bubble at the anchor: it reveals one
     character per `per_char_s`, the same pace the keystrokes are sent at."""
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "type": {"text": text[:400], "per": per_char_s}}))
-    tmp.replace(_FILE)
+    _write({"type": {"text": text[:400], "per": per_char_s}})
 
 
 def scrolling(direction: str, duration_s: float) -> None:
-    """Tell the orb to show the two-finger scroll gesture at the parked cursor, swiping toward
-    `direction` (up/down/left/right: where the content moves to reveal) for `duration_s`."""
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "scroll": {"dir": direction, "dur": duration_s}}))
-    tmp.replace(_FILE)
+    """Two-finger swipe toward `direction` (where the content moves to reveal)."""
+    _write({"scroll": {"dir": direction, "dur": duration_s}})
+
+
+def reading(label: str = "", duration_s: float = 1.2, at=None) -> None:
+    """The bunny looks at something: a scan sweep with a magnifier. This is how a *headless*
+    tool stays visible — the pixels it reads were on screen, so the reading is shown there."""
+    _write({"read": {"label": label[:60], "dur": duration_s}}, anchor=at)
+
+
+def working(label: str = "", duration_s: float = 2.0, at=None) -> None:
+    """Sustained work (a crawl, a download): paws moving with a progress arc, alive for the
+    real duration so a 40 s job is 40 s of visible effort, not a frozen sprite."""
+    _write({"work": {"label": label[:60], "dur": duration_s}}, anchor=at)
+
+
+def carrying(label: str = "", at=None) -> None:
+    """Something was brought back (a file saved to the workspace): pick up, travel to the
+    orb, drop a small chip."""
+    _write({"carry": {"label": label[:60]}}, anchor=at)
+
+
+def thinking(label: str = "", at=None) -> None:
+    """No screen work to show (memory, system facts, planning): ears twitch, three dots."""
+    _write({"think": {"label": label[:60]}}, anchor=at)
 
 
 def fail() -> None:
-    """Tell the orb the action errored: the bunny plays its startled hurt pose at the cursor."""
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "fail": {}}))
-    tmp.replace(_FILE)
+    """The action errored: startled hurt pose at the anchor."""
+    _write({"fail": {}})
 
 
 def dead() -> None:
-    """Tell the orb the whole action chain was aborted: one dramatic flop, then the cursor fades."""
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"seq": time.time_ns(), "ts": time.time(), "dead": {}}))
-    tmp.replace(_FILE)
+    """The whole chain was aborted: one dramatic flop, then the cursor fades."""
+    _write({"dead": {}})
 
 
 def front_window_center(app_name: str, wait_s: float = 0.6) -> tuple[float, float] | None:

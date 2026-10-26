@@ -101,6 +101,10 @@ let parkTimer = null;
 let trail = [];
 let typing = null; // { text, per, t0 } while the bunny's typing keyboard is shown
 let scrolling = null; // { dir, dur, t0 } while the scroll gesture is shown
+// { kind, label, dur, t0 } for gestures that have no sprite of their own: read, work,
+// carry, think. These exist because the orb is a *visual* agent — a headless tool that
+// ran silently was invisible work, and invisible work is not the product.
+let gesture = null;
 
 let thinking = false; // the orb's model is working: the parked bunny shows the thought dots
 let fading = false;
@@ -118,7 +122,14 @@ function parkLoop() {
   if (!park || fly || typing || scrolling || fading || !sp) { looping = false; return; }
   const t = performance.now() / 1000 - pose.t0;
   const f = frameAt(sp, t);
-  if (f !== loopFrame) { loopFrame = f; ctx.clearRect(0, 0, W, H); arrow(park[0], park[1], 1.2, 1); }
+  // A gesture with an ornament (scan sweep, progress arc) animates continuously, so it
+  // redraws every frame rather than only when the sprite frame changes.
+  if (f !== loopFrame || gesture) {
+    loopFrame = f;
+    ctx.clearRect(0, 0, W, H);
+    arrow(park[0], park[1], 1.2, 1);
+    drawGesture();
+  }
   if (!sp.loop && finished(sp, t)) { // a one-shot has played out
     if (pose.name === "dead") { fading = false; fadePark(); return; } // the flop ends in a fade-out
     restPose();
@@ -139,6 +150,96 @@ function oneshot(name) {
 
 listen("cursor-fail", () => oneshot("fail")); // a tool errored: startled pose at the park point
 listen("cursor-dead", () => { oneshot("dead"); }); // the action chain was aborted: a dramatic flop listens
+
+// Read / work / carry / think — the gestures that keep headless work visible.
+// No new sprite frames: an existing pose plus a drawn ornament, so the bunny can "read" a
+// page it fetched over HTTP and "carry" a file it downloaded without any art changes.
+listen("cursor-read", (ev) => queueGesture("read", ev.payload));
+listen("cursor-work", (ev) => queueGesture("work", ev.payload));
+listen("cursor-carry", (ev) => queueGesture("carry", ev.payload));
+listen("cursor-think", (ev) => queueGesture("think", ev.payload));
+
+// A gesture that arrives mid-flight waits for the landing, like typing and scrolling do;
+// otherwise the ornament would play at the old position while the bunny is still travelling.
+function queueGesture(kind, payload) {
+  if (fly) { pending = () => startGesture(kind, payload); return; }
+  startGesture(kind, payload);
+}
+
+function startGesture(kind, { label, dur } = {}) {
+  if (!park) park = [W / 2, H / 2];
+  clearTimeout(parkTimer);
+  fading = false;
+  // read/think stand still; work/carry move. The sprite is the honest bit: a bunny that
+  // jogs while fetching bytes would claim motion that isn't there.
+  setPose(kind === "work" || kind === "carry" ? "move" : "idle", pose.flip, true);
+  gesture = {
+    kind,
+    label: String(label || "").slice(0, 28),
+    dur: Math.max(0.4, Number(dur) || (kind === "work" ? 2.0 : 1.2)),
+    t0: performance.now() / 1000,
+  };
+  if (!looping) { looping = true; requestAnimationFrame(parkLoop); }
+}
+
+function drawGesture() {
+  if (!gesture || !park) return;
+  const [x, y] = park;
+  const k = (performance.now() / 1000 - gesture.t0) / gesture.dur;
+  const ease = (v) => v * v * (3 - 2 * v);
+  const fade = k < 0.12 ? k / 0.12 : k > 0.85 ? Math.max(0, (1 - k) / 0.15) : 1;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, fade));
+  ctx.shadowColor = `rgba(${AMBER},0.7)`;
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = `rgba(${AMBER},0.95)`;
+  ctx.fillStyle = `rgba(${AMBER},0.95)`;
+  ctx.lineWidth = 2.2;
+
+  if (gesture.kind === "read") {
+    // Magnifier above the bunny, with a scan line sweeping the "page" it is reading.
+    const mx = x + 34, my = y - 26;
+    ctx.beginPath();
+    ctx.arc(mx, my, 10, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(mx + 7, my + 7);
+    ctx.lineTo(mx + 15, my + 15);
+    ctx.stroke();
+    const sweep = ease((k * 3) % 1);
+    ctx.globalAlpha *= 0.75;
+    ctx.beginPath();
+    ctx.moveTo(x - 6 + sweep * 64, y + 26);
+    ctx.lineTo(x - 6 + sweep * 64, y + 40);
+    ctx.stroke();
+  } else if (gesture.kind === "work") {
+    // A progress arc that keeps moving: 40 s of crawling must look like 40 s of effort.
+    ctx.beginPath();
+    ctx.arc(x + 26, y - 26, 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (0.15 + 0.85 * (k % 1)));
+    ctx.stroke();
+  } else if (gesture.kind === "carry") {
+    // A chip rises off the bunny and pops: something was brought back.
+    const lift = ease(Math.min(1, k * 1.6)) * 24;
+    ctx.globalAlpha *= 0.9;
+    roundRect(x + 10, y - 18 - lift, 34, 20, 5);
+    ctx.fill();
+    ctx.globalAlpha *= 0.85;
+    ctx.fillStyle = "rgba(12,12,14,0.95)";
+    ctx.font = "600 10px ui-sans-serif, -apple-system, system-ui";
+    ctx.fillText(gesture.label.slice(0, 8) || "file", x + 14, y - 4 - lift);
+  } else if (gesture.kind === "think") {
+    // Three dots: nothing on screen to point at, and saying so is the point.
+    for (let i = 0; i < 3; i++) {
+      const a = 0.35 + 0.65 * Math.max(0, Math.sin(performance.now() / 260 - i * 0.7));
+      ctx.globalAlpha = Math.max(0, Math.min(1, a * fade));
+      ctx.beginPath();
+      ctx.arc(x + 20 + i * 9, y - 24, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+  if (k >= 1) { gesture = null; restPose(); }
+}
 
 // The turn is over: retire the parked bunny instead of leaving it on screen for
 // another 30s. It lives on the click-through overlay, so a lingering one is a

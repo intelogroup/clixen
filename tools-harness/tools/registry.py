@@ -540,6 +540,7 @@ def _execute_raw(name: str, arguments: dict) -> str:
         trace_store.record("adhoc", {"event": "tool_call", "tool": name})
         _t0 = _time.perf_counter()
         _publish_action("started", name)
+        _announce_visual(name, arguments)
         raw_result = EXECUTORS[name](arguments)
         from tools.tool_policy import sanitize_output
         # Coerce non-str results (executors returning None/dicts) so downstream
@@ -556,9 +557,11 @@ def _execute_raw(name: str, arguments: dict) -> str:
             from tools.rate_limit import restore
             restore(name, _rl_previous_ts)
         _journal_step(name, arguments, result, ok=True)
+        _ok = not result.startswith(("[error]", "[tool error]", "[blocked]", "[invalid"))
+        _settle_visual(name, _ok)
         _publish_action(
             "done", name,
-            ok=not result.startswith(("[error]", "[tool error]", "[blocked]", "[invalid")),
+            ok=_ok,
             ms=int((_time.perf_counter() - _t0) * 1000),
         )
         return result
@@ -569,8 +572,35 @@ def _execute_raw(name: str, arguments: dict) -> str:
         result = f"[tool error] {name} failed: {e}"
         tool_failure_log.record_failure(name, result)
         _journal_step(name, arguments, result, ok=False)
+        _settle_visual(name, False)
         _publish_action("done", name, ok=False, ms=0, error=str(e)[:120])
         return _with_failure_hint(name, result)
+
+
+def _announce_visual(name: str, arguments: dict) -> None:
+    """Make the call visible before it runs.
+
+    The orb is a visual agent: a headless tool that runs silently is a violation of what
+    the product is, not an optimisation. Kept fire-and-forget — an animation must never
+    be able to fail the tool the user asked for.
+    """
+    try:
+        from tools import visual_contract
+
+        visual_contract.announce(name, arguments or {})
+    except Exception:
+        pass
+
+
+def _settle_visual(name: str, ok: bool) -> None:
+    """Show a failure where it happened. A success needn't animate twice — the gesture
+    already played, and a second flourish on every call would be noise."""
+    try:
+        from tools import visual_contract
+
+        visual_contract.settle(name, ok)
+    except Exception:
+        pass
 
 
 def _publish_action(phase: str, name: str, **kw) -> None:

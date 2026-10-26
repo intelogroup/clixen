@@ -798,6 +798,40 @@ fn spawn_cursor_watcher(app: AppHandle) {
                 let _ = app.emit("cursor-type", t.clone());
                 continue;
             }
+            // Reading / working / carrying / thinking: the headless-work gestures. They are
+            // how a tool whose real work never touches the screen still stays visible.
+            // These payloads carry the anchor too, so fly first: the overlay defers the
+            // ornament until the bunny lands (queueGesture), which is why one event is
+            // enough — writing a separate fly event raced the 80ms poll and got dropped.
+            let anchor = (
+                v.get("x").and_then(|x| x.as_f64()),
+                v.get("y").and_then(|y| y.as_f64()),
+            );
+            if v.get("read").is_some() || v.get("work").is_some()
+                || v.get("carry").is_some() || v.get("think").is_some()
+            {
+                if let (Some(x), Some(y)) = anchor {
+                    if v.get("nofly").is_none() {
+                        cursor_fly(&app, x, y, false, None, None);
+                    }
+                }
+            }
+            if let Some(t) = v.get("read") {
+                let _ = app.emit("cursor-read", t.clone());
+                continue;
+            }
+            if let Some(t) = v.get("work") {
+                let _ = app.emit("cursor-work", t.clone());
+                continue;
+            }
+            if let Some(t) = v.get("carry") {
+                let _ = app.emit("cursor-carry", t.clone());
+                continue;
+            }
+            if let Some(t) = v.get("think") {
+                let _ = app.emit("cursor-think", t.clone());
+                continue;
+            }
             // Scrolling: the overlay shows a two-finger swipe at the parked cursor.
             if let Some(t) = v.get("scroll") {
                 let _ = app.emit("cursor-scroll", t.clone());

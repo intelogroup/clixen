@@ -425,6 +425,18 @@ def type_text(text: str, submit: bool = False) -> str:
         return _ERR + f"Nothing typed: the focused element is a {f[0][2:].lower()}, not a text field. Click the field itself (use its own placeholder or label text) and retry."
     # One keystroke per character, at the pace the orb's typing hand animates (about 2.5s for any length).
     per = min(0.05, max(0.004, 2.5 / max(len(text), 1)))
+    # Fly to the window being typed into first: typing at the parked cursor made the bunny
+    # look idle while text appeared, which is exactly what a visual agent must not do.
+    # The 0.12s gap exists because the orb polls the target file every 80ms — write the fly
+    # and the gesture back to back and the fly is overwritten before it is ever read.
+    try:
+        from tools import visual_contract
+
+        if where := visual_contract.resolve("front", {}):
+            orb_cursor.point(where[0], where[1], click=False)
+            time.sleep(0.12)
+    except Exception:
+        pass
     orb_cursor.typing(text, per)
     r = subprocess.run(["osascript", "-e", _type_script(text, per, False)], capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
