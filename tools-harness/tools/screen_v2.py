@@ -146,11 +146,35 @@ def _blocking_banner(focus_label: str, labels: list[str]) -> str:
     )
 
 
-def observe(app: str = "", query: str = "") -> str:
-    return _trace("observe", {"app": app, "query": query}, _observe(app, query))
+def _visual_check(question: str) -> str:
+    """Ask the vision model what the front window actually shows.
+
+    Why: the accessibility tree is text, and text loses the things that most often
+    cause a wrong click — which of two near-identical rows is the one wanted, whether
+    a control is greyed out, what an icon means. Measured failure this prevents: the
+    orb clicked "IGM Vol 04 No 48" when the ask was No 44, because the labels differed
+    by two digits and nothing in the AX text said which was which.
+
+    Costs one model call (~1.5 s) and only runs when asked.
+    """
+    try:
+        from tools.vision_analyze import analyze_image
+
+        return analyze_image(question, region="front_window")
+    except Exception as exc:  # noqa: BLE001 - never fail the observation for this
+        return f"[visual check unavailable: {type(exc).__name__}: {exc}]"
 
 
-def _observe(app: str, query: str) -> str:
+def observe(app: str = "", query: str = "", visual: bool = False,
+            visual_question: str = "") -> str:
+    return _trace(
+        "observe",
+        {"app": app, "query": query, "visual": visual},
+        _observe(app, query, visual, visual_question),
+    )
+
+
+def _observe(app: str, query: str, visual: bool = False, visual_question: str = "") -> str:
     title, els, items = _snapshot(app, query)
     rev = _register(items, title)
     # Record what the model just saw. click_text/type_text have no element ids to
@@ -173,9 +197,30 @@ def _observe(app: str, query: str) -> str:
     overlays = _overlays(els, app)
     if banner := _blocking_banner(label, labels):
         overlays.append(banner)
-    return _out({"rev": rev, "app": _state.get("app") or app, "title": title, "url": ax.front_url(app),
-                 "focus": {"id": focus_id, "role": role, "label": label[:_LABEL_MAX]},
-                 "overlays": overlays, "elements": rows})
+    out = _out({"rev": rev, "app": _state.get("app") or app, "title": title, "url": ax.front_url(app),
+                "focus": {"id": focus_id, "role": role, "label": label[:_LABEL_MAX]},
+                "overlays": overlays, "elements": rows})
+    if visual:
+        # Corroborate the text reading against the pixels. The element list says what
+        # is *there*; the screenshot says what it *looks like* — which is what decides
+        # between two rows whose labels differ by a digit, or whether a control is
+        # actually disabled. Wrapped like any external content: a screen can carry text
+        # that is trying to instruct the agent.
+        q = visual_question or (
+            "Describe what this window shows in one or two sentences. Then list the "
+            "distinct clickable labels you can actually read, in order, exactly as they "
+            "appear — especially any numbers, dates or volume/issue identifiers. Do not "
+            "guess a label you cannot read."
+        )
+        answer = _visual_check(q)
+        try:
+            from tools.injection_guard import wrap_external_output
+
+            answer = wrap_external_output("analyze_image", answer)
+        except Exception:  # noqa: BLE001 - the guard is defence in depth, not a dependency
+            pass
+        out = json.dumps({**json.loads(out), "visual": answer})
+    return out
 
 
 _ID = re.compile(r"e\d+\.(\d+)")
@@ -549,16 +594,33 @@ OBSERVE_SCHEMA = {
     "function": {
         "name": "observe",
         "description": (
-            "Looks at the user's screen and returns what you can act on: the app, page title and URL, what has keyboard focus, "
-            "any overlay in the way (an extension side panel, a popover), and up to 40 numbered elements (id, role, label, and the "
-            "current value of text fields). Page content comes first. Ids stay valid for a few observations; a stale one is rejected, never mis-clicked. Call it before "
-            "acting and whenever you are unsure what the screen shows. query keeps only elements whose label contains it."
+            "visual=true also screenshots the window and reports what it looks like — use it to tell apart rows "
+            "whose labels differ by a digit, to check a control is really enabled, or before an irreversible click. "
+            "Then: the app, page title and URL, what has keyboard focus, any overlay in the way (an extension side "
+            "panel, a popover), and up to 40 numbered elements (id, role, label, and the current value of text "
+            "fields). Page content comes first. Ids stay valid for a few observations; a stale one is rejected, never "
+            "mis-clicked. Call it before acting and whenever you are unsure what the screen shows. query keeps only "
+            "elements whose label contains it."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "app": {"type": "string", "description": "App name, e.g. 'Google Chrome'; omit for the front app."},
                 "query": {"type": "string", "description": "Only elements whose label contains this text."},
+                "visual": {
+                    "type": "boolean",
+                    "description": (
+                        "Also look at the screenshot and report the labels you can actually read. Slower "
+                        "(~1.5s); worth it when the text reading is ambiguous."
+                    ),
+                },
+                "visual_question": {
+                    "type": "string",
+                    "description": (
+                        "What to ask the screenshot instead of the default 'describe and list labels', e.g. "
+                        "'which row is highlighted?' or 'is the Save button greyed out?'."
+                    ),
+                },
             },
         },
     },
