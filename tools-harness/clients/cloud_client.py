@@ -33,6 +33,27 @@ import time
 import concurrent.futures
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
+
+def tool_worker_count(tool_calls) -> int:
+    """1 for any batch containing a screen-mutating tool, else up to 4.
+
+    Extracted so the rule is testable: a model answering with several clicks and typings
+    in one round must have them executed in the order it wrote them.
+    """
+    if any(tc.function.name in SERIAL_UI_TOOLS for tc in tool_calls):
+        return 1
+    return max(1, min(len(tool_calls), 4))
+
+
+# Tools whose effect depends on screen state and on each other. Anything that clicks,
+# types, scrolls, opens, moves or writes must run in the order the model wrote it.
+SERIAL_UI_TOOLS = frozenset({
+    "act", "click_text", "type_text", "scroll_page", "press_keys", "open_url",
+    "open_app", "app", "window", "menu", "dialog", "finder", "system", "app_task",
+    "workspace_write", "workspace_download", "workspace_delete", "clipboard_write",
+    "create_calendar_event", "complete_task", "remember", "write_file", "edit_file",
+})
+
 from concurrent.futures import TimeoutError as _FutureTimeoutError
 from pathlib import Path
 from types import SimpleNamespace
@@ -1055,7 +1076,13 @@ def _one_round(state: "_LoopState", round_idx: int) -> "_RoundOutcome":
     # third-party loggers like googleapiclient) — see log_config.py's RunIdFilter.
     # Each submitted call needs its OWN copy — a Context object isn't reentrant, so
     # sharing one across concurrently-running workers throws "already entered".
-    executor = ThreadPoolExecutor(max_workers=min(len(tool_calls), 4))
+    # UI actions are ordered, not parallel. A model that answers with five type_text
+    # calls and seven click_text calls in one round used to get up to four of them
+    # running at once, and keystrokes land in whichever field has focus — which is how
+    # form fills come out garbled. Measured 2026-10-25 on info-chir: identical
+    # timestamps on five type_text calls in a single round. One worker keeps the pool's
+    # result handling intact while forcing submission order = execution order.
+    executor = ThreadPoolExecutor(max_workers=tool_worker_count(tool_calls))
     try:
         futures = {}
         for tc in tool_calls:
