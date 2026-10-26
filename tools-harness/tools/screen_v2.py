@@ -454,6 +454,15 @@ def _act(target: str, action: str, text: str, expect: dict | None, app: str, sub
         before, focus_before = Counter(it["fp"][:2] for it in items), _focused()
     note = ""
     if action in ("click", "type"):
+        if role in ("ComboBox", "PopUpButton"):
+            # A native <select> opens a menu WINDOW: the page's other elements leave the
+            # accessibility tree until it closes, which is why a form run that starts by
+            # clicking 'Type de publication' then reports 'the controls disappeared'.
+            # Say so at the moment it happens, with the way out.
+            note = ("This is a native dropdown: while it is open the page's other fields are "
+                    "hidden. Choose with act(action='key', text='down') then 'return', or type "
+                    "the option's first letters and press 'return'. Press 'esc' to close it "
+                    "without choosing, then observe again before filling anything else.")
         screen_act._click(cx, cy)
         if action == "type":
             for _ in range(10):  # the click returns before the browser moves focus into the field: typing early reads the page as focused

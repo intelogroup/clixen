@@ -17,3 +17,16 @@ When the page has a form with more than two fields and the user wants it filled.
    element id from the candidates, never a label guess.
 6. Submit only if the user asked you to submit. Filling is reversible; submitting
    is not.
+
+## Native dropdowns (measured failure)
+
+A form run that starts by clicking a `<select>` loses the rest of the form: the native
+menu is a separate window, so every other field leaves the accessibility tree until it
+closes. The orb reported exactly this on info-chir's submission form.
+
+Do it in this order:
+1. Fill the plain text fields first (they never hide the tree).
+2. Handle selects last: click, choose with `act(action='key', text='down')` + `'return'`
+   (or type the option's first letters + Return), then `esc` if you opened it by mistake.
+3. Re-observe before continuing. If the element list suddenly shrank to almost nothing,
+   a menu is open — close it; do not conclude the page broke.
