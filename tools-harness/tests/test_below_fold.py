@@ -82,3 +82,13 @@ def test_observe_names_the_offscreen_fields_and_how_to_reach_them(monkeypatch):
     assert "Email address" in data["fold"]["below_labels"]
     assert "find_on_page" in data["fold"]["hint"]
     assert "outside the viewport" in data["fold"]["hint"]
+
+
+def test_zero_height_form_controls_are_not_rendered():
+    """The live bug: Email * came back (814x0, onscreen) while below the fold, so the orb
+    typed at a zero-height line and nothing scrolled."""
+    assert sv.ax.is_rendered("AXTextField", 0) is False
+    assert sv.ax.is_rendered("AXTextArea", 0) is False
+    assert sv.ax.is_rendered("AXTextField", 24) is True
+    # Links are allowed to be zero-height: flagging them would cry 'scroll' everywhere.
+    assert sv.ax.is_rendered("AXLink", 0) is True

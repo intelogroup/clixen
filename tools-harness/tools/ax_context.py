@@ -40,6 +40,19 @@ GET_WINDOW_CONTEXT_SCHEMA = {
     },
 }
 
+# Controls a form filler cares about. Inline links can also be zero-height and are fine
+# to leave alone — flagging those would cry "scroll" on every page.
+def is_rendered(role: str, height: float) -> bool:
+    """False for a zero-height form control: Chrome keeps it in the tree inside the window
+    rect with h=0, so it reads as on-screen while being below the fold. Inline links can be
+    zero-height too and are deliberately NOT flagged, or every page would cry 'scroll'."""
+    return not (height <= 0 and role in _FORM_ROLES)
+
+
+_FORM_ROLES = {"AXTextField", "AXTextArea", "AXSearchField", "AXComboBox",
+               "AXCheckBox", "AXRadioButton", "AXButton", "AXPopUpButton"}
+
+
 _ACTIONABLE = {
     "AXLink", "AXButton", "AXTextField", "AXTextArea", "AXSearchField", "AXCheckBox", "AXRadioButton",
     "AXPopUpButton", "AXMenuItem", "AXMenuBarItem", "AXTab", "AXComboBox", "AXDisclosureTriangle",
@@ -191,7 +204,13 @@ def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[s
                             # "not there": measured 2026-10-25, the orb concluded a page had
                             # no 2025 issues because every card was below the fold and the
                             # filter dropped them silently.
-                            "onscreen": bool(inside),
+                            # A zero-height control is in the tree but NOT rendered: Chrome
+                            # reports it inside the window rect with h=0, so onscreen=True and
+                            # the agent typed at a zero-height line. Measured on info-chir's
+                            # submission form: Email * was (814x0, onscreen) while below the
+                            # fold. Treat it as off-screen so the next step is scrolling.
+                            "unrendered": s[1] <= 0 and role in _FORM_ROLES,
+                            "onscreen": bool(inside) and is_rendered(role, s[1]),
                             "above": bool(rect and cy < rect[1]),
                             "below": bool(rect and cy > rect[1] + rect[3]),
                         })
