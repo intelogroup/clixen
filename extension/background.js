@@ -120,6 +120,40 @@ function pageProbe(args) {
     };
   }
 
+  if (kind === "links") {
+    // Downloadable URLs actually present in the tab, so the agent can hand a URL to
+    // workspace_download instead of clicking the site's Download button and fighting
+    // Chrome's Save As dialog. Measured 2026-10-25: the dialog is where the whole
+    // "download the PDF" task died, twice, while the URL was sitting in an anchor.
+    // Scans anchors, embedded frames and files the page fetched itself.
+    const fileish = /\.(pdf|docx?|xlsx?|pptx?|csv|txt|zip|epub)(\?|#|$)/i;
+    const want = (args.match || "").trim().toLowerCase();
+    const seen = new Set();
+    const out = [];
+    const push = (href, text) => {
+      try {
+        const abs = new URL(href, document.baseURI).href;
+        if (!/^https?:/i.test(abs) || seen.has(abs)) return;
+        if (want) {
+          if (!abs.toLowerCase().includes(want)) return;
+        } else if (!fileish.test(abs)) return;
+        seen.add(abs);
+        out.push({ href: abs, text: (text || "").trim().slice(0, 120), file: fileish.test(abs) });
+      } catch (e) { /* a malformed href is not worth failing the probe over */ }
+    };
+    for (const a of document.querySelectorAll("a[href]")) {
+      push(a.getAttribute("href"), a.innerText || a.getAttribute("title") || "");
+    }
+    for (const el of document.querySelectorAll("[data-href],[data-url],[data-download]")) {
+      push(el.getAttribute("data-href") || el.getAttribute("data-url") || el.getAttribute("data-download"), el.innerText || "");
+    }
+    try {
+      const perf = performance.getEntriesByType("resource") || [];
+      for (const e of perf) if (fileish.test(e.name)) push(e.name, "");
+    } catch (e) { /* performance may be absent */ }
+    return { count: out.length, matching: want || null, links: out.slice(0, args.limit || 40) };
+  }
+
   if (kind === "text") {
     return { text: (document.body ? document.body.innerText : "").slice(0, args.limit || 8000) };
   }

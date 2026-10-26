@@ -167,17 +167,19 @@ EXT_PROBE_SCHEMA = {
     "function": {
         "name": "page_probe",
         "description": (
-            "Inspect the tab the user is looking at, through the Clixen browser extension: "
-            "console output and page errors, DOM elements, visible text, or click a control by "
-            "its visible label. Requires the extension loaded and connected."
+            "kind='links' lists the downloadable URLs on the tab the user is looking at — use it "
+            "instead of clicking a site's Download button, which opens a Save As dialog and leaves "
+            "nothing in the workspace; then save with workspace_download. Also: console output and "
+            "page errors, DOM elements, visible text, or click a control by its visible label, all "
+            "through the Clixen browser extension. Requires the extension loaded and connected."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "kind": {
                     "type": "string",
-                    "enum": ["console", "dom", "text", "click"],
-                    "description": "What to read, or 'click' to press a control by label",
+                    "enum": ["console", "dom", "text", "links", "click"],
+                    "description": ("What to read: console, dom, text, links (downloadable URLs on this tab), or 'click' to press a control by label"),
                 },
                 "level": {"type": "string", "description": "console only: error, warning, log, info"},
                 "limit": {"type": "integer", "description": "How many entries/elements (default 50/120)"},
@@ -205,6 +207,22 @@ def probe(kind: str = "dom", level: str = "", limit: int = 0, text: str = "", ti
         return f"[error] {res.get('error', 'extension did not answer')}"
 
     data = res.get("data") or {}
+    if kind == "links":
+        links = data.get("links") or []
+        if not links:
+            return ("No downloadable links on this tab "
+                    f"(match={data.get('matching') or 'file types'}). If the file is served by an "
+                    "API, use scrapling_api_capture; if the button is JavaScript, ask again "
+                    "with match='' after the click, or read the API.")
+        lines = [f"{len(links)} downloadable link(s) on this tab:"]
+        for link in links:
+            label = f" — {link['text']}" if link.get("text") else ""
+            lines.append(f"- {link['href']}{label}")
+        lines.append("Save one with workspace_download(url) — it reports the byte count. "
+                     "Do not click the site's Download button: that opens a Save As dialog "
+                     "and no file lands in the workspace.")
+        return "\n".join(lines)
+
     if kind == "console":
         entries = data.get("entries") or []
         total = data.get("total")

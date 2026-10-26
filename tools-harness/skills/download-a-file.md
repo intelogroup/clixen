@@ -13,7 +13,18 @@ Clicking the button visually is the slowest and least reliable route: the button
 opens a viewer instead of saving, `click_text` can hit the wrong element after a
 scroll, and you still have no file on disk.
 
-## The order that works
+## The order that works (fastest first)
+
+**0. If the extension is connected, ask the tab itself: `page_probe(kind="links")`.**
+It returns the downloadable URLs already in the page — absolute, de-duplicated, with
+their link text, and `match="..."` narrows it. Hand one straight to
+`workspace_download` and you are done in two calls with a byte count.
+
+Measured, on a served page with three anchors: `page_probe(kind="links", match="no_44")`
+returned `http://127.0.0.1:54321/igm/IGM_vol_03_no_44.pdf`, and `workspace_download`
+saved 20,009 bytes at mode 0600 — **no Save As dialog anywhere**. That dialog is where
+this task died twice: Chrome opens it, nothing lands in the workspace, and the agent
+cannot report a path it did not choose.
 
 1. **`scrapling_api_capture(url, contains="<a distinctive value>")`**
    - `url_pattern` should match the *data* endpoint, not the file: `articles`,
