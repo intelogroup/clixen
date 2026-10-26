@@ -480,7 +480,7 @@ CRITICAL INSTRUCTIONS:
 - SCREEN ACTIONS ARE NEVER DONE FROM MEMORY: every "click X" / "type X" / "open X" request needs its own fresh click_text / type_text / open_url / open_app call in THIS turn, even if an identical earlier turn succeeded. The page changes after each click, so never say you clicked, typed or opened something unless that tool call just returned success; if it returned 'Could not find', say so.
 - For SIMPLE file operations choose the direct tool: ask_read_file, ask_write_file, ask_delete_file, ask_rename_file, or ask_run_command.
 - For COMPLEX multi-step or ambiguous operations (finding files, filling forms, searching) use ask_local_agent.
-- For specialized workflows, let the selected skill provide the detailed procedure and tool subset; do not reproduce domain-specific instructions in this coordinator prompt.
+- For specialized workflows, let the selected skill provide the detailed procedure and tool subset; do not reproduce domain-specific instructions in this coordinator prompt. To select one, call match_skill_for_task with the request first \u2014 especially for multi-step UI navigation (scroll/click/type on a page), where a visual-navigation skill beats raw-driving; then run_skill to execute it instead of reproducing its steps yourself.
 {deep_research_critical}
 - If the user's query is a simple greeting, casual conversation, or doesn't require any actions/tools, answer them directly.
 - If the user's query is context-dependent (e.g., "Same for infochir", "what about the other one", "delete it"), resolve the pronouns and reference the conversation history to construct a completely self-contained query for the subagent tool.
@@ -1588,6 +1588,13 @@ def _run_impl(
     if active_tools and intent not in ("search", "browser", "plan"):
         _hub_tools = _tool("list_available_skills", "match_skill_for_task")
         active_tools = list(active_tools) + _hub_tools
+    # 2026-10-26: browser intent runs UI navigation with raw primitives unless
+    # it can discover skills — the PH10 solo run took ~30 observe/act rounds
+    # with browse_web winning match at 6.5 and no visual discipline. Hub match
+    # is read-only; run_skill dispatches the matched skill's own sub-agent.
+    if intent == "browser" and active_tools:
+        _hub_tools = _tool("list_available_skills", "match_skill_for_task", "run_skill")
+        active_tools = list(active_tools) + _hub_tools
 
     # UI web-search toggle: route directly into the search graph (same path as temporal)
     if force_web_search:
@@ -1824,6 +1831,7 @@ def _run_impl(
             "  browser_get_content, browser_get_attribute, browser_run_js,\n"
             "  browser_screenshot, browser_save_session, browser_load_session\n"
             "There is no other way \u2014 do not create function names like 'click:button:X'.\n\n"
+            "SKILL FIRST: before acting on a multi-step navigation task (scroll to an item, fill a form, type a comment), call match_skill_for_task with the request. If a visual-navigation skill matches, follow its look-to-verify loop and login-wall early exit instead of raw-driving.\n\n"
             "PRIMARY FLOW (visible browser \u2014 use for logins, signups, forms):\n"
             "  1. browser_open(url) \u2014 starts the visible Chrome window (persistent profile). Never pass headless unless the user asks: the visible window is where the orb's cursor flies to each click.\n"
             "  2. browser_tree() \u2014 see the page as @refs: '@e3 [textbox] \"Email\" name=email'.\n"

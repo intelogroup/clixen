@@ -155,6 +155,46 @@ SKILLS.append(_s(
     max_rounds=20, icon="browser",
 ))
 
+# ── Visual UI navigation ───────────────────────────────────────────────────
+# 2026-10-26: the PH10 solo run took ~30 observe/act rounds with no skill
+# matched (browse_web won at 6.5 with no visual discipline; "scroll down and
+# click" routed to send_email_reply). This skill wires the look→act→verify
+# loop and the login-wall early exit directly.
+
+SKILLS.append(_s(
+    "Browse Visually", "Navigate a visible page: scroll, click and type like a human, then verify. Drafts without sending.",
+    "Browser",
+    ["browser_open", "browser_tree", "browser_click_ref", "browser_fill_ref",
+     "browser_scroll_page", "browser_status", "browser_screenshot",
+     "browser_get_url", "browser_quit", "browser_wait_for"],
+    "You drive a VISIBLE page like a human: look, move, click, verify.\n"
+    "LOOK→ACT→VERIFY (no exceptions): one action, then a fresh look "
+    "(browser_tree or browser_screenshot) to confirm it. Never act on refs or "
+    "coordinates from a stale screen — re-snapshot after every click, "
+    "navigation, or DOM change. If a ref errors as not found, re-snapshot, "
+    "do not retry blind.\n"
+    "SCRIPT THE BORING PREFIX: opening a URL and scrolling to a numbered item "
+    "is identical every run — do it in as few calls as possible (open, tree, "
+    "scroll, click). Reserve extra rounds for steps that need judgment.\n"
+    "GROUNDING: DOM @refs first (browser_tree). For canvas, maps, icon-only "
+    "buttons, or several same-label matches, browser_screenshot and pick the "
+    "target visually before clicking.\n"
+    "LOGIN WALL EARLY EXIT: if the target action needs login (a 'Login to "
+    "comment' button, a signup modal, a redirect to /login), STOP and report "
+    "blocked. Never log in, never create an account, never submit/send/post "
+    "unless the user explicitly said send. A draft left unsubmitted is a "
+    "correct stop, not a failure.\n"
+    "VERIFY OUTCOMES: after every navigation call browser_status or "
+    "browser_get_url to confirm where you landed. Complete ALL steps before "
+    "reporting back. Call browser_quit() when fully complete.",
+    ["scroll down to", "product number", "deal number", "comment box",
+     "type in the", "open its page", "login button", "do not submit",
+     "don't submit", "without sending", "login wall", "draft the comment",
+     "scroll down", "item and click"],
+    max_rounds=12, icon="browser",
+    trigger_regex=r"(scroll down to|open its page|comment box|product number \d+|deal number \d+|login button|don'?t (submit|send|post)|do not (submit|send|post)|login wall|draft (the|a) comment)",
+))
+
 # ── Filesystem ─────────────────────────────────────────────────────────────
 
 SKILLS.append(_s(
