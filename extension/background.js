@@ -154,6 +154,43 @@ function pageProbe(args) {
     return { count: out.length, matching: want || null, links: out.slice(0, args.limit || 40) };
   }
 
+  if (kind === "viewport") {
+    // "Is there more page?" is a DOM question, not an AX one. Chrome's accessibility tree
+    // only exposes the viewport and reports no scroll extent, so an agent reading AX
+    // cannot tell "this form has no Email field" from "it is one scroll down" — which is
+    // exactly how it ended up typing into a field it had never brought on screen.
+    const de = document.documentElement;
+    const sh = Math.max(de ? de.scrollHeight : 0, document.body ? document.body.scrollHeight : 0);
+    const ih = window.innerHeight;
+    const y = window.scrollY || 0;
+    const below = Math.max(0, Math.round(sh - (y + ih)));
+    const above = Math.max(0, Math.round(y));
+    // Fields and buttons that exist in the document but are not in view right now.
+    const offscreen = [];
+    for (const el of document.querySelectorAll("input,textarea,select,button,a[href]")) {
+      if (offscreen.length >= 12) break;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const inView = r.bottom > 0 && r.top < ih;
+      if (inView) continue;
+      const label = (el.getAttribute("placeholder") || el.getAttribute("aria-label")
+        || el.innerText || el.getAttribute("name") || el.tagName).trim().slice(0, 40);
+      offscreen.push({ label, where: r.top >= ih ? "below" : "above", y: Math.round(r.top + y) });
+    }
+    return {
+      scrollY: Math.round(y),
+      innerHeight: ih,
+      scrollHeight: sh,
+      above,
+      below,
+      at_bottom: below < 4,
+      offscreen,
+      hint: below > 4
+        ? "There is more page below the fold. Scroll before concluding a field is missing; scroll it into view, then act."
+        : (above > 4 ? "There is more page above the fold." : "The whole page fits in the viewport."),
+    };
+  }
+
   if (kind === "text") {
     return { text: (document.body ? document.body.innerText : "").slice(0, args.limit || 8000) };
   }

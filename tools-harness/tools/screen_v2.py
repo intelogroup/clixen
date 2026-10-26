@@ -52,6 +52,17 @@ def _snapshot(app: str = "", query: str = ""):
     """
     name, title, els = ax.elements(app, query, offscreen=True)
     _state["app"] = name
+    # Keep the off-screen rows by name. Counting them (fold.below) told the model there
+    # was more page, but not *which field* to scroll to, so it still reported a field
+    # below the fold as "not found" instead of scrolling to it.
+    below = []
+    for e in els:
+        if e.get("onscreen", True):
+            continue
+        role, label = e.get("role", ""), (e.get("label") or "")[:_LABEL_MAX]
+        if label and (role, label) not in below:
+            below.append((role, label))
+    _state["below"] = below[:40]
     visible = [e for e in els if e.get("onscreen", True)]
     ranked = sorted(visible, key=lambda e: (e.get("panel", False), not e["web"], e["y"], e["x"]))  # the page first, browser chrome next, an extension panel last
     seen: Counter = Counter()
@@ -282,15 +293,25 @@ def _observe(app: str, query: str, visual: bool = False, visual_question: str = 
                "overlays": overlays, "elements": rows}
     below = sum(1 for e in els if e.get("below"))
     above = sum(1 for e in els if e.get("above"))
-    if below or above:
+    # Chrome does not always set `below` on an off-screen row (below-fold fields often
+    # report height 0), so the count alone under-reports. Any off-screen row is enough to
+    # say "there is more page here" — which is the signal to scroll, not to conclude absence.
+    offscreen = _state.get("below", [])
+    if offscreen:
+        below = max(below, len(offscreen))
+    if below or above or offscreen:
         # The actionable thing this turn: there is more page than you can see, so
         # "not on screen" is not yet "not there". Named so the next step is scrolling,
         # not a search box.
+        named = [label for (_role, label) in _state.get("below", []) if label][:10]
         payload["fold"] = {
             "below": below,
             "above": above,
-            "hint": ("more content is off screen; scroll (act action='scroll') and observe "
-                     "again before concluding it is absent"),
+            "below_labels": named,
+            "hint": ("these are off screen, not missing. To reach one, call find_on_page(label) — "
+                     "it scrolls until the label is visible and centres it — then act on it. "
+                     "Or act(action='scroll', text='down') and observe again. Do not click or "
+                     "type at coordinates outside the viewport."),
         }
     out = _out(payload)
     if visual:
@@ -345,6 +366,19 @@ def _resolve(target: str, items: list):
         cands = [{"id": f"e{i + 1}.{nxt}", "role": items[i]["fp"][0], "label": items[i]["fp"][1]} for i in pool[:5]]
         return None, ("ambiguous", f"'{t}' matches {len(pool)} elements; act on one by id.", {"candidates": cands})
     labels = [it["fp"][1] for it in items]
+    # "I can't see it" must not read as "it isn't there". If the label exists below the
+    # fold, say so and name the next step; a generic not_found makes the model conclude
+    # the form has no such field.
+    offscreen = [label for (_role, label) in _state.get("below", [])]
+    hit = next((lab for lab in offscreen if lab.lower() == want or want in lab.lower()), None)
+    if hit:
+        return None, (
+            "below_viewport",
+            f"'{hit}' exists but is below the viewport, so it cannot be clicked or typed into "
+            f"yet. Call find_on_page('{hit[:40]}') to scroll it into view, then act on the id "
+            "from the fresh observation.",
+            {"candidates": []},
+        )
     close = difflib.get_close_matches(want, [l.lower() for l in labels], n=3, cutoff=0.4)
     cands = [{"id": f"e{j + 1}.{nxt}", "role": items[j]["fp"][0], "label": items[j]["fp"][1]} for j, l in enumerate(labels) if l.lower() in close][:3]
     return None, ("not_found", f"nothing on screen is labelled '{t}'. Call observe to see what is there.", {"candidates": cands})

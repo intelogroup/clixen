@@ -149,3 +149,26 @@ def test_links_never_duplicates_or_returns_bad_schemes(page):
     hrefs = [link["href"] for link in out["links"]]
     assert len(hrefs) == 1, f"duplicates or non-http leaked in: {hrefs}"
     assert hrefs[0].endswith("/dup.pdf")
+
+
+def test_viewport_says_whether_there_is_more_page(page):
+    """AX cannot answer this: Chrome exposes only the viewport and no scroll extent."""
+    tall = "<div style='height:120px'>top</div>" + "".join(
+        f"<input placeholder='field {i}' style='display:block;height:60px'>" for i in range(12)
+    ) + "<button style='margin-top:40px'>Submit application</button>"
+    page.set_content(tall)
+    out = page.evaluate("window.__probe({kind:'viewport'})")
+    assert out["scrollHeight"] > out["innerHeight"], "fixture must be taller than the viewport"
+    assert out["below"] > 4, f"expected content below the fold: {out}"
+    assert out["at_bottom"] is False
+    labels = [e["label"] for e in out["offscreen"]]
+    assert "Submit application" in labels, f"the off-screen button must be named: {labels}"
+    assert "scroll" in out["hint"].lower()
+
+
+def test_viewport_knows_when_the_page_fits(page):
+    page.set_content("<p style='height:60px'>short</p>")
+    out = page.evaluate("window.__probe({kind:'viewport'})")
+    assert out["at_bottom"] is True
+    assert out["below"] < 4
+    assert "fits" in out["hint"].lower()

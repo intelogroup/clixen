@@ -167,18 +167,19 @@ EXT_PROBE_SCHEMA = {
     "function": {
         "name": "page_probe",
         "description": (
-            "kind='links' lists the downloadable URLs on the tab the user is looking at — use it "
-            "instead of clicking a site's Download button, which opens a Save As dialog and leaves "
-            "nothing in the workspace; then save with workspace_download. Also: console output and "
-            "page errors, DOM elements, visible text, or click a control by its visible label, all "
-            "through the Clixen browser extension. Requires the extension loaded and connected."
+            "kind='viewport' answers 'is there more page below the fold?' and lists the fields "
+            "that are off screen — check it before deciding a field is missing or clicking "
+            "blindly. kind='links' lists downloadable URLs on the tab (use instead of clicking "
+            "a site's Download button, which opens Save As and saves nothing to the workspace). "
+            "Also console output and page errors, DOM elements, visible text, or click a "
+            "control by label, through the Clixen browser extension."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "kind": {
                     "type": "string",
-                    "enum": ["console", "dom", "text", "links", "click"],
+                    "enum": ["console", "dom", "text", "links", "viewport", "click"],
                     "description": ("What to read: console, dom, text, links (downloadable URLs on this tab), or 'click' to press a control by label"),
                 },
                 "level": {"type": "string", "description": "console only: error, warning, log, info"},
@@ -207,6 +208,21 @@ def probe(kind: str = "dom", level: str = "", limit: int = 0, text: str = "", ti
         return f"[error] {res.get('error', 'extension did not answer')}"
 
     data = res.get("data") or {}
+    if kind == "viewport":
+        lines = [
+            f"Viewport: {data.get('innerHeight')}px tall, page {data.get('scrollHeight')}px, "
+            f"scrolled {data.get('scrollY')}px. {data.get('below')}px more below, "
+            f"{data.get('above')}px above. at_bottom={data.get('at_bottom')}.",
+        ]
+        for el in data.get("offscreen") or []:
+            lines.append(f"- {el.get('where')}: {el.get('label')} (y={el.get('y')})")
+        if data.get("offscreen"):
+            lines.append("Those exist in the document but are not in view: scroll to them "
+                         "(act action='scroll') before clicking or typing, or use find_on_page.")
+        else:
+            lines.append(data.get("hint") or "")
+        return "\n".join(lines)
+
     if kind == "links":
         links = data.get("links") or []
         if not links:
