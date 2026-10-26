@@ -15,7 +15,7 @@ ORB_CHAT_PREFIX = "orb"
 
 TOOL_NAMES = frozenset({
     # the user's screen (same set harness.py offers the orchestrator)
-    "observe", "act", "wait_for", "tabs", "app_task", "read_page_text", "open_url", "open_app", "finder", "window",
+    "observe", "find_on_page", "act", "wait_for", "tabs", "app_task", "read_page_text", "open_url", "open_app", "finder", "window",
     "menu", "app", "dialog", "system", "get_current_time",
     # console + DOM on the tab the user granted to the dev extension (ADR 0006)
     "page_probe",

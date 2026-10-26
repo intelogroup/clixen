@@ -183,7 +183,18 @@ def elements(app: str = "", query: str = "", offscreen: bool = False) -> tuple[s
                     key = (role, label, round(cx), round(cy))
                     if (inside or offscreen) and key not in seen and (label or role in ("AXTextField", "AXTextArea", "AXSearchField")) and (not q or q in label.lower()):
                         seen.add(key)
-                        out.append({"role": role[2:], "label": label, "x": round(cx), "y": round(cy), "w": round(s[0]), "h": round(s[1]), "el": el, "web": in_web, "panel": in_panel})
+                        out.append({
+                            "role": role[2:], "label": label,
+                            "x": round(cx), "y": round(cy), "w": round(s[0]), "h": round(s[1]),
+                            "el": el, "web": in_web, "panel": in_panel,
+                            # Where this sits relative to the window. "Not visible" is not
+                            # "not there": measured 2026-10-25, the orb concluded a page had
+                            # no 2025 issues because every card was below the fold and the
+                            # filter dropped them silently.
+                            "onscreen": bool(inside),
+                            "above": bool(rect and cy < rect[1]),
+                            "below": bool(rect and cy > rect[1] + rect[3]),
+                        })
             kids = _get(el, "AXChildren")
             if kids:
                 if role == "AXWebArea" and not in_panel:

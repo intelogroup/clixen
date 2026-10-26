@@ -44,10 +44,16 @@ def _value(e: dict) -> str:
 
 
 def _snapshot(app: str = "", query: str = ""):
-    """(title, all elements, ranked items). Page content before browser chrome, then reading order; capped."""
-    name, title, els = ax.elements(app, query)
+    """(title, all elements, ranked items). Page content before browser chrome, then reading order; capped.
+
+    Asks for offscreen elements too. One walk either way — the tree is already built —
+    and it is the only way to tell "this page has nothing" apart from "this page has
+    nothing *in view*", which is the difference between scrolling and giving up.
+    """
+    name, title, els = ax.elements(app, query, offscreen=True)
     _state["app"] = name
-    ranked = sorted(els, key=lambda e: (e.get("panel", False), not e["web"], e["y"], e["x"]))  # the page first, browser chrome next, an extension panel last
+    visible = [e for e in els if e.get("onscreen", True)]
+    ranked = sorted(visible, key=lambda e: (e.get("panel", False), not e["web"], e["y"], e["x"]))  # the page first, browser chrome next, an extension panel last
     seen: Counter = Counter()
     items = []
     for e in ranked[:MAX_ITEMS]:
@@ -165,6 +171,80 @@ def _visual_check(question: str) -> str:
         return f"[visual check unavailable: {type(exc).__name__}: {exc}]"
 
 
+def find_on_page(text: str = "", max_scrolls: int = 12, app: str = "") -> str:
+    """Scroll the page until `text` is on screen; say so if it never is.
+
+    Why this exists: the accessibility tree only contains what is in the viewport, and
+    Chrome reports no scroll extent, so an agent cannot tell "this page has no 2025
+    issues" from "they are below the fold". Measured 2026-10-25: the orb concluded a
+    journal archive had no January 2025 issue, twice, while the cards were one scroll
+    away. Absence has to be earned by reaching the bottom, not assumed from one look.
+
+    Deliberately mechanical: observe, scroll a page, observe again, and stop when the
+    labels stop changing (that is the bottom). It reports how many scrolls it took, so
+    the caller knows whether the answer was near or far.
+    """
+    want = (text or "").strip().lower()
+    if not want:
+        return "[error] find_on_page needs the text to look for"
+
+    tries = max(1, min(int(max_scrolls or 12), 30))
+    last_labels: set[str] = set()
+    for attempt in range(tries + 1):
+        title, els, items = _snapshot(app)
+        for i, it in enumerate(items):
+            if want in it["fp"][1].lower():
+                # Put it in the middle of the window so a click lands where it looks.
+                try:
+                    ax.scroll_into_view(it["e"]["el"])
+                except Exception:  # noqa: BLE001 - finding it is the job, centring is a bonus
+                    pass
+                how = "already on screen" if attempt == 0 else f"after scrolling {attempt} page(s)"
+                return _out({
+                    "found": True,
+                    "label": it["fp"][1],
+                    "role": it["fp"][0],
+                    "id": _id(i),
+                    "note": f"'{it['fp'][1]}' is {how}.",
+                })
+        labels = {it["fp"][1] for it in items}
+        if attempt and labels == last_labels:
+            # Reached the bottom. Before saying "not here", name the controls that
+            # could be hiding it: a period/category filter is the usual way an
+            # archive keeps last year's issues out of view entirely.
+            filters = [
+                {"id": _id(i), "role": it["fp"][0], "label": it["fp"][1]}
+                for i, it in enumerate(items)
+                if it["fp"][0] in ("PopUpButton", "ComboBox", "MenuButton", "Button")
+                and any(k in it["fp"][1].lower() for k in
+                        ("période", "periode", "period", "catégor", "categor", "filtr",
+                         "année", "annee", "year", "mois", "month", "trier", "sort"))
+            ][:6]
+            payload = {
+                "found": False,
+                "reason": "reached the bottom of the page: the view stopped changing",
+                "scrolls": attempt,
+                "note": f"'{text}' is not on this page as far as scrolling can tell.",
+            }
+            if filters:
+                payload["filters"] = filters
+                payload["hint"] = ("it may be hidden behind a filter: click one of these and "
+                                   "observe again before saying it does not exist")
+            return _out(payload)
+        # Two identical viewports in a row means the page is not moving; handled above.
+        last_labels = labels
+        if attempt == tries:
+            break
+        screen_act.scroll_page("down", 1, app)
+        time.sleep(0.45)
+    return _out({
+        "found": False,
+        "reason": f"not found in {tries} scroll(s); more may exist further down",
+        "scrolls": tries,
+        "hint": "call again with a larger max_scrolls, or use scrapling_api_capture to read the data directly",
+    })
+
+
 def observe(app: str = "", query: str = "", visual: bool = False,
             visual_question: str = "") -> str:
     return _trace(
@@ -197,9 +277,22 @@ def _observe(app: str, query: str, visual: bool = False, visual_question: str = 
     overlays = _overlays(els, app)
     if banner := _blocking_banner(label, labels):
         overlays.append(banner)
-    out = _out({"rev": rev, "app": _state.get("app") or app, "title": title, "url": ax.front_url(app),
-                "focus": {"id": focus_id, "role": role, "label": label[:_LABEL_MAX]},
-                "overlays": overlays, "elements": rows})
+    payload = {"rev": rev, "app": _state.get("app") or app, "title": title, "url": ax.front_url(app),
+               "focus": {"id": focus_id, "role": role, "label": label[:_LABEL_MAX]},
+               "overlays": overlays, "elements": rows}
+    below = sum(1 for e in els if e.get("below"))
+    above = sum(1 for e in els if e.get("above"))
+    if below or above:
+        # The actionable thing this turn: there is more page than you can see, so
+        # "not on screen" is not yet "not there". Named so the next step is scrolling,
+        # not a search box.
+        payload["fold"] = {
+            "below": below,
+            "above": above,
+            "hint": ("more content is off screen; scroll (act action='scroll') and observe "
+                     "again before concluding it is absent"),
+        }
+    out = _out(payload)
     if visual:
         # Corroborate the text reading against the pixels. The element list says what
         # is *there*; the screenshot says what it *looks like* — which is what decides
@@ -657,6 +750,29 @@ ACT_SCHEMA = {
                     "items": {"type": "object"},
                 },
             },
+        },
+    },
+}
+
+
+FIND_ON_PAGE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "find_on_page",
+        "description": (
+            "Scrolls until this text is on screen; a not-found is only reported after reaching the bottom, not after "
+            "one look. The accessibility tree holds only the viewport, so a card that observe() does not list "
+            "can still exist a scroll away. Returns {found, label, id, scrolls}. When it is not on the page it "
+            "also returns any period/category filters that could be hiding it."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Part of the label to look for, e.g. '2025' or 'Vol 03 No 44'."},
+                "max_scrolls": {"type": "integer", "description": "Pages to scroll before giving up (default 12, max 30)."},
+                "app": {"type": "string", "description": "App name; omit for the front app."},
+            },
+            "required": ["text"],
         },
     },
 }

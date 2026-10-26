@@ -293,12 +293,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_usage(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Show today's cloud token usage against the daily budget."""
-    from clients.cost_guard import today_usage, DAILY_TOKEN_BUDGET
+    from clients.cost_guard import today_usage, daily_token_budget
     data = today_usage()
     total = data["prompt_tokens"] + data["completion_tokens"]
-    pct = 100 * total / DAILY_TOKEN_BUDGET
+    budget = daily_token_budget()
+    pct = 100 * total / budget
     await update.message.reply_text(
-        f"Today's cloud usage: {total:,}/{DAILY_TOKEN_BUDGET:,} tokens ({pct:.0f}%)\n"
+        f"Today's cloud usage: {total:,}/{budget:,} tokens ({pct:.0f}%)\n"
         f"prompt: {data['prompt_tokens']:,}  completion: {data['completion_tokens']:,}\n"
         f"(budget is advisory — cloud keeps being used past it, see harness.py local_chat())"
     )

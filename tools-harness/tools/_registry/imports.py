@@ -344,7 +344,7 @@ from tools.open_actions import OPEN_APP_SCHEMA, OPEN_URL_SCHEMA, open_app, open_
 from tools.ax_context import GET_WINDOW_CONTEXT_SCHEMA, get_window_context
 from tools.page_text import READ_PAGE_TEXT_SCHEMA, read_page_text
 from tools.lazy_schema import TOOL_HELP_SCHEMA, tool_help
-from tools.screen_v2 import ACT_SCHEMA as ACT_SCHEMA_V2, OBSERVE_SCHEMA, act as screen_act_v2, observe as screen_observe, TABS_SCHEMA, WAIT_FOR_SCHEMA, tabs as screen_tabs, wait_for as screen_wait_for
+from tools.screen_v2 import ACT_SCHEMA as ACT_SCHEMA_V2, OBSERVE_SCHEMA, FIND_ON_PAGE_SCHEMA, act as screen_act_v2, observe as screen_observe, find_on_page as screen_find_on_page, TABS_SCHEMA, WAIT_FOR_SCHEMA, tabs as screen_tabs, wait_for as screen_wait_for
 from tools.screen_recipes import APP_TASK_SCHEMA, app_task
 from tools.screen_act import (
     CLICK_TEXT_SCHEMA,

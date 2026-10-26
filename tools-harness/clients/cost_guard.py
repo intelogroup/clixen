@@ -22,7 +22,28 @@ _USAGE_FILE = Path(__file__).resolve().parent.parent / "data" / "cloud_usage.jso
 # Sane default so the guard is actually on for a fresh user (the previous 1e12
 # default meant unlimited cloud spend unless someone set the env var). 5M
 # tokens/day ≈ $4-8 on DeepSeek; override via CLOUD_DAILY_TOKEN_BUDGET.
-DAILY_TOKEN_BUDGET = int(os.environ.get("CLOUD_DAILY_TOKEN_BUDGET", 5_000_000))
+_DEFAULT_BUDGET = 5_000_000
+
+
+def daily_token_budget() -> int:
+    """The ceiling for today, read lazily.
+
+    Why a function and not a module constant: `cloud_client` imports this module on
+    line 45 and only calls `load_dotenv` on line 54, so a value read at import time
+    could never see the .env entry — measured 2026-10-25, .env said 50,000,000, the
+    running core reported 5,000,000 and refused every call. Reading it at use time
+    makes the order irrelevant, which is the only fix that cannot be undone by an
+    import shuffle later.
+    """
+    try:
+        return int(os.environ.get("CLOUD_DAILY_TOKEN_BUDGET", _DEFAULT_BUDGET))
+    except (TypeError, ValueError):
+        return _DEFAULT_BUDGET
+
+
+# Kept for callers that import it directly; reflects the environment at import time,
+# which is why every enforcement path below calls daily_token_budget() instead.
+DAILY_TOKEN_BUDGET = daily_token_budget()
 
 _lock = threading.Lock()
 
@@ -87,11 +108,12 @@ def check_budget() -> None:
     """Raise BudgetExceededError if today's total tokens are already at/over budget."""
     data = today_usage()
     total = data["prompt_tokens"] + data["completion_tokens"]
-    if total >= DAILY_TOKEN_BUDGET:
+    budget = daily_token_budget()
+    if total >= budget:
         _log.warning(
             "[cost_guard] daily budget exceeded: %d/%d tokens used today",
-            total, DAILY_TOKEN_BUDGET,
+            total, budget,
         )
         raise BudgetExceededError(
-            f"Daily cloud token budget exceeded ({total}/{DAILY_TOKEN_BUDGET})"
+            f"Daily cloud token budget exceeded ({total}/{budget})"
         )

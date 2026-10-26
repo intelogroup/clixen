@@ -549,6 +549,7 @@ EXECUTORS = {
     "tabs": lambda args: screen_tabs(args.get("action") or "list", args.get("match") or "", args.get("app") or "Google Chrome"),
     "app_task": lambda args: app_task(args.get("name") or "", args.get("args") if isinstance(args.get("args"), dict) else {}),
     "observe": lambda args: screen_observe(args.get("app") or "", args.get("query") or "", bool(args.get("visual")), args.get("visual_question") or ""),
+    "find_on_page": lambda args: screen_find_on_page(args.get("text") or "", args.get("max_scrolls") or 12, args.get("app") or ""),
     "act": lambda args: screen_act_v2(args.get("target") or "", args.get("action") or "click", args.get("text") or "", args.get("expect") if isinstance(args.get("expect"), dict) else None, args.get("app") or "", bool(args.get("submit")), args.get("steps") if isinstance(args.get("steps"), list) else None, bool(args.get("replace"))),
     "scroll_page": lambda args: scroll_page(args.get("direction") or "down", args.get("pages") or 1, args.get("app") or ""),
     "type_text": lambda args: type_text(args.get("text", ""), bool(args.get("submit"))),

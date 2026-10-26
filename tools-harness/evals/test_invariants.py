@@ -211,7 +211,7 @@ def test_mobile_strip_is_gated_on_manual_pick_not_model_presence():
 # ------------------------------------------------------------------ cost guard
 
 def test_budget_raises_only_at_the_cap(monkeypatch):
-    monkeypatch.setattr(cost_guard, "DAILY_TOKEN_BUDGET", 100)
+    monkeypatch.setattr(cost_guard, "daily_token_budget", lambda: 100)
 
     monkeypatch.setattr(cost_guard, "today_usage", lambda: {"prompt_tokens": 60, "completion_tokens": 39})
     cost_guard.check_budget()  # 99 < 100 — under budget, must not raise
@@ -221,13 +221,23 @@ def test_budget_raises_only_at_the_cap(monkeypatch):
         cost_guard.check_budget()
 
 
-def test_budget_default_is_sane_when_env_absent():
-    """The default budget must be a REAL cap, not a no-op. The old 1e12-token
-    default (≈ unlimited cloud spend) only became a real guard once
-    CLOUD_DAILY_TOKEN_BUDGET was set. Now 5M/day by default so a standalone
-    script importing cost_guard without load_dotenv() is still protected."""
-    src = (_HARNESS / "clients/cost_guard.py").read_text()
-    assert 'os.environ.get("CLOUD_DAILY_TOKEN_BUDGET", 5_000_000)' in src
+def test_budget_default_is_sane_when_env_absent(monkeypatch):
+    """The default budget must be a REAL cap, not a no-op (the old 1e12-token
+    default was ≈ unlimited spend). Checked through the function, not the source
+    text: the value is read lazily on purpose, because reading it at import time
+    meant a .env entry could never take effect."""
+    monkeypatch.delenv("CLOUD_DAILY_TOKEN_BUDGET", raising=False)
+    assert cost_guard.daily_token_budget() == 5_000_000
+
+
+def test_budget_honours_the_env_at_use_time_not_import_time(monkeypatch):
+    """Measured bug (2026-10-25): .env said 50,000,000 but the running core
+    reported 5,000,000 and refused every cloud call, because cloud_client imports
+    cost_guard before it calls load_dotenv. The read has to happen at use time."""
+    monkeypatch.setenv("CLOUD_DAILY_TOKEN_BUDGET", "42000000")
+    assert cost_guard.daily_token_budget() == 42_000_000
+    monkeypatch.setenv("CLOUD_DAILY_TOKEN_BUDGET", "not-a-number")
+    assert cost_guard.daily_token_budget() == 5_000_000, "a bad value must not disable the cap"
 
 
 # ------------------------------------------------------------------ misc claims
