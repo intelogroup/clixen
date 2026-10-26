@@ -45,6 +45,7 @@ DIMENSIONS: dict[str, list[str]] = {
     "Popups and consent banners": ["test_consent_banners.py"],
     "Console capture": ["test_console_buffer.py"],
     "Extension bridge (dev)": ["test_ext_bridge.py", "test_extension_probe_js.py"],
+    "Visibility (every action animated)": ["test_visual_contract.py"],
     "Voice pipeline": ["voice/test_vad.py", "voice/test_session.py", "voice/test_streaming_asr.py"],
 }
 
