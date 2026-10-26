@@ -176,7 +176,9 @@ def _guard(typing: bool = False, acting_on: str = "") -> str | None:
     app, title = _front_window()
     if app and is_blocked(app, title):
         return _ERR + "Front window is private or a password manager; not acting on it."
-    if typing and any(t in app.lower() for t in _TERMINALS):
+    # The terminal refusal protects an implicit target. An explicit acting_on means the
+    # caller named the app and it has just been activated, so the front app is that one.
+    if typing and not acting_on and any(t in app.lower() for t in _TERMINALS):
         return _ERR + f"Front app is a terminal ({app}); not typing into it."
     if not acting_on:  # choose the app to act on implicitly -> it must be the app that was looked at
         from tools import screen_epoch

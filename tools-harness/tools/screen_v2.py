@@ -413,7 +413,17 @@ def _holds(old: dict) -> bool:
 
 
 def _act(target: str, action: str, text: str, expect: dict | None, app: str, submit: bool, replace: bool = False) -> str:
-    if (why := screen_act._guard(typing=action == "type")):
+    # An explicit app is an instruction to act THERE. Clicks and keystrokes go to whatever
+    # is frontmost, so without activating first a call naming Chrome could type into the
+    # terminal the agent was launched from — measured: 'Email *' refused because ghostty
+    # was in front, and the orb reported "keyboard input was not accepted".
+    if app:
+        try:
+            screen_act.activate_app(app)
+            time.sleep(0.25)
+        except Exception:
+            pass  # the guard below reports a real failure; a slow activate must not mask it
+    if (why := screen_act._guard(typing=action == "type", acting_on=app)):
         return _err("refused", why)
     t = target.strip()
     role = label = ""
