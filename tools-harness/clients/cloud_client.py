@@ -34,6 +34,15 @@ import concurrent.futures
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
+def _fmt_round_trace(content: str, tool_calls, limit: int = 120, final_limit: int = 800) -> str:
+    """One log line: each tool name + truncated args, or the head of the final reply."""
+    if not tool_calls:
+        return "final=%r" % (content[:final_limit],)
+    return "tools=" + ", ".join(
+        "%s(%s)" % (tc.function.name, (tc.function.arguments or "")[:limit]) for tc in tool_calls
+    )
+
+
 def tool_worker_count(tool_calls) -> int:
     """1 for any batch containing a screen-mutating tool, else up to 4.
 
@@ -1033,6 +1042,9 @@ def _one_round(state: "_LoopState", round_idx: int) -> "_RoundOutcome":
     msg = resp.choices[0].message
     content = msg.content or ""
     tool_calls = msg.tool_calls
+    # Per-round tool trace: the line above says a tool was called, never which one,
+    # so a run that stalls or falls back to another tool is undiagnosable from the log.
+    _log.info("[cloud_client] round=%d %s", _round, _fmt_round_trace(content, tool_calls))
 
     if not tool_calls:
         state.last_content = content
