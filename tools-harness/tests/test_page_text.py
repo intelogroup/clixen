@@ -42,6 +42,23 @@ def test_collapsed_finds_expanders_but_never_popup_openers(monkeypatch):
     assert ax_context._collapsed(page, time.monotonic() + 5) == [spec]
 
 
+def test_collapsed_skips_site_chrome_and_stays_inside_main(monkeypatch):
+    # Amazon's "Deliver to" header button and footer country picker report expanded=False;
+    # pressing them reopens the location popup / navigates away on every page read.
+    fake_get(monkeypatch)
+    monkeypatch.setattr(ax_context, "_actions", lambda el: ("AXPress",))
+    deliver_to = node("AXButton", AXExpanded=False)
+    header = node("AXGroup", AXSubrole="AXLandmarkBanner", kids=[deliver_to])
+    country = node("AXButton", AXExpanded=False)
+    spec = node("AXButton", AXExpanded=False)
+    main = node("AXGroup", AXSubrole="AXLandmarkMain", kids=[spec])
+    page = node("AXWebArea", kids=[header, main, country])
+    assert ax_context._collapsed(page, time.monotonic() + 5) == [spec]
+    # No <main>: fall back to the whole page, but still skip the landmarks.
+    no_main = node("AXWebArea", kids=[header, node("AXGroup", kids=[spec])])
+    assert ax_context._collapsed(no_main, time.monotonic() + 5) == [spec]
+
+
 def test_passages_returns_matches_with_neighbours_in_page_order():
     lines = ["intro", "Display 10 inch", "Battery 4000 mAh", "Weight 295 g", "footer", "more", "Battery life 14 days"]
     assert passages(lines, "battery") == ["Display 10 inch", "Battery 4000 mAh", "Weight 295 g", "more", "Battery life 14 days"]
