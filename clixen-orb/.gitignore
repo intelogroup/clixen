@@ -6,3 +6,6 @@ src-tauri/gen/schemas/
 
 # macOS
 .DS_Store
+
+# Live orb-run evidence (stream logs, screenshots) — local only
+.orb-test/
