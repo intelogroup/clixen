@@ -625,14 +625,34 @@ def _web_area(win):
     return win
 
 
+_CHROME_LANDMARKS = ("AXLandmarkBanner", "AXLandmarkNavigation", "AXLandmarkSearch", "AXLandmarkContentInfo")
+
+
+def _main_landmark(root, deadline: float):
+    """The page's <main> element, or None. Collapsed sections worth opening live in it; the footer's
+    country/language pickers and the header's menus do not, and pressing them navigates away."""
+    stack, n = [root], 0
+    while stack and n < 80000 and time.monotonic() < deadline:
+        el = stack.pop()
+        n += 1
+        if _get(el, "AXSubrole") == "AXLandmarkMain":
+            return el
+        stack.extend(reversed(_get(el, "AXChildren") or ()))
+    return None
+
+
 def _collapsed(root, deadline: float) -> list:
     """Elements that report AXExpanded == False and are safe to press open: disclosure triangles and
     plain expanders. Anything that opens a popup (menus, dropdowns) is left alone."""
-    found, stack, n = [], [root], 0
+    found, stack, n = [], [_main_landmark(root, deadline) or root], 0
     while stack and n < 80000 and time.monotonic() < deadline:
         el = stack.pop()
         n += 1
         role = _get(el, "AXRole")
+        # Site chrome is not a collapsed section: pressing Amazon's "Deliver to" or "Go" reopens the
+        # location popup / submits a search every time the page is read.
+        if _get(el, "AXSubrole") in _CHROME_LANDMARKS:
+            continue
         if role in ("AXDisclosureTriangle", "AXButton", "AXGroup", "AXHeading") and _get(el, "AXExpanded") is False \
                 and not _get(el, "AXHasPopup") and "AXPress" in (_actions(el) or ()):
             found.append(el)
