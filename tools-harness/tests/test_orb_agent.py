@@ -43,3 +43,17 @@ def test_the_orb_cannot_send_mail_behind_the_screen():
 
 def test_prompt_teaches_the_gmail_recipe():
     assert "app_task" in orb_agent.PROMPT and "gmail.send" in orb_agent.PROMPT
+
+
+def test_prompt_names_the_orb_purpose_and_visual_skill():
+    assert "voice of the floating orb" in orb_agent.PROMPT
+    assert "load_skill(browse-visually)" in orb_agent.PROMPT
+    assert "Login wall" in orb_agent.PROMPT
+
+
+def test_browse_visually_procedure_exists_and_fits():
+    import tools.skills as _skills
+    assert "browse-visually" in _skills.list_skills()
+    text = _skills.load_skill("browse-visually")
+    assert text.startswith("## Procedure: browse-visually")
+    assert len(text.encode("utf-8")) <= _skills.MAX_SKILL_BYTES

@@ -82,7 +82,7 @@ LOAD_SKILL_SCHEMA = {
     "function": {
         "name": "load_skill",
         "description": (
-            "Load a written procedure for a multi-step job (form filling, downloading a file, finding something on a long page, multi-tab research, "
+            "Load a written procedure for a multi-step job (visual page navigation, form filling, downloading a file, finding something on a long page, multi-tab research, "
             "screenshots to action, sending mail). Call with no name to list them."
         ),
         "parameters": {
