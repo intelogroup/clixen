@@ -489,7 +489,13 @@ def execute_tool(name: str, arguments: dict) -> str:
             f"describe results. Approve via POST /chat/local-agent/confirm."
         )
     log.debug("[action] %s class=%s", name, action_class.of_call(name, arguments or {}))
-    return _execute_raw(name, arguments)
+    from tools import browse_guard
+
+    if (refused := browse_guard.pre_check(name, arguments or {})):
+        tool_failure_log.record_failure(name, refused)
+        return refused
+    url = browse_guard.url_before(name, arguments or {})
+    return browse_guard.after(name, arguments or {}, url, _execute_raw(name, arguments))
 
 
 # Tools with a known "empty but successful-looking" failure mode — a connector
