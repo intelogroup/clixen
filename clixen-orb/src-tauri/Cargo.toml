@@ -17,9 +17,9 @@ tauri = { version = "2", features = [] }
 tauri-nspanel = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+reqwest = { version = "0.13", features = ["json", "stream", "multipart"] }
 futures-util = "0.3"
-base64 = "0.22"
+base64 = "0.23"
 tauri-plugin-global-shortcut = "2.4.1"
 # E2E only: registered under cfg(debug_assertions) in lib.rs, never in a release build.
 tauri-plugin-wdio = "1"
