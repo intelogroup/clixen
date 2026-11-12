@@ -24,7 +24,7 @@
     "typescript": "^7.0.2"
   },
   "overrides": {
-    "qs": "^6.16.0"
+    "qs": "^6.17.1"
   },
   "allowScripts": {
     "better-sqlite3@12.11.1": true,
